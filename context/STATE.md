@@ -31,6 +31,7 @@ Update this file at the end of any session that changes project state. Newest en
 
 | # | Spike | Status | Outcome |
 |---|-------|--------|---------|
+| S0 | Agent SDK under subscription OAuth (gates Phase A) | **PASS** 2026-07-29 | Auth/streaming/canUseTool all work. 3 binding findings: PreToolUse hook needed for activity feed; cwd must be pinned AND tested; assert on side effects, never agent text. `agents/2026-07-29-spike-s0.md` |
 | S1 | Push payload audit — approval push must carry IDs only, no prompt text on lock screen | not run | — |
 | S2 | Credential audit — nothing in `~/.happy` / outbound traffic leaks OAuth or API keys | not run | — |
 | S3 | Killed-state notification actions work on the real iPhone | not run | — |
