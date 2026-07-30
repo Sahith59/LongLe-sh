@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+dist/
+*.log
+npm-debug.log*
+
+# Env / secrets — never commit these
+.env
+.env.*
+*.pem
+*.key
+
+# Expo / React Native
+.expo/
+.expo-shared/
+ios/build/
+android/build/
+
+# SQLite runtime data
+*.sqlite
+*.sqlite-journal
+*.db
+
+# Scratch
+scratch/
+tmp/
