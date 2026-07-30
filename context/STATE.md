@@ -7,7 +7,7 @@ Update this file at the end of any session that changes project state. Newest en
 - **Phase:** PLAN v2 (standalone product) adopted 2026-07-29 — see PLAN.md. Machine readiness half done. Coding not started; Phase A gated on spike S0.
 - **Done:** tmux 3.7b + mosh 1.4.0 installed (tmux is now an internal component; mosh harmless extra); `~/.tmux.conf` written (history-limit 50000, window-size largest, mouse on); caffeinate LaunchAgent installed + verified (machine previously slept after 1 minute); launchd plists in `scripts/launchd/` + `~/Library/LaunchAgents/`.
 - **Dropped from checklist (v2 pivot):** Tailscale install (stuck standalone app can just be trashed — no longer needed), Termius, Happy, Blink. Claude `/remote-control` stays available as Sahith's personal stopgap until Phase C.
-- **Next actions:** (1) scaffold monorepo per `context/PHASE-A.md` and start slice A1 (protocol package, test-first); (2) Sahith's kickoff list below. S0 PASSED — Phase A is unblocked. Repo live: https://github.com/Sahith59/LongLe-sh (public).
+- **Next actions:** (1) slice A2 — daemon event log, test-first per `context/PHASE-A.md`; (2) Sahith's kickoff list below. S0 PASSED; monorepo scaffolded (pnpm workspaces); **A1 protocol package DONE** (14 tests green, CI on every push). Repo live: https://github.com/Sahith59/LongLe-sh (public).
 
 ## Sahith's kickoff list (v2)
 

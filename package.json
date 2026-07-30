@@ -1,0 +1,16 @@
+{
+  "name": "longleash",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Control the AI-agent, terminal, and IDE sessions on your laptop from your phone — anywhere.",
+  "license": "MIT",
+  "repository": "github:Sahith59/LongLe-sh",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build"
+  }
+}
