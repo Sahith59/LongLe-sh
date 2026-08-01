@@ -25,6 +25,8 @@ export interface DaemonOptions {
   maxConcurrentSessions?: number
   /** Where to report activity. The binary passes console.log so the terminal shows life. */
   log?: (line: string) => void
+  /** Refuse credential/system folders inside allowed roots. On by default. */
+  excludeSensitive?: boolean
 }
 
 export interface Daemon {
@@ -102,6 +104,8 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       }
     },
     ...(options.denyOutsideRoot === undefined ? {} : { denyOutsideRoot: options.denyOutsideRoot }),
+    // Broad roots (a whole home directory) are only reasonable with these carved out.
+    excludeSensitive: options.excludeSensitive ?? true,
     ...(options.maxConcurrentSessions === undefined
       ? {}
       : { maxConcurrentSessions: options.maxConcurrentSessions }),

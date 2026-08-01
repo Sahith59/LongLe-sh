@@ -46,6 +46,18 @@ otherwise:
   invisibly — you see it, you just were not asked first.
 - If you want every action to come to you, remove those rules from your settings.
 
+## If you point LongLeash at your whole home directory
+
+Naming your project folders is the safest setup. If you prefer convenience — `longleashd ~` so
+every project is findable without restarts — LongLeash carves out folders an agent has no
+business touching: `.ssh`, `.gnupg`, `.aws`, `.kube`, `.docker`, `.config`, password stores,
+`Library`, `Keychains`, caches, and system folders. They are hidden from search **and** refused
+as a working directory, so the protection is real rather than cosmetic.
+
+**Stated plainly: an exclusion list is guesswork and will never be complete.** It makes a
+whole-home setup reasonable, not risk-free. If you keep credentials somewhere unusual, name your
+project folders instead.
+
 ## What LongLeash does to protect you
 
 - End-to-end encryption between your phone and your laptop; the relay routes ciphertext it cannot read.

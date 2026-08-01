@@ -5,6 +5,7 @@ import type { AgentFactory, AgentRunHandle, PermissionDecision } from './agent.j
 import type { ApprovalStore } from './approvals.js'
 import type { EventLog, AppendInput } from './eventlog.js'
 import { AgentKind, SessionOrigin, type SessionEvent } from '@longleash/protocol'
+import { isSensitivePath } from './sensitive.js'
 
 const DEFAULT_APPROVAL_TTL_MS = 24 * 60 * 60_000
 
@@ -61,6 +62,11 @@ export interface SessionManagerOptions {
   /** Cap concurrent agents so a buggy or hostile client cannot exhaust the machine. */
   maxConcurrentSessions?: number
   /**
+   * Refuse credential and system folders even when they sit inside an allowed root. Needed
+   * whenever a broad root (like a home directory) is allowed.
+   */
+  excludeSensitive?: boolean
+  /**
    * Refuse tools whose declared path escapes the allowlisted roots, without troubling the
    * human. Off by default so the person stays in charge; on for sandboxed use where "it can
    * only touch this directory" must be literally true.
@@ -113,6 +119,7 @@ export class SessionManager {
   private readonly onEvent: ((event: SessionEvent) => void) | undefined
   private readonly denyOutsideRoot: boolean
   private readonly maxConcurrentSessions: number
+  private readonly excludeSensitive: boolean
   private readonly sessions = new Map<string, LiveSession>()
   private readonly claimed = new Set<string>()
   /** Resolves when a session's next approval has been registered — lets tests avoid sleeps. */
@@ -128,6 +135,7 @@ export class SessionManager {
     this.onEvent = opts.onEvent
     this.denyOutsideRoot = opts.denyOutsideRoot ?? false
     this.maxConcurrentSessions = opts.maxConcurrentSessions ?? 10
+    this.excludeSensitive = opts.excludeSensitive ?? false
     this.approvals.rawDb.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         session_id TEXT PRIMARY KEY,
@@ -641,6 +649,10 @@ export class SessionManager {
       real = realpathSync(resolve(cwd))
     } catch {
       throw new SessionError('cwd-not-allowed', `Directory is not allowed or does not exist: ${cwd}`)
+    }
+    // Hiding a folder from search is cosmetic; refusing to run there is the real protection.
+    if (this.excludeSensitive && isSensitivePath(real)) {
+      throw new SessionError('cwd-not-allowed', `Directory is not allowed: ${cwd}`)
     }
     const permitted = this.allowedRoots.some((root) => real === root || real.startsWith(root + sep))
     if (!permitted) {

@@ -1,5 +1,6 @@
 import { readdirSync, realpathSync } from 'node:fs'
 import { basename, join, sep } from 'node:path'
+import { SENSITIVE_DIR_NAMES } from './sensitive.js'
 
 export interface FolderHit {
   path: string
@@ -132,6 +133,7 @@ export class FolderIndex {
         if (scanned > MAX_SCANNED) return
         if (!entry.isDirectory()) continue
         if (entry.name.startsWith('.') || SKIP.has(entry.name)) continue
+        if (SENSITIVE_DIR_NAMES.has(entry.name)) continue
         const child = join(dir, entry.name)
         // A symlink could point anywhere; only keep it if it still resolves inside a root.
         if (entry.isSymbolicLink() && !this.insideRoot(child)) continue

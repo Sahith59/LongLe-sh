@@ -94,8 +94,12 @@ Symlinks that resolve outside a root are dropped, so search cannot leak paths th
 forbids. Verified against the real Desktop: "FD_Engineer", "fd_eng" and "FD_Engineer folder in
 desktop" all resolve to the right folder; nonsense returns nothing rather than a wrong guess.
 
-**Open decision for Sahith:** search only covers directories passed to `longleashd`. Passing
-`~` makes everything findable but widens what an agent could be pointed at.
+**Decided by Sahith:** home-wide with sensitive folders excluded. `src/sensitive.ts` lists
+credential/system directories; they are skipped by search AND refused as a session cwd, because
+hiding a folder without refusing to run there would be cosmetic. Verified with `longleashd ~`:
+projects are findable, `.ssh`/`Keychains` return nothing, and starting a session in `~/.ssh` by
+explicit path is refused. Documented honestly in `docs/REQUIREMENTS.md`: an exclusion list is
+guesswork and never complete; naming project folders remains the safest setup.
 
 ## Dogfood round 4 (2026-08-01) — reopening closed sessions
 
