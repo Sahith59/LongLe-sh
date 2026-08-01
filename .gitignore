@@ -27,3 +27,6 @@ android/build/
 # Scratch
 scratch/
 tmp/
+
+# live demo sandbox — real Claude scratch space
+packages/daemon/demo/sandbox/

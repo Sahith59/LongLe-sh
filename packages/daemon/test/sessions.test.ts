@@ -95,7 +95,7 @@ interface Harness {
 
 let clock = 1_000_000
 
-function makeHarness(opts: { approvalTtlMs?: number } = {}): Harness {
+function makeHarness(opts: { approvalTtlMs?: number; denyOutsideRoot?: boolean } = {}): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'longleash-sessions-'))
   const root = realpathSync(dir)
   const log = new EventLog(':memory:')
@@ -108,6 +108,7 @@ function makeHarness(opts: { approvalTtlMs?: number } = {}): Harness {
     agentFactories: { claude: agent.factory },
     now: () => clock,
     approvalTtlMs: opts.approvalTtlMs ?? 24 * 60 * 60_000,
+    ...(opts.denyOutsideRoot === undefined ? {} : { denyOutsideRoot: opts.denyOutsideRoot }),
   })
   return {
     manager,
@@ -358,6 +359,96 @@ describe('approvals', () => {
     const stored = h.approvals.listPending()
     expect(stored).toHaveLength(1)
     expect(stored[0]?.inputSummary).toContain('Write')
+  })
+})
+
+describe('path guard: tools targeting outside the allowlisted roots', () => {
+  let h: Harness
+  beforeEach(() => {
+    clock = 1_000_000
+    h = makeHarness()
+  })
+  afterEach(() => {
+    rmSync(h.dir, { recursive: true, force: true })
+    h.log.close()
+    h.approvals.close()
+  })
+
+  it('marks a tool whose path is inside the root as safe, with the resolved path', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    void h.agent.requestTool('Write', { file_path: join(h.root, 'ok.ts') })
+    await h.manager.waitForApproval(sessionId)
+    const approval = h.manager.listPendingApprovals()[0]!
+    expect(approval.targetPath).toBe(join(h.root, 'ok.ts'))
+    expect(approval.outsideRoot).toBe(false)
+  })
+
+  it('FLAGS a tool whose path escapes every allowlisted root', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    void h.agent.requestTool('Write', { file_path: '/tmp/escape.txt' })
+    await h.manager.waitForApproval(sessionId)
+    const approval = h.manager.listPendingApprovals()[0]!
+    expect(approval.outsideRoot).toBe(true)
+    const event = eventsOf(h.log, sessionId).find((e) => e.type === 'approval.requested')
+    expect(event?.payload).toMatchObject({ outsideRoot: true })
+  })
+
+  it('flags ../ traversal dressed up as a relative path', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    void h.agent.requestTool('Write', { file_path: '../../etc/passwd' })
+    await h.manager.waitForApproval(sessionId)
+    expect(h.manager.listPendingApprovals()[0]!.outsideRoot).toBe(true)
+  })
+
+  it('resolves a bare relative path against the session cwd, not the daemon process cwd', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    void h.agent.requestTool('Write', { file_path: 'notes.md' })
+    await h.manager.waitForApproval(sessionId)
+    const approval = h.manager.listPendingApprovals()[0]!
+    expect(approval.targetPath).toBe(join(h.root, 'notes.md'))
+    expect(approval.outsideRoot).toBe(false)
+  })
+
+  it('with denyOutsideRoot the agent is refused immediately, with no approval shown to a human', async () => {
+    const strict = makeHarness({ denyOutsideRoot: true })
+    try {
+      const { sessionId } = await strict.manager.startSession({
+        agent: 'claude',
+        cwd: strict.root,
+        prompt: 'x',
+      })
+      const decision = await strict.agent.requestTool('Write', { file_path: '/tmp/nope.txt' })
+      expect(decision.behavior).toBe('deny')
+      if (decision.behavior === 'deny') expect(decision.message).toMatch(/outside/i)
+      expect(strict.manager.listPendingApprovals()).toHaveLength(0)
+      const blocked = eventsOf(strict.log, sessionId).find((e) => e.type === 'approval.decided')
+      expect(blocked?.payload).toMatchObject({ verdict: 'deny', decidedBy: 'system:outside-root' })
+    } finally {
+      rmSync(strict.dir, { recursive: true, force: true })
+      strict.log.close()
+      strict.approvals.close()
+    }
+  })
+
+  it('does not pretend to understand shell commands: a Bash tool has no target path', async () => {
+    const strict = makeHarness({ denyOutsideRoot: true })
+    try {
+      const { sessionId } = await strict.manager.startSession({
+        agent: 'claude',
+        cwd: strict.root,
+        prompt: 'x',
+      })
+      void strict.agent.requestTool('Bash', { command: 'echo hi > /tmp/sneaky.txt' })
+      await strict.manager.waitForApproval(sessionId)
+      const approval = strict.manager.listPendingApprovals()[0]!
+      // Honest: we do not parse shell syntax, so this still reaches the human to decide.
+      expect(approval.targetPath).toBeNull()
+      expect(approval.outsideRoot).toBe(false)
+    } finally {
+      rmSync(strict.dir, { recursive: true, force: true })
+      strict.log.close()
+      strict.approvals.close()
+    }
   })
 })
 

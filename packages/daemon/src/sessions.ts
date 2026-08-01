@@ -44,6 +44,12 @@ export interface SessionManagerOptions {
   now?: () => number
   approvalTtlMs?: number
   onEvent?: (event: SessionEvent) => void
+  /**
+   * Refuse tools whose declared path escapes the allowlisted roots, without troubling the
+   * human. Off by default so the person stays in charge; on for sandboxed use where "it can
+   * only touch this directory" must be literally true.
+   */
+  denyOutsideRoot?: boolean
 }
 
 interface LiveSession extends SessionSummary {
@@ -54,6 +60,21 @@ interface LiveSession extends SessionSummary {
 }
 
 const newId = (prefix: string) => `${prefix}_${randomBytes(9).toString('base64url')}`
+
+/**
+ * Tools that declare a path get it checked; shell commands do not, because parsing shell
+ * syntax to find writes would be security theatre. Those still go to a human, who sees the
+ * whole command.
+ */
+function declaredPath(input: unknown): string | null {
+  if (!input || typeof input !== 'object') return null
+  const record = input as Record<string, unknown>
+  for (const key of ['file_path', 'path', 'notebook_path']) {
+    const value = record[key]
+    if (typeof value === 'string' && value.length > 0) return value
+  }
+  return null
+}
 
 function summarize(toolName: string, input: unknown): string {
   let detail = ''
@@ -73,6 +94,7 @@ export class SessionManager {
   private readonly now: () => number
   private readonly approvalTtlMs: number
   private readonly onEvent: ((event: SessionEvent) => void) | undefined
+  private readonly denyOutsideRoot: boolean
   private readonly sessions = new Map<string, LiveSession>()
   private readonly claimed = new Set<string>()
   /** Resolves when a session's next approval has been registered — lets tests avoid sleeps. */
@@ -86,6 +108,7 @@ export class SessionManager {
     this.now = opts.now ?? Date.now
     this.approvalTtlMs = opts.approvalTtlMs ?? DEFAULT_APPROVAL_TTL_MS
     this.onEvent = opts.onEvent
+    this.denyOutsideRoot = opts.denyOutsideRoot ?? false
   }
 
   async startSession(input: StartSessionInput): Promise<{ sessionId: string }> {
@@ -113,7 +136,8 @@ export class SessionManager {
       sessionId,
       cwd,
       prompt,
-      canUseTool: (toolName, toolInput) => this.requestApproval(sessionId, waiting, toolName, toolInput),
+      canUseTool: (toolName, toolInput) =>
+        this.requestApproval(sessionId, cwd, waiting, toolName, toolInput),
       onAutoApprovedTool: (toolName, toolInput) => {
         this.emit(sessionId, {
           type: 'activity.tool',
@@ -218,6 +242,7 @@ export class SessionManager {
 
   private async requestApproval(
     sessionId: string,
+    cwd: string,
     waiting: Map<string, (decision: PermissionDecision) => void>,
     toolName: string,
     input: unknown,
@@ -226,10 +251,50 @@ export class SessionManager {
     const expiresAt = this.now() + this.approvalTtlMs
     const inputSummary = summarize(toolName, input)
 
-    this.approvals.create({ approvalId, sessionId, toolName, inputSummary, expiresAt })
+    // An agent can hand a tool any absolute path; pinning cwd governs the process, not the
+    // arguments. Resolve what the tool actually targets and judge it against the allowlist.
+    const declared = declaredPath(input)
+    const targetPath = declared === null ? null : resolve(cwd, declared)
+    const outsideRoot = targetPath !== null && !this.isInsideAllowedRoot(targetPath)
+
+    if (outsideRoot && this.denyOutsideRoot) {
+      this.approvals.create({
+        approvalId,
+        sessionId,
+        toolName,
+        inputSummary,
+        expiresAt,
+        targetPath,
+        outsideRoot,
+      })
+      const message = `Refused: ${targetPath} is outside the allowed project directories`
+      this.approvals.decide(approvalId, 'denied', 'system:outside-root', message)
+      this.emit(sessionId, {
+        type: 'approval.decided',
+        payload: { approvalId, verdict: 'deny', decidedBy: 'system:outside-root', reply: message },
+      })
+      return { behavior: 'deny', message }
+    }
+
+    this.approvals.create({
+      approvalId,
+      sessionId,
+      toolName,
+      inputSummary,
+      expiresAt,
+      targetPath,
+      outsideRoot,
+    })
     this.emit(sessionId, {
       type: 'approval.requested',
-      payload: { approvalId, toolName, inputSummary, expiresAt },
+      payload: {
+        approvalId,
+        toolName,
+        inputSummary,
+        expiresAt,
+        ...(targetPath === null ? {} : { targetPath }),
+        outsideRoot,
+      },
     })
 
     const decision = new Promise<PermissionDecision>((resolve) => {
@@ -285,6 +350,12 @@ export class SessionManager {
     } catch {
       return resolved
     }
+  }
+
+  /** A path counts as inside only if it equals a root or sits beneath it. */
+  private isInsideAllowedRoot(target: string): boolean {
+    const resolved = this.canonical(target)
+    return this.allowedRoots.some((root) => resolved === root || resolved.startsWith(root + sep))
   }
 
   private assertAllowedCwd(cwd: string): string {

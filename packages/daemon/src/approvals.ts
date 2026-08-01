@@ -13,6 +13,10 @@ export interface ApprovalRecord {
   decidedBy: string | null
   decidedAt: number | null
   reply: string | null
+  /** Resolved path the tool targets, when it declares one. Null for opaque tools like Bash. */
+  targetPath: string | null
+  /** True when that path escapes every allowlisted root — surfaced prominently to the human. */
+  outsideRoot: boolean
 }
 
 interface ApprovalRow {
@@ -26,6 +30,8 @@ interface ApprovalRow {
   decided_by: string | null
   decided_at: number | null
   reply: string | null
+  target_path: string | null
+  outside_root: number
 }
 
 export interface CreateApprovalInput {
@@ -34,6 +40,8 @@ export interface CreateApprovalInput {
   toolName: string
   inputSummary: string
   expiresAt: number
+  targetPath?: string | null
+  outsideRoot?: boolean
 }
 
 /**
@@ -58,7 +66,9 @@ export class ApprovalStore {
         status TEXT NOT NULL,
         decided_by TEXT,
         decided_at INTEGER,
-        reply TEXT
+        reply TEXT,
+        target_path TEXT,
+        outside_root INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS approvals_status ON approvals (status);
     `)
@@ -69,8 +79,8 @@ export class ApprovalStore {
     const createdAt = this.now()
     this.rawDb
       .prepare(
-        `INSERT INTO approvals (approval_id, session_id, tool_name, input_summary, created_at, expires_at, status, decided_by, decided_at, reply)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL)`,
+        `INSERT INTO approvals (approval_id, session_id, tool_name, input_summary, created_at, expires_at, status, decided_by, decided_at, reply, target_path, outside_root)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?)`,
       )
       .run(
         input.approvalId,
@@ -79,14 +89,22 @@ export class ApprovalStore {
         input.inputSummary,
         createdAt,
         input.expiresAt,
+        input.targetPath ?? null,
+        input.outsideRoot === true ? 1 : 0,
       )
     return {
-      ...input,
+      approvalId: input.approvalId,
+      sessionId: input.sessionId,
+      toolName: input.toolName,
+      inputSummary: input.inputSummary,
+      expiresAt: input.expiresAt,
       createdAt,
       status: 'pending',
       decidedBy: null,
       decidedAt: null,
       reply: null,
+      targetPath: input.targetPath ?? null,
+      outsideRoot: input.outsideRoot === true,
     }
   }
 
@@ -151,6 +169,8 @@ export class ApprovalStore {
       decidedBy: row.decided_by,
       decidedAt: row.decided_at,
       reply: row.reply,
+      targetPath: row.target_path,
+      outsideRoot: row.outside_root === 1,
     }
   }
 }
