@@ -80,6 +80,23 @@ Full report: `agents/2026-08-01-audit-a1-a6.md`. Seven flaws found; all critical
 
 **Externally-started sessions are addressable after all.** Verified: a `PreToolUse` hook in `~/.claude/settings.json` fires for EVERY Claude Code session on the machine (CLI and VS Code extension) and can return allow/deny; all sessions write live transcripts to `~/.claude/projects/**/*.jsonl` that any process may tail. So LongLeash can list and gate sessions it did not start. Constraint: hooks are timeout-bounded (~600 s default), so foreign-session approvals cannot park indefinitely the way our own do — the UI must say so. New **Phase D1 (Attach Mode)** added to PLAN.md, gated on spike **D0**. Still impossible: injecting a prompt into a foreign running session; driving the VS Code chat webview. Full analysis: `agents/2026-08-01-external-sessions-feasibility.md`.
 
+## Dogfood round 6 (2026-08-01) — a schema change broke every existing install
+
+Sahith's session failed with `no such column: agent_session_id`, and reopening failed the same
+way. Cause: `CREATE TABLE IF NOT EXISTS` leaves an existing table untouched, so a column added
+in a later release reached fresh installs and never reached upgrades. The failure only surfaced
+at runtime, well after the release looked healthy — this would have hit every user of every
+future version.
+
+Fixed with a real migration step (`src/migrate.ts`): `ensureColumns` compares `PRAGMA
+table_info` against what the code expects and adds what is missing, idempotently. Also corrected
+the ownership smell that hid it: the `sessions` and `audit` tables lived in the approvals
+database but were created by `SessionManager`, so opening that database alone left it
+half-formed. `ApprovalStore` now defines every table in its own file.
+
+Verified against a copy of Sahith's actual database: the column is added, all 5 existing sessions
+are preserved, and the exact session that failed reopens successfully.
+
 ## Dogfood round 5 (2026-08-01) — picking a folder without knowing its path
 
 Two problems. First a bug: the subfolder field appended blindly to the root, so pasting an

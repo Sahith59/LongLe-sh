@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import { ensureColumns } from './migrate.js'
 
 export type ApprovalStatus = 'pending' | 'allowed' | 'denied'
 
@@ -71,7 +72,34 @@ export class ApprovalStore {
         outside_root INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS approvals_status ON approvals (status);
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        session_id TEXT PRIMARY KEY,
+        agent TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        agent_session_id TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS audit (
+        at INTEGER NOT NULL,
+        actor TEXT NOT NULL,
+        action TEXT NOT NULL,
+        detail TEXT NOT NULL
+      );
     `)
+    // A database written by an earlier release lacks columns added since; add them rather
+    // than failing at runtime with "no such column".
+    // One owner per database file: this store defines every table it holds, so opening it is
+    // always enough to bring an older file fully up to date.
+    ensureColumns(this.rawDb, 'approvals', [
+      { name: 'target_path', definition: 'TEXT' },
+      { name: 'outside_root', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    ])
+    ensureColumns(this.rawDb, 'sessions', [{ name: 'agent_session_id', definition: 'TEXT' }])
     this.now = opts.now ?? Date.now
   }
 

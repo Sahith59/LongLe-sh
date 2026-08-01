@@ -136,31 +136,11 @@ export class SessionManager {
     this.denyOutsideRoot = opts.denyOutsideRoot ?? false
     this.maxConcurrentSessions = opts.maxConcurrentSessions ?? 10
     this.excludeSensitive = opts.excludeSensitive ?? false
-    this.approvals.rawDb.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        session_id TEXT PRIMARY KEY,
-        agent TEXT NOT NULL,
-        cwd TEXT NOT NULL,
-        origin TEXT NOT NULL,
-        title TEXT NOT NULL,
-        status TEXT NOT NULL,
-        started_at INTEGER NOT NULL,
-        agent_session_id TEXT
-      )
-    `)
     // A session whose daemon died has no agent behind it; showing it as "working" would be a
     // lie the user cannot act on, so anything left live is closed out on startup.
     this.approvals.rawDb
       .prepare("UPDATE sessions SET status = 'ended' WHERE status IN ('running','waiting')")
       .run()
-    this.approvals.rawDb.exec(`
-      CREATE TABLE IF NOT EXISTS audit (
-        at INTEGER NOT NULL,
-        actor TEXT NOT NULL,
-        action TEXT NOT NULL,
-        detail TEXT NOT NULL
-      )
-    `)
     // A crashed daemon takes its agents with it; anything still pending can never be answered.
     this.orphansClosed = this.approvals.closeOrphans('Daemon restarted before this was answered').length
   }
