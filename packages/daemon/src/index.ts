@@ -1,4 +1,6 @@
 export { EventLog, coalesceTextDeltas } from './eventlog.js'
 export type { AppendInput, ReplayResult } from './eventlog.js'
+export { LongLeashServer, CLOSE_UNAUTHORIZED, CLOSE_REVOKED } from './server.js'
+export type { ServerOptions } from './server.js'
 export { DeviceRegistry, PairingError } from './auth.js'
 export type { Device, PairingChallenge, PairingFailure, CompletePairingInput } from './auth.js'

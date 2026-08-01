@@ -1,0 +1,373 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import WebSocket from 'ws'
+import { EventLog } from '../src/eventlog.js'
+import { DeviceRegistry } from '../src/auth.js'
+import { LongLeashServer, CLOSE_UNAUTHORIZED, CLOSE_REVOKED } from '../src/server.js'
+
+const HOST = '127.0.0.1'
+
+interface Harness {
+  server: LongLeashServer
+  log: EventLog
+  registry: DeviceRegistry
+  port: number
+  token: string
+  deviceId: string
+}
+
+async function startHarness(): Promise<Harness> {
+  const log = new EventLog(':memory:')
+  const registry = new DeviceRegistry(':memory:')
+  const challenge = registry.createPairingChallenge()
+  const { device, token } = registry.completePairing({
+    challengeId: challenge.challengeId,
+    secret: challenge.secret,
+    deviceName: 'test phone',
+  })
+  const server = new LongLeashServer({ eventLog: log, registry, host: HOST, port: 0 })
+  const { port } = await server.listen()
+  return { server, log, registry, port, token, deviceId: device.deviceId }
+}
+
+function connect(port: number, token?: string): WebSocket {
+  const query = token === undefined ? '' : `?token=${encodeURIComponent(token)}`
+  return new WebSocket(`ws://${HOST}:${port}/ws${query}`)
+}
+
+/** Resolves on close; rejects if the socket opens successfully instead. */
+function expectClosed(ws: WebSocket): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('socket neither closed nor errored in time')), 4000)
+    ws.on('close', (code) => {
+      clearTimeout(timer)
+      resolve(code)
+    })
+    ws.on('error', () => {
+      /* a refused upgrade surfaces as an error before close; wait for close */
+    })
+  })
+}
+
+function nextMessages(ws: WebSocket, count: number): Promise<Record<string, unknown>[]> {
+  return new Promise((resolve, reject) => {
+    const received: Record<string, unknown>[] = []
+    const timer = setTimeout(
+      () => reject(new Error(`timed out waiting for ${count} messages, got ${received.length}`)),
+      4000,
+    )
+    const onMessage = (raw: WebSocket.RawData) => {
+      received.push(JSON.parse(raw.toString()) as Record<string, unknown>)
+      if (received.length === count) {
+        clearTimeout(timer)
+        ws.off('message', onMessage)
+        resolve(received)
+      }
+    }
+    ws.on('message', onMessage)
+  })
+}
+
+function opened(ws: WebSocket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ws.once('open', () => resolve())
+    ws.once('error', reject)
+  })
+}
+
+const delta = (text: string) => ({ type: 'stream.delta' as const, payload: { kind: 'text' as const, text } })
+
+describe('auth on connect', () => {
+  let h: Harness
+  beforeEach(async () => {
+    h = await startHarness()
+  })
+  afterEach(async () => {
+    await h.server.close()
+    h.log.close()
+    h.registry.close()
+  })
+
+  it('accepts a connection carrying a valid token', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    expect(ws.readyState).toBe(WebSocket.OPEN)
+    ws.close()
+  })
+
+  it('closes a connection with no token', async () => {
+    const code = await expectClosed(connect(h.port))
+    expect(code).toBe(CLOSE_UNAUTHORIZED)
+  })
+
+  it('closes a connection with a bogus token', async () => {
+    const code = await expectClosed(connect(h.port, 'llt_not_a_real_token'))
+    expect(code).toBe(CLOSE_UNAUTHORIZED)
+  })
+
+  it('closes a connection whose device was revoked before connecting', async () => {
+    h.registry.revokeDevice(h.deviceId)
+    const code = await expectClosed(connect(h.port, h.token))
+    expect(code).toBe(CLOSE_UNAUTHORIZED)
+  })
+
+  it('drops a LIVE connection the moment its device is revoked', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const closed = expectClosed(ws)
+    h.registry.revokeDevice(h.deviceId)
+    expect(await closed).toBe(CLOSE_REVOKED)
+  })
+})
+
+describe('subscribe: replay then live tail', () => {
+  let h: Harness
+  beforeEach(async () => {
+    h = await startHarness()
+  })
+  afterEach(async () => {
+    await h.server.close()
+    h.log.close()
+    h.registry.close()
+  })
+
+  it('replays history from cursor 0 and then streams new events', async () => {
+    h.server.publish('ses_1', delta('before-1'))
+    h.server.publish('ses_1', delta('before-2'))
+
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const replay = nextMessages(ws, 2)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_1', fromCursor: 0 }))
+    const history = await replay
+    expect(history.map((m) => m.seq)).toEqual([1, 2])
+
+    const live = nextMessages(ws, 1)
+    h.server.publish('ses_1', delta('after'))
+    const [liveEvent] = await live
+    expect(liveEvent?.seq).toBe(3)
+    ws.close()
+  })
+
+  it('a reconnecting client with a cursor receives only what it missed — no duplicates', async () => {
+    h.server.publish('ses_1', delta('one'))
+    h.server.publish('ses_1', delta('two'))
+    h.server.publish('ses_1', delta('three'))
+
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const messages = nextMessages(ws, 1)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_1', fromCursor: 2 }))
+    const received = await messages
+    expect(received.map((m) => m.seq)).toEqual([3])
+    ws.close()
+  })
+
+  it('sends an explicit gap signal when the cursor is ahead of the log', async () => {
+    h.server.publish('ses_1', delta('one'))
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const messages = nextMessages(ws, 1)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_1', fromCursor: 99 }))
+    const [gap] = await messages
+    expect(gap).toMatchObject({ type: 'gap', reason: 'cursor-ahead', latestSeq: 1 })
+    ws.close()
+  })
+
+  it('does not leak events from sessions the client did not subscribe to', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_mine', fromCursor: 0 }))
+    const messages = nextMessages(ws, 1)
+    h.server.publish('ses_other', delta('secret'))
+    h.server.publish('ses_mine', delta('mine'))
+    const [only] = await messages
+    expect(only).toMatchObject({ sessionId: 'ses_mine' })
+    ws.close()
+  })
+
+  it('delivers identical ordering to two devices watching the same session', async () => {
+    const second = h.registry.createPairingChallenge()
+    const other = h.registry.completePairing({
+      challengeId: second.challengeId,
+      secret: second.secret,
+      deviceName: 'ipad',
+    })
+    const a = connect(h.port, h.token)
+    const b = connect(h.port, other.token)
+    await Promise.all([opened(a), opened(b)])
+    a.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_1', fromCursor: 0 }))
+    b.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_1', fromCursor: 0 }))
+    await new Promise((r) => setTimeout(r, 50))
+
+    const aMsgs = nextMessages(a, 3)
+    const bMsgs = nextMessages(b, 3)
+    h.server.publish('ses_1', delta('x'))
+    h.server.publish('ses_1', delta('y'))
+    h.server.publish('ses_1', delta('z'))
+    const [aList, bList] = await Promise.all([aMsgs, bMsgs])
+    expect(aList.map((m) => m.seq)).toEqual([1, 2, 3])
+    expect(bList.map((m) => m.seq)).toEqual([1, 2, 3])
+    a.close()
+    b.close()
+  })
+})
+
+describe('hostile input', () => {
+  let h: Harness
+  beforeEach(async () => {
+    h = await startHarness()
+  })
+  afterEach(async () => {
+    await h.server.close()
+    h.log.close()
+    h.registry.close()
+  })
+
+  it('answers malformed JSON with an error and keeps the socket usable', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const messages = nextMessages(ws, 1)
+    ws.send('this is not json{{{')
+    const [err] = await messages
+    expect(err).toMatchObject({ type: 'error' })
+    expect(ws.readyState).toBe(WebSocket.OPEN)
+
+    const after = nextMessages(ws, 1)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_1', fromCursor: 0 }))
+    h.server.publish('ses_1', delta('still working'))
+    const [ok] = await after
+    expect(ok).toMatchObject({ type: 'stream.delta' })
+    ws.close()
+  })
+
+  it('rejects a schema-invalid message without killing the connection', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const messages = nextMessages(ws, 1)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: '', fromCursor: -1 }))
+    const [err] = await messages
+    expect(err).toMatchObject({ type: 'error' })
+    expect(ws.readyState).toBe(WebSocket.OPEN)
+    ws.close()
+  })
+})
+
+describe('resilience', () => {
+  let h: Harness
+  beforeEach(async () => {
+    h = await startHarness()
+  })
+  afterEach(async () => {
+    await h.server.close()
+    h.log.close()
+    h.registry.close()
+  })
+
+  it('survives a reconnect storm and still delivers a correct replay', async () => {
+    for (let i = 0; i < 20; i++) {
+      const ws = connect(h.port, h.token)
+      await opened(ws)
+      ws.terminate()
+    }
+    h.server.publish('ses_1', delta('after the storm'))
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const messages = nextMessages(ws, 1)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_1', fromCursor: 0 }))
+    const [event] = await messages
+    expect(event).toMatchObject({ seq: 1, type: 'stream.delta' })
+    expect(h.server.connectionCount()).toBe(1)
+    ws.close()
+  })
+
+  it('publishing to a session with no subscribers still persists the event', () => {
+    h.server.publish('ses_nobody', delta('tree falls in forest'))
+    const replay = h.log.replay('ses_nobody', 0)
+    if (replay.gap) expect.unreachable('no gap expected')
+    expect(replay.events).toHaveLength(1)
+  })
+
+  it('a dead socket is cleaned up and does not break delivery to healthy ones', async () => {
+    const healthy = connect(h.port, h.token)
+    const doomed = connect(h.port, h.token)
+    await Promise.all([opened(healthy), opened(doomed)])
+    healthy.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_1', fromCursor: 0 }))
+    doomed.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_1', fromCursor: 0 }))
+    await new Promise((r) => setTimeout(r, 50))
+
+    doomed.terminate()
+    await new Promise((r) => setTimeout(r, 100))
+
+    const messages = nextMessages(healthy, 1)
+    h.server.publish('ses_1', delta('still delivered'))
+    const [event] = await messages
+    expect(event).toMatchObject({ seq: 1 })
+    healthy.close()
+  })
+
+  it('a stalled reader cannot balloon daemon memory: buffering is capped and a gap is signalled', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_slow', fromCursor: 0 }))
+    await new Promise((r) => setTimeout(r, 50))
+
+    // Simulate a phone on a dying signal: TCP stops draining, writes pile up.
+    const underlying = (ws as unknown as { _socket: { pause(): void; resume(): void } })._socket
+    underlying.pause()
+
+    const big = 'x'.repeat(20_000)
+    for (let i = 0; i < 500; i++) h.server.publish('ses_slow', delta(`${i}-${big}`))
+
+    expect(h.server.desyncedCount()).toBe(1)
+    expect(h.server.maxBufferedBytes()).toBeLessThan(4_000_000)
+
+    // Every event still persisted — the client resyncs from its cursor, nothing is lost.
+    const replay = h.log.replay('ses_slow', 0)
+    if (replay.gap) expect.unreachable('log should hold everything')
+    expect(replay.events).toHaveLength(500)
+
+    underlying.resume()
+    ws.terminate()
+  }, 20000)
+
+  it('reaps a connection that stops responding to heartbeats (phone loses signal)', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    expect(h.server.connectionCount()).toBe(1)
+
+    // First tick marks it awaiting-pong; a second tick with no pong reaps it.
+    h.server.runHeartbeatTick()
+    h.server.markAllAwaitingPong()
+    h.server.runHeartbeatTick()
+
+    await new Promise((r) => setTimeout(r, 100))
+    expect(h.server.connectionCount()).toBe(0)
+  })
+
+  it('keeps a healthy connection alive across heartbeat ticks', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    h.server.runHeartbeatTick()
+    await new Promise((r) => setTimeout(r, 150))
+    h.server.runHeartbeatTick()
+    await new Promise((r) => setTimeout(r, 100))
+    expect(h.server.connectionCount()).toBe(1)
+    expect(ws.readyState).toBe(WebSocket.OPEN)
+    ws.close()
+  })
+
+  it('bounds memory for a burst: 2000 events arrive in order without loss', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_burst', fromCursor: 0 }))
+    await new Promise((r) => setTimeout(r, 50))
+
+    const messages = nextMessages(ws, 2000)
+    for (let i = 0; i < 2000; i++) h.server.publish('ses_burst', delta(`chunk ${i}`))
+    const received = await messages
+    expect(received).toHaveLength(2000)
+    expect(received[0]?.seq).toBe(1)
+    expect(received[1999]?.seq).toBe(2000)
+    ws.close()
+  }, 15000)
+})

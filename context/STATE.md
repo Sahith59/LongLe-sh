@@ -7,7 +7,7 @@ Update this file at the end of any session that changes project state. Newest en
 - **Phase:** PLAN v2 (standalone product) adopted 2026-07-29 — see PLAN.md. Machine readiness half done. Coding not started; Phase A gated on spike S0.
 - **Done:** tmux 3.7b + mosh 1.4.0 installed (tmux is now an internal component; mosh harmless extra); `~/.tmux.conf` written (history-limit 50000, window-size largest, mouse on); caffeinate LaunchAgent installed + verified (machine previously slept after 1 minute); launchd plists in `scripts/launchd/` + `~/Library/LaunchAgents/`.
 - **Dropped from checklist (v2 pivot):** Tailscale install (stuck standalone app can just be trashed — no longer needed), Termius, Happy, Blink. Claude `/remote-control` stays available as Sahith's personal stopgap until Phase C.
-- **Next actions:** (1) slice A4 — WS server (authenticated connect, subscribe, cursor replay + live tail), test-first per `context/PHASE-A.md`; (2) Sahith's kickoff list below. S0 PASSED; **A1 DONE** (protocol, 14 tests); **A2 DONE** (event log, 18 tests + eyes-on demo `pnpm demo`); **A3 DONE** (pairing + device auth, 19 tests: QR one-time challenge w/ TTL + sweep, tokens hashed + timing-safe, no-plaintext-in-DB proven, revocation w/ crash-safe listeners, restart durability). 51 tests green workspace-wide. `docs/ARCHITECTURE.md` added. Repo live: https://github.com/Sahith59/LongLe-sh (public).
+- **Next actions:** (1) slice A5 — Claude adapter against a FakeAgent (session start w/ pinned cwd, canUseTool → approval, decision resolves, PreToolUse → activity, single-writer lock), test-first per `context/PHASE-A.md`; (2) Sahith's kickoff list below. S0 PASSED; **A1 DONE** (protocol, 14 tests); **A2 DONE** (event log, 18 tests + eyes-on demo `pnpm demo`); **A3 DONE** (pairing + device auth, 19 tests: QR one-time challenge w/ TTL + sweep, tokens hashed + timing-safe, no-plaintext-in-DB proven, revocation w/ crash-safe listeners, restart durability — VERIFIED ON DEVICE, see below); **A4 DONE** (WS server, 19 tests: token auth on upgrade, live revocation drops sockets mid-connection, subscribe→replay→live tail, per-session isolation, gap signals, hostile input survivable, reconnect storms, backpressure watermark with resync-gap instead of unbounded buffering, heartbeat reaping half-open sockets). 70 tests green workspace-wide. `docs/ARCHITECTURE.md` added. Repo live: https://github.com/Sahith59/LongLe-sh (public).
 
 ## Sahith's kickoff list (v2)
 
@@ -51,6 +51,10 @@ Bar for public v1: **one command on the laptop, one app on the phone, working in
 - The Happy phone app is the single required phone install (QR pairing).
 - Tailscale = optional "advanced mode" only (raw SSH lane, self-hosted relay) — Sahith's own onboarding friction with it proved it can't be required. Termius/healthchecks.io also optional.
 - Public v2 (only if v1 traction demands it): fork Happy (MIT) into a branded LongLeash app, adding the terminal session type from `agents/2026-07-29-phase5-blueprint.md`. Never rebuild E2E/relay/push from scratch.
+
+## Verified on real hardware
+
+- **A3 pairing + auth — VERIFIED BY SAHITH 2026-07-31**, iPhone → MacBook over Wi-Fi (phone 192.168.1.207 → laptop 192.168.1.71), running the real `DeviceRegistry`: QR scan paired a real device, token auth succeeded repeatedly with lastSeen updates, and pressing `r` revoked it — revocation listener fired and the phone's token was rejected on the next request. Single-use-challenge replay rejection was not eyeballed in that run but is covered by automated tests and was verified via simulated requests.
 
 ## Field findings
 
