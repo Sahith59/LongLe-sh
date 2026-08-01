@@ -11,7 +11,8 @@
     "test": "vitest run",
     "demo": "tsx demo/eventlog-demo.ts",
     "demo:auth": "tsx demo/auth-demo.ts",
-    "demo:stream": "tsx demo/stream-demo.ts"
+    "demo:stream": "tsx demo/stream-demo.ts",
+    "demo:approve": "tsx demo/approve-demo.ts"
   },
   "dependencies": {
     "@fastify/websocket": "^11.3.0",

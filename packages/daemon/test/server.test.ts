@@ -1,8 +1,51 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { mkdtempSync, rmSync, realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import WebSocket from 'ws'
 import { EventLog } from '../src/eventlog.js'
 import { DeviceRegistry } from '../src/auth.js'
+import { ApprovalStore } from '../src/approvals.js'
+import { SessionManager } from '../src/sessions.js'
+import type { AgentFactory, AgentRunRequest, PermissionDecision } from '../src/agent.js'
 import { LongLeashServer, CLOSE_UNAUTHORIZED, CLOSE_REVOKED } from '../src/server.js'
+
+/** Minimal controllable agent so server tests stay deterministic. */
+class DemoAgent {
+  private request!: AgentRunRequest
+  private queue: unknown[] = []
+  private waiter: (() => void) | null = null
+  private finished = false
+
+  readonly factory: AgentFactory = (request) => {
+    this.request = request
+    return { events: this.iterate(), interrupt: async () => this.finish() }
+  }
+  requestTool(name: string, input: unknown = {}): Promise<PermissionDecision> {
+    return this.request.canUseTool(name, input)
+  }
+  say(text: string): void {
+    this.queue.push({ type: 'text', text })
+    this.wake()
+  }
+  finish(): void {
+    this.finished = true
+    this.wake()
+  }
+  private wake(): void {
+    this.waiter?.()
+    this.waiter = null
+  }
+  private async *iterate(): AsyncGenerator<never> {
+    while (true) {
+      while (this.queue.length > 0) yield this.queue.shift() as never
+      if (this.finished) return
+      await new Promise<void>((resolve) => {
+        this.waiter = resolve
+      })
+    }
+  }
+}
 
 const HOST = '127.0.0.1'
 
@@ -14,6 +57,8 @@ interface Harness {
   token: string
   deviceId: string
 }
+
+const CLIENT_TIMEOUT_MS = 4000
 
 async function startHarness(): Promise<Harness> {
   const log = new EventLog(':memory:')
@@ -209,6 +254,105 @@ describe('subscribe: replay then live tail', () => {
     expect(bList.map((m) => m.seq)).toEqual([1, 2, 3])
     a.close()
     b.close()
+  })
+})
+
+describe('typed operations: decisions and remote start', () => {
+  let h: Harness
+  let sessions: SessionManager
+  let approvals: ApprovalStore
+  let agent: DemoAgent
+  let root: string
+  let dir: string
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'longleash-server-sessions-'))
+    root = realpathSync(dir)
+    h = await startHarness()
+    approvals = new ApprovalStore(':memory:')
+    agent = new DemoAgent()
+    sessions = new SessionManager({
+      eventLog: h.log,
+      approvals,
+      allowedRoots: [root],
+      agentFactories: { claude: agent.factory },
+      onEvent: (event) => h.server.broadcastEvent(event),
+    })
+    h.server.attachSessions(sessions)
+  })
+  afterEach(async () => {
+    await h.server.close()
+    h.log.close()
+    h.registry.close()
+    approvals.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('a phone decision unblocks the waiting agent and is attributed to that device', async () => {
+    const { sessionId } = await sessions.startSession({ agent: 'claude', cwd: root, prompt: 'x' })
+    const pending = agent.requestTool('Write', { file_path: 'a.ts' })
+    await sessions.waitForApproval(sessionId)
+    const approvalId = sessions.listPendingApprovals()[0]!.approvalId
+
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const ack = nextMessages(ws, 1)
+    ws.send(JSON.stringify({ v: 1, type: 'decision', approvalId, verdict: 'allow' }))
+    expect(await ack).toMatchObject([{ type: 'ack', outcome: 'decided' }])
+    expect(await pending).toMatchObject({ behavior: 'allow' })
+
+    const decided = h.log.replay(sessionId, 0)
+    if (decided.gap) expect.unreachable('no gap')
+    const event = decided.events.find((e) => e.type === 'approval.decided')
+    expect((event?.payload as { decidedBy: string }).decidedBy).toBe(h.deviceId)
+    ws.close()
+  })
+
+  it('session events reach a subscribed phone live, without polling', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const { sessionId } = await sessions.startSession({ agent: 'claude', cwd: root, prompt: 'x' })
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId, fromCursor: 99999 }))
+    await new Promise((r) => setTimeout(r, 50))
+
+    const streamed = nextMessages(ws, 1)
+    agent.say('thinking out loud')
+    expect((await streamed)[0]).toMatchObject({ type: 'stream.delta', sessionId })
+
+    const approval = nextMessages(ws, 1)
+    void agent.requestTool('Bash', { command: 'ls' })
+    expect((await approval)[0]).toMatchObject({ type: 'approval.requested', sessionId })
+    ws.close()
+  })
+
+  it('deciding an unknown approval answers with an error instead of failing silently', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const messages = nextMessages(ws, 1)
+    ws.send(JSON.stringify({ v: 1, type: 'decision', approvalId: 'apr_ghost', verdict: 'allow' }))
+    expect(await messages).toMatchObject([{ type: 'ack', outcome: 'unknown' }])
+    ws.close()
+  })
+
+  it('starts a session remotely inside an allowlisted root', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const messages = nextMessages(ws, 1)
+    ws.send(JSON.stringify({ v: 1, type: 'startSession', agent: 'claude', root, prompt: 'build it' }))
+    const [ack] = await messages
+    expect(ack).toMatchObject({ type: 'ack', outcome: 'started' })
+    expect(String(ack?.sessionId)).toMatch(/^ses_/)
+    ws.close()
+  })
+
+  it('refuses a remote start outside the allowlist over the wire, without crashing the daemon', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const messages = nextMessages(ws, 1)
+    ws.send(JSON.stringify({ v: 1, type: 'startSession', agent: 'claude', root: '/etc', prompt: 'oops' }))
+    expect(await messages).toMatchObject([{ type: 'error', code: 'cwd-not-allowed' }])
+    expect(ws.readyState).toBe(WebSocket.OPEN)
+    ws.close()
   })
 })
 

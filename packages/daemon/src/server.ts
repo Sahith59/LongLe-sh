@@ -4,6 +4,7 @@ import type { WebSocket } from 'ws'
 import { parseClientMessage, PROTOCOL_VERSION, type SessionEvent } from '@longleash/protocol'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { DeviceRegistry } from './auth.js'
+import { SessionError, type SessionManager } from './sessions.js'
 
 /** Application close codes (4000-4999 is the private range). */
 export const CLOSE_UNAUTHORIZED = 4401
@@ -51,6 +52,7 @@ export class LongLeashServer {
   private unsubscribeRevoked: (() => void) | null = null
   private boundPort = 0
   private peakBufferedBytes = 0
+  private sessions: SessionManager | null = null
 
   constructor(opts: ServerOptions) {
     this.eventLog = opts.eventLog
@@ -126,11 +128,21 @@ export class LongLeashServer {
     return this.peakBufferedBytes
   }
 
+  /** Wire in the session manager so phones can decide approvals and start work remotely. */
+  attachSessions(sessions: SessionManager): void {
+    this.sessions = sessions
+  }
+
   /** Persist an event, then fan it out to every subscriber of that session. */
   publish(sessionId: string, input: AppendInput): SessionEvent {
     const event = this.eventLog.append(sessionId, input)
     this.broadcast(event)
     return event
+  }
+
+  /** Fan out an event that some other component already persisted (e.g. SessionManager). */
+  broadcastEvent(event: SessionEvent): void {
+    this.broadcast(event)
   }
 
   connectionCount(): number {
@@ -214,7 +226,58 @@ export class LongLeashServer {
       return
     }
 
-    // Slices A5+ own the remaining verbs; acknowledge explicitly rather than dropping silently.
+    if (!this.sessions) {
+      this.send(connection.socket, {
+        v: PROTOCOL_VERSION,
+        type: 'error',
+        code: 'not-implemented',
+        message: `"${message.type}" needs a session manager attached`,
+      })
+      return
+    }
+
+    if (message.type === 'decision') {
+      // Attribution matters for the audit log: decisions are recorded per device.
+      const outcome = this.sessions.decide(
+        message.approvalId,
+        message.verdict,
+        connection.deviceId,
+        message.reply,
+      )
+      this.send(connection.socket, {
+        v: PROTOCOL_VERSION,
+        type: 'ack',
+        of: 'decision',
+        approvalId: message.approvalId,
+        outcome,
+      })
+      return
+    }
+
+    if (message.type === 'startSession') {
+      void this.sessions
+        .startSession({ agent: message.agent, cwd: message.root, prompt: message.prompt })
+        .then(({ sessionId }) => {
+          this.send(connection.socket, {
+            v: PROTOCOL_VERSION,
+            type: 'ack',
+            of: 'startSession',
+            outcome: 'started',
+            sessionId,
+          })
+        })
+        .catch((err: unknown) => {
+          // A refused directory is a normal answer, not a daemon failure.
+          this.send(connection.socket, {
+            v: PROTOCOL_VERSION,
+            type: 'error',
+            code: err instanceof SessionError ? err.reason : 'start-failed',
+            message: err instanceof Error ? err.message.slice(0, 300) : 'Could not start session',
+          })
+        })
+      return
+    }
+
     this.send(connection.socket, {
       v: PROTOCOL_VERSION,
       type: 'error',
