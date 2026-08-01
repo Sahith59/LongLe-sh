@@ -48,6 +48,7 @@ FakeAgent implements the SDK surface (query stream, canUseTool, hooks) for fast 
 Start/stream/approve/deny/steer on the real SDK; cwd pinning verified by actual file location (the S0 gotcha); session JSONL exists in `~/.claude/projects`; `claude --resume <id>` sees the session.
 
 ### A7 · Expo app (LAN)
+Carries two requirements proven in the field on 2026-07-31 (see STATE.md field findings): a **reachability check separate from pairing** (so "network blocked" and "pairing failed" are never confused), and **active-VPN/tunnel detection with a plain-language warning**.
 Screens: Pair (QR scan), Sessions, Inbox, Session detail (FlashList stream + approve/deny/steer), New Task (allowlisted roots from daemon). Target Expo Go if all deps allow, else free-signed dev build (7-day re-sign accepted until Phase C).
 - Tests: client store unit tests — cursor resume after reconnect, optimistic decision reconciliation; component tests with a mocked daemon client; manual device checklist: background → foreground catch-up, app killed → reopen catch-up, airplane-mode flap.
 
