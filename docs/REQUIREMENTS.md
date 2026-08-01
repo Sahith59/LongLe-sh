@@ -34,6 +34,18 @@ LongLeash does not care whether it's on. The only interaction worth knowing: if 
 
 Similarly never required: disabling your firewall, disabling SIP/Gatekeeper, running anything as root, opening ports on your router, or granting LongLeash access to anything beyond the project directories you allowlist.
 
+## One honest caveat about approvals
+
+Claude Code lets you pre-approve commands in your own settings (`~/.claude/settings.json`,
+`permissions.allow`). Those rules take effect **before** LongLeash is consulted, so a matching
+command runs without ever reaching your phone. We cannot override that, and we will not pretend
+otherwise:
+
+- The daemon **tells you at startup** how many such rules you have and shows examples.
+- Anything that runs this way still appears in the **activity feed**, so nothing happens
+  invisibly — you see it, you just were not asked first.
+- If you want every action to come to you, remove those rules from your settings.
+
 ## What LongLeash does to protect you
 
 - End-to-end encryption between your phone and your laptop; the relay routes ciphertext it cannot read.

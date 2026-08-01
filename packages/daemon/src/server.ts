@@ -1,9 +1,13 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
+import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import type { WebSocket } from 'ws'
 import { parseClientMessage, PROTOCOL_VERSION, type SessionEvent } from '@longleash/protocol'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { DeviceRegistry } from './auth.js'
+import { PairingError } from './auth.js'
 import { SessionError, type SessionManager } from './sessions.js'
 
 /** Application close codes (4000-4999 is the private range). */
@@ -26,6 +30,8 @@ export interface ServerOptions {
   host?: string
   port?: number
   heartbeatIntervalMs?: number
+  /** Directory holding the built web app. Omitted for a headless daemon. */
+  staticRoot?: string
 }
 
 interface Connection {
@@ -53,6 +59,7 @@ export class LongLeashServer {
   private boundPort = 0
   private peakBufferedBytes = 0
   private sessions: SessionManager | null = null
+  private readonly staticRoot: string | undefined
 
   constructor(opts: ServerOptions) {
     this.eventLog = opts.eventLog
@@ -60,12 +67,45 @@ export class LongLeashServer {
     this.host = opts.host ?? '127.0.0.1'
     this.requestedPort = opts.port ?? 0
     this.heartbeatIntervalMs = opts.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS
+    this.staticRoot = opts.staticRoot
     this.app = Fastify({ logger: false })
   }
 
   async listen(): Promise<{ port: number }> {
     // Cap frames so one huge message cannot exhaust memory before validation runs.
     await this.app.register(websocket, { options: { maxPayload: 1_000_000 } })
+
+    // Unauthenticated on purpose: a phone must be able to tell "cannot reach the laptop"
+    // apart from "not authorized", and this reveals nothing but liveness.
+    this.app.get('/health', async () => ({ ok: true, name: 'longleash', protocol: PROTOCOL_VERSION }))
+
+    // Pairing is POST-only: link previews and crawlers issue GETs, and must never be able
+    // to burn a one-time challenge on the user's behalf.
+    this.app.get('/pair', async (_request, reply) => reply.code(405).send({ reason: 'use-post' }))
+
+    this.app.post('/pair', async (request, reply) => {
+      const query = request.query as { c?: string; s?: string }
+      try {
+        const { token } = this.registry.completePairing({
+          challengeId: query.c ?? '',
+          secret: query.s ?? '',
+          deviceName: String(request.headers['user-agent'] ?? 'browser').slice(0, 64),
+        })
+        return { token }
+      } catch (err) {
+        return reply.code(403).send({ reason: err instanceof PairingError ? err.reason : 'error' })
+      }
+    })
+
+    if (this.staticRoot !== undefined) {
+      await this.app.register(fastifyStatic, { root: this.staticRoot })
+      const indexPath = join(this.staticRoot, 'index.html')
+      // Deep links must land in the app rather than a 404, but only when it exists.
+      this.app.setNotFoundHandler((request, reply) => {
+        if (request.method !== 'GET' || !existsSync(indexPath)) return reply.code(404).send()
+        return reply.type('text/html').sendFile('index.html')
+      })
+    }
 
     this.app.get('/ws', { websocket: true }, (socket, request) => {
       const token = (request.query as { token?: string } | undefined)?.token ?? ''
