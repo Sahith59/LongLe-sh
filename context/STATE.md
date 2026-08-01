@@ -52,6 +52,10 @@ Bar for public v1: **one command on the laptop, one app on the phone, working in
 - Tailscale = optional "advanced mode" only (raw SSH lane, self-hosted relay) — Sahith's own onboarding friction with it proved it can't be required. Termius/healthchecks.io also optional.
 - Public v2 (only if v1 traction demands it): fork Happy (MIT) into a branded LongLeash app, adding the terminal session type from `agents/2026-07-29-phase5-blueprint.md`. Never rebuild E2E/relay/push from scratch.
 
+## Field findings
+
+- **2026-07-31 — Client isolation is the common case, not the edge case.** Sahith's Wi-Fi is university-managed (`.gsuprv` infrastructure): same SSID + same subnet, yet phone→laptop traffic silently dropped by policy. LAN-direct mode therefore fails on university/office/hotel/café networks entirely. Consequences: (1) Personal Hotspot is the documented workaround for LAN-mode demos and A7/A8 dogfooding on managed networks; (2) Phase B relay is not an "anywhere upgrade" but a requirement for many *at-home-network* cases too; (3) the app's connection UX must diagnose this (reach relay but not LAN → say "your network blocks device-to-device; using relay").
+
 ## Log
 
 - **2026-07-29 (PIVOT)** — Sahith set final scope: LongLeash is a STANDALONE end-to-end product — no Happy/Termius/Tailscale dependencies, every product surface ours. Adopted the archived Tether architecture + our own E2E relay as PLAN v2 (7 phases A–G, ~29 dev-days, $99/yr Apple at Phase C). Public-product bar unchanged: one command + one app + 5 minutes. Old compose-tools plan superseded; published artifact now outdated (refresh once v2 stabilizes). Checklist pruned: Tailscale/Termius/Happy dropped.
