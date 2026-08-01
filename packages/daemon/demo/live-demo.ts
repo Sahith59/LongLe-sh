@@ -148,6 +148,7 @@ function decide(id,verdict){
   const el=document.getElementById('c-'+id);if(el)el.remove()
   if(!inboxEl.querySelector('.card'))emptyEl.style.display='block'
 }
+function stopSession(id){ws.send(JSON.stringify({v:1,type:'stopSession',sessionId:id}))}
 function send(){
   const t=document.getElementById('prompt')
   if(!t.value.trim())return
@@ -208,6 +209,8 @@ const pageServer = createServer((req, res) => {
 
 
 
+const stopMaintenance = sessions.startMaintenance(60_000)
+
 async function main(): Promise<void> {
   await server.listen()
   pageServer.listen(PAGE_PORT, HOST, () => {
@@ -239,6 +242,7 @@ process.stdin.on('data', (chunk: string) => {
     console.log('>>> revoked')
   }
   if (key === 'q') {
+    stopMaintenance()
     void server.close().then(() => {
       pageServer.close()
       log.close()

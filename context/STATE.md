@@ -72,6 +72,10 @@ Bar for public v1: **one command on the laptop, one app on the phone, working in
 
 - **A3 pairing + auth — VERIFIED BY SAHITH 2026-07-31**, iPhone → MacBook over Wi-Fi (phone 192.168.1.207 → laptop 192.168.1.71), running the real `DeviceRegistry`: QR scan paired a real device, token auth succeeded repeatedly with lastSeen updates, and pressing `r` revoked it — revocation listener fired and the phone's token was rejected on the next request. Single-use-challenge replay rejection was not eyeballed in that run but is covered by automated tests and was verified via simulated requests.
 
+## Audit of A1-A6 (2026-08-01)
+
+Full report: `agents/2026-08-01-audit-a1-a6.md`. Seven flaws found; all critical/high ones fixed the same day (stop button, orphan reconciliation actually wired, expiry sweeper actually running, real audit log replacing a doc overclaim, concurrent-session cap, WS frame cap, session origin). Deferred with named phases: external agents are mirror-only (Phase D, platform limit), sessions not persisted across restart (F), token in query string (B, TLS), event-log retention (F), `sendMessage` steering (E).
+
 ## Field findings
 
 - **2026-08-01 — SECURITY HOLE FOUND BY HAND-TESTING, now fixed.** Live demo with real Claude: asked to create a file, it wrote to `/tmp/phone_test.txt`, OUTSIDE the sandbox, and the approval layer allowed it. The allowlist only governed where a session *started*, never where its tools *wrote*. Fixed: tools declaring a path have it resolved against the session cwd and checked against allowlisted roots; approvals carry `targetPath` + `outsideRoot` so the human sees the reach; `denyOutsideRoot` refuses outright for sandboxed use. Shell commands are deliberately not parsed (that would be security theatre) — they still go to a human who sees the full command. Verified against real Claude: escape attempt refused, no file created. Lesson: automated tests all passed while the product was insecure; only driving a real agent by hand exposed it.

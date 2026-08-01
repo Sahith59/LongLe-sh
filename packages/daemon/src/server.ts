@@ -64,7 +64,8 @@ export class LongLeashServer {
   }
 
   async listen(): Promise<{ port: number }> {
-    await this.app.register(websocket)
+    // Cap frames so one huge message cannot exhaust memory before validation runs.
+    await this.app.register(websocket, { options: { maxPayload: 1_000_000 } })
 
     this.app.get('/ws', { websocket: true }, (socket, request) => {
       const token = (request.query as { token?: string } | undefined)?.token ?? ''
@@ -254,9 +255,28 @@ export class LongLeashServer {
       return
     }
 
+    if (message.type === 'stopSession') {
+      void this.sessions.stopSession(message.sessionId, connection.deviceId).then((stopped) => {
+        this.send(connection.socket, {
+          v: PROTOCOL_VERSION,
+          type: 'ack',
+          of: 'stopSession',
+          sessionId: message.sessionId,
+          outcome: stopped ? 'stopped' : 'not-running',
+        })
+      })
+      return
+    }
+
     if (message.type === 'startSession') {
       void this.sessions
-        .startSession({ agent: message.agent, cwd: message.root, prompt: message.prompt })
+        .startSession({
+          agent: message.agent,
+          cwd: message.root,
+          prompt: message.prompt,
+          origin: 'phone',
+          actor: connection.deviceId,
+        })
         .then(({ sessionId }) => {
           this.send(connection.socket, {
             v: PROTOCOL_VERSION,

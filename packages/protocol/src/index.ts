@@ -5,6 +5,10 @@ export const PROTOCOL_VERSION = 1
 export const AgentKind = z.enum(['claude', 'gemini', 'codex', 'terminal'])
 export type AgentKind = z.infer<typeof AgentKind>
 
+/** Where a session came from, so a person can tell "I started this" from "this was already running". */
+export const SessionOrigin = z.enum(['phone', 'daemon', 'terminal', 'vscode', 'external'])
+export type SessionOrigin = z.infer<typeof SessionOrigin>
+
 export const Verdict = z.enum(['allow', 'deny'])
 export type Verdict = z.infer<typeof Verdict>
 
@@ -13,6 +17,7 @@ const sessionStartedPayload = z
     agent: AgentKind,
     cwd: z.string().min(1),
     title: z.string().optional(),
+    origin: SessionOrigin.optional(),
   })
   .passthrough()
 
@@ -36,6 +41,8 @@ const approvalRequestedPayload = z
     toolName: z.string().min(1),
     inputSummary: z.string(),
     expiresAt: z.number().int().positive(),
+    targetPath: z.string().optional(),
+    outsideRoot: z.boolean().optional(),
   })
   .passthrough()
 
@@ -127,11 +134,20 @@ const startSessionMessage = z
   })
   .passthrough()
 
+const stopSessionMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('stopSession'),
+    sessionId: z.string().min(1),
+  })
+  .passthrough()
+
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   subscribeMessage,
   decisionMessage,
   sendMessageMessage,
   startSessionMessage,
+  stopSessionMessage,
 ])
 export type ClientMessage = z.infer<typeof ClientMessageSchema>
 

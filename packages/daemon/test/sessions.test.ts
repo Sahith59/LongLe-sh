@@ -95,7 +95,9 @@ interface Harness {
 
 let clock = 1_000_000
 
-function makeHarness(opts: { approvalTtlMs?: number; denyOutsideRoot?: boolean } = {}): Harness {
+function makeHarness(
+  opts: { approvalTtlMs?: number; denyOutsideRoot?: boolean; maxConcurrentSessions?: number } = {},
+): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'longleash-sessions-'))
   const root = realpathSync(dir)
   const log = new EventLog(':memory:')
@@ -109,6 +111,9 @@ function makeHarness(opts: { approvalTtlMs?: number; denyOutsideRoot?: boolean }
     now: () => clock,
     approvalTtlMs: opts.approvalTtlMs ?? 24 * 60 * 60_000,
     ...(opts.denyOutsideRoot === undefined ? {} : { denyOutsideRoot: opts.denyOutsideRoot }),
+    ...(opts.maxConcurrentSessions === undefined
+      ? {}
+      : { maxConcurrentSessions: opts.maxConcurrentSessions }),
   })
   return {
     manager,
@@ -474,6 +479,121 @@ describe('activity feed for auto-approved tools', () => {
     expect(activity?.payload).toMatchObject({ toolName: 'Read', autoApproved: true })
     // It must NOT masquerade as something awaiting a decision.
     expect(h.manager.listPendingApprovals()).toHaveLength(0)
+  })
+})
+
+describe('hardening: stop, limits, origin, audit (audit A1-A6)', () => {
+  let h: Harness
+  beforeEach(() => {
+    clock = 1_000_000
+    h = makeHarness()
+  })
+  afterEach(() => {
+    rmSync(h.dir, { recursive: true, force: true })
+    h.log.close()
+    h.approvals.close()
+  })
+
+  it('a running agent can be stopped from the phone', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    h.agent.say('working…')
+    expect(await h.manager.stopSession(sessionId, 'dev_phone')).toBe(true)
+    await h.manager.waitForIdle(sessionId)
+    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('ended')
+  })
+
+  it('stopping releases an agent blocked on an approval instead of leaving it hanging', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    const pending = h.agent.requestTool('Write')
+    await h.manager.waitForApproval(sessionId)
+
+    await h.manager.stopSession(sessionId, 'dev_phone')
+    expect(await pending).toMatchObject({ behavior: 'deny' })
+    expect(h.manager.listPendingApprovals()).toHaveLength(0)
+  })
+
+  it('stopping an unknown or already-finished session is a no-op, not a crash', async () => {
+    expect(await h.manager.stopSession('ses_ghost', 'dev_phone')).toBe(false)
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    h.agent.finish()
+    await h.manager.waitForIdle(sessionId)
+    expect(await h.manager.stopSession(sessionId, 'dev_phone')).toBe(false)
+  })
+
+  it('refuses to exceed the concurrent session cap', async () => {
+    const capped = makeHarness({ maxConcurrentSessions: 2 })
+    try {
+      await capped.manager.startSession({ agent: 'claude', cwd: capped.root, prompt: 'one' })
+      await capped.manager.startSession({ agent: 'claude', cwd: capped.root, prompt: 'two' })
+      await expect(
+        capped.manager.startSession({ agent: 'claude', cwd: capped.root, prompt: 'three' }),
+      ).rejects.toThrow(/too many/i)
+    } finally {
+      rmSync(capped.dir, { recursive: true, force: true })
+      capped.log.close()
+      capped.approvals.close()
+    }
+  })
+
+  it('a finished session frees a slot', async () => {
+    const capped = makeHarness({ maxConcurrentSessions: 1 })
+    try {
+      const first = await capped.manager.startSession({ agent: 'claude', cwd: capped.root, prompt: 'one' })
+      capped.agent.finish()
+      await capped.manager.waitForIdle(first.sessionId)
+      await expect(
+        capped.manager.startSession({ agent: 'claude', cwd: capped.root, prompt: 'two' }),
+      ).resolves.toBeDefined()
+    } finally {
+      rmSync(capped.dir, { recursive: true, force: true })
+      capped.log.close()
+      capped.approvals.close()
+    }
+  })
+
+  it('records where a session came from so the phone can say "started from your phone"', async () => {
+    const { sessionId } = await h.manager.startSession({
+      agent: 'claude',
+      cwd: h.root,
+      prompt: 'x',
+      origin: 'phone',
+    })
+    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.origin).toBe('phone')
+    const started = eventsOf(h.log, sessionId)[0]
+    expect(started?.payload).toMatchObject({ origin: 'phone' })
+  })
+
+  it('defaults an unspecified origin to the daemon rather than guessing', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.origin).toBe('daemon')
+  })
+
+  it('writes an audit entry for every mutating operation, attributed to a device', async () => {
+    const { sessionId } = await h.manager.startSession({
+      agent: 'claude',
+      cwd: h.root,
+      prompt: 'x',
+      origin: 'phone',
+      actor: 'dev_phone1',
+    })
+    void h.agent.requestTool('Write')
+    await h.manager.waitForApproval(sessionId)
+    h.manager.decide(h.manager.listPendingApprovals()[0]!.approvalId, 'allow', 'dev_phone1')
+    await h.manager.stopSession(sessionId, 'dev_phone1')
+
+    const entries = h.manager.listAuditEntries()
+    expect(entries.map((e) => e.action)).toEqual(['session.start', 'approval.decide', 'session.stop'])
+    expect(entries.every((e) => e.actor === 'dev_phone1')).toBe(true)
+    expect(entries[0]?.detail).toContain(h.root)
+  })
+
+  it('audit entries survive so a stolen-device review is possible after the fact', async () => {
+    await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x', actor: 'dev_a' })
+    await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'y', actor: 'dev_b' })
+    const rows = h.approvals.rawDb.prepare('SELECT actor FROM audit ORDER BY at ASC').all() as {
+      actor: string
+    }[]
+    expect(rows.map((r) => r.actor)).toEqual(['dev_a', 'dev_b'])
   })
 })
 
