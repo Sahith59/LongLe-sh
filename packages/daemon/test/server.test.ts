@@ -587,13 +587,41 @@ describe('resilience', () => {
     await opened(ws)
     expect(h.server.connectionCount()).toBe(1)
 
-    // First tick marks it awaiting-pong; a second tick with no pong reaps it.
-    h.server.runHeartbeatTick()
     h.server.markAllAwaitingPong()
     h.server.runHeartbeatTick()
 
     await new Promise((r) => setTimeout(r, 100))
     expect(h.server.connectionCount()).toBe(0)
+  })
+
+  it('tolerates a phone that goes briefly quiet instead of dropping it', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+
+    // Two missed beats must not be fatal: mobile browsers throttle timers all the time.
+    h.server.runHeartbeatTick()
+    h.server.runHeartbeatTick()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(h.server.connectionCount()).toBe(1)
+    expect(ws.readyState).toBe(WebSocket.OPEN)
+    ws.close()
+  })
+
+  it('treats any inbound message as proof of life', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    h.server.runHeartbeatTick()
+    h.server.runHeartbeatTick()
+    h.server.runHeartbeatTick()
+
+    // The client speaks; that alone should clear the strikes against it.
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ses_x', fromCursor: 0 }))
+    await new Promise((r) => setTimeout(r, 80))
+
+    h.server.runHeartbeatTick()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(h.server.connectionCount()).toBe(1)
+    ws.close()
   })
 
   it('keeps a healthy connection alive across heartbeat ticks', async () => {

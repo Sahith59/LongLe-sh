@@ -23,6 +23,13 @@ export const CLOSE_REVOKED = 4403
 const MAX_BUFFERED_BYTES = 1_000_000
 const RESYNC_BUFFERED_BYTES = 100_000
 const HEARTBEAT_INTERVAL_MS = 30_000
+/**
+ * How many heartbeats a client may miss before it is presumed dead. A phone browser may
+ * legitimately go quiet for a moment — throttled timers, a backgrounded tab, a lull in the
+ * radio — and terminating on the first miss makes the app reconnect endlessly, which looks
+ * like the product losing your sessions.
+ */
+const MISSED_HEARTBEATS_BEFORE_DROP = 3
 
 export interface ServerOptions {
   eventLog: EventLog
@@ -43,8 +50,8 @@ interface Connection {
   sessions: Set<string>
   /** True once buffering blew the watermark; cleared by a resync gap when the socket drains. */
   desynced: boolean
-  /** Heartbeat liveness: a tick with this still true means the peer never ponged. */
-  awaitingPong: boolean
+  /** Consecutive heartbeats with no sign of life; reset by a pong or any inbound message. */
+  missedHeartbeats: number
 }
 
 export class LongLeashServer {
@@ -144,12 +151,13 @@ export class LongLeashServer {
    */
   runHeartbeatTick(): void {
     for (const connection of [...this.connections]) {
-      if (connection.awaitingPong) {
+      connection.missedHeartbeats += 1
+      if (connection.missedHeartbeats > MISSED_HEARTBEATS_BEFORE_DROP) {
+        this.log(`dropping unresponsive connection for ${connection.deviceId}`)
         connection.socket.terminate()
         this.dropConnection(connection)
         continue
       }
-      connection.awaitingPong = true
       try {
         connection.socket.ping()
       } catch {
@@ -159,9 +167,11 @@ export class LongLeashServer {
     }
   }
 
-  /** Test seam: force every connection into the "never ponged" state. */
+  /** Test seam: simulate a peer that has gone silent. */
   markAllAwaitingPong(): void {
-    for (const connection of this.connections) connection.awaitingPong = true
+    for (const connection of this.connections) {
+      connection.missedHeartbeats = MISSED_HEARTBEATS_BEFORE_DROP
+    }
   }
 
   desyncedCount(): number {
@@ -212,7 +222,7 @@ export class LongLeashServer {
       deviceId,
       sessions: new Set(),
       desynced: false,
-      awaitingPong: false,
+      missedHeartbeats: 0,
     }
     this.connections.add(connection)
     const forDevice = this.byDevice.get(deviceId) ?? new Set<Connection>()
@@ -222,10 +232,12 @@ export class LongLeashServer {
     socket.on('close', () => this.dropConnection(connection))
     socket.on('error', () => this.dropConnection(connection))
     socket.on('pong', () => {
-      connection.awaitingPong = false
+      connection.missedHeartbeats = 0
     })
 
     socket.on('message', (raw: Buffer) => {
+      // Traffic is proof of life, whatever the browser does about ping frames.
+      connection.missedHeartbeats = 0
       this.handleMessage(connection, raw.toString())
     })
 

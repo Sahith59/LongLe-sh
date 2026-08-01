@@ -124,3 +124,4 @@ button.link {
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
 }
 .composer.sticky textarea { min-height: 56px; margin-top: 0; }
+.sessionrow .pill.ended, .sessionrow .pill.errored { opacity: 0.8; }

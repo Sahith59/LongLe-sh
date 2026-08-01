@@ -128,7 +128,10 @@ export default function App() {
   }
 
   const snapshot = store.getState()
-  const sessions = Object.values(snapshot.sessions).reverse()
+  const allSessions = Object.values(snapshot.sessions).reverse()
+  // History persists across daemon restarts, so finished work must not look like running agents.
+  const active = allSessions.filter((s) => s.status === 'running' || s.status === 'waiting')
+  const past = allSessions.filter((s) => s.status === 'ended' || s.status === 'errored')
   const openSession = openSessionId ? snapshot.sessions[openSessionId] : undefined
   const connected = state === 'connected'
 
@@ -209,11 +212,11 @@ export default function App() {
       </section>
 
       <section>
-        <h2>Sessions</h2>
-        {sessions.length === 0 ? (
-          <p className="muted pad">No sessions yet.</p>
+        <h2>Active {active.length > 0 ? `(${active.length})` : ''}</h2>
+        {active.length === 0 ? (
+          <p className="muted pad">Nothing running.</p>
         ) : (
-          sessions.map((session) => (
+          active.map((session) => (
             <SessionRow
               key={session.sessionId}
               session={session}
@@ -222,11 +225,28 @@ export default function App() {
             />
           ))
         )}
-        <p className="muted small pad footnote">
-          Only sessions started through LongLeash appear here. Ones you started yourself in a
-          terminal or in the VS Code chat panel are not visible yet.
-        </p>
       </section>
+
+      {past.length > 0 ? (
+        <section>
+          <h2>Earlier ({past.length})</h2>
+          {past.slice(0, 20).map((session) => (
+            <SessionRow
+              key={session.sessionId}
+              session={session}
+              pending={0}
+              onOpen={() => setOpenSessionId(session.sessionId)}
+            />
+          ))}
+        </section>
+      ) : null}
+
+      <p className="muted small pad footnote">
+        Only sessions started through LongLeash appear here. Ones you started yourself in a
+        terminal or in the VS Code chat panel are not visible yet — that is coming in a later
+        phase. Finished sessions stay listed as history; restarting the daemon on your laptop
+        ends any that were still running.
+      </p>
     </>
   )
 }
