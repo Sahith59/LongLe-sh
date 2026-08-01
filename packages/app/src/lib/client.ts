@@ -59,6 +59,9 @@ export interface Hello {
 export interface FolderHit {
   path: string
   label: string
+  kind: 'folder' | 'file'
+  /** For a file, the folder an agent would actually work in. */
+  parent?: string
 }
 
 export interface ClientCallbacks {

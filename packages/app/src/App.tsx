@@ -279,10 +279,11 @@ function NewSessionForm({
   }
 
   if (chosen) {
+    const workingIn = chosen.kind === 'file' ? (chosen.parent ?? chosen.label) : chosen.label
     return (
       <>
         <p className="chosen">
-          <span className="muted small">Working in</span> <code>{chosen.label}</code>{' '}
+          <span className="muted small">Working in</span> <code>{workingIn}</code>{' '}
           <button
             className="link"
             onClick={() => {
@@ -293,6 +294,11 @@ function NewSessionForm({
             change
           </button>
         </p>
+        {chosen.kind === 'file' ? (
+          <p className="muted small">
+            Claude will work in that folder, on <code>{fileName(chosen.label)}</code>.
+          </p>
+        ) : null}
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -301,7 +307,12 @@ function NewSessionForm({
         />
         <button
           onClick={() => {
-            if (onStart(chosen.path, prompt.trim())) setPrompt('')
+            const dir = chosen.kind === 'file' ? parentPath(chosen.path) : chosen.path
+            const task =
+              chosen.kind === 'file'
+                ? `In the file ${fileName(chosen.label)}: ${prompt.trim()}`
+                : prompt.trim()
+            if (onStart(dir, task)) setPrompt('')
           }}
           disabled={!prompt.trim() || !connected}
         >
@@ -316,7 +327,7 @@ function NewSessionForm({
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Which folder? e.g. FD_Engineer, or test in downloads"
+        placeholder="Folder or file — e.g. FD_Engineer, or test in downloads"
         aria-label="find a folder"
       />
       {folders.length === 0 ? (
@@ -328,7 +339,7 @@ function NewSessionForm({
           {folders.map((folder) => (
             <li key={folder.path}>
               <button className="folder" onClick={() => setChosen(folder)}>
-                {folder.label}
+                <span className="kind">{folder.kind === 'file' ? '📄' : '📁'}</span> {folder.label}
               </button>
             </li>
           ))}
@@ -501,6 +512,14 @@ function ApprovalCard({
       </div>
     </article>
   )
+}
+
+function fileName(label: string): string {
+  return label.split('/').filter(Boolean).slice(-1)[0] ?? label
+}
+
+function parentPath(path: string): string {
+  return path.split('/').slice(0, -1).join('/')
 }
 
 /** Long absolute paths are unreadable on a phone; show the tail that identifies the project. */

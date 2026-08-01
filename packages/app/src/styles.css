@@ -134,3 +134,4 @@ button.folder {
 button.folder:active { background: var(--raised); }
 .chosen { margin: 6px 0 0; font-size: 14px; }
 .chosen code { background: #141416; padding: 3px 7px; border-radius: 5px; font-size: 13px; }
+button.folder .kind { opacity: 0.7; margin-right: 4px; }

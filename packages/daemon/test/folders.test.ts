@@ -67,8 +67,10 @@ describe('finding a folder by name', () => {
 })
 
 describe('what it refuses to offer', () => {
-  it('never offers files, only folders', () => {
-    expect(index().search('notes').map((h) => h.path)).not.toContain(join(root, 'notes.txt'))
+  it('offers files but marks them as files, so the app can show what will be worked on', () => {
+    const hit = index().search('notes').find((h) => h.path === join(root, 'notes.txt'))
+    expect(hit?.kind).toBe('file')
+    expect(hit?.parent).toBeTruthy()
   })
 
   it('skips noise directories that are never a project', () => {
