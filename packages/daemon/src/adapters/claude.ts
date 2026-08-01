@@ -1,4 +1,4 @@
-import { query } from '@anthropic-ai/claude-agent-sdk'
+import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentFactory, AgentRunRequest, AgentStreamMessage } from '../agent.js'
 
 /**
@@ -43,8 +43,37 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
     const reportedToolUseIds = new Set<string>()
     const toolKey = (name: string, input: unknown) => `${name}:${JSON.stringify(input ?? {})}`
 
+    // Streaming input keeps the session open between turns: the generator only ends when the
+    // session is stopped, so follow-up messages continue the same conversation and transcript.
+    const pending: string[] = [request.prompt]
+    let wake: (() => void) | null = null
+    let closed = false
+    const push = (text: string) => {
+      pending.push(text)
+      wake?.()
+      wake = null
+    }
+
+    async function* input(): AsyncGenerator<SDKUserMessage> {
+      for (;;) {
+        while (pending.length > 0) {
+          const text = pending.shift() as string
+          yield {
+            type: 'user',
+            message: { role: 'user', content: text },
+            parent_tool_use_id: null,
+            session_id: '',
+          } as unknown as SDKUserMessage
+        }
+        if (closed) return
+        await new Promise<void>((resolve) => {
+          wake = resolve
+        })
+      }
+    }
+
     const run = query({
-      prompt: request.prompt,
+      prompt: input(),
       options: {
         // Pinned per session. Spike S0 showed an agent writing outside its stated cwd when
         // this is not enforced, and resume is keyed to cwd, so it must never drift.
@@ -96,6 +125,11 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
 
     async function* mapStream(): AsyncGenerator<AgentStreamMessage> {
       for await (const message of run) {
+        if (message.type === 'result') {
+          // A turn finished; the human may reply, so do not end the session here.
+          yield { type: 'turn-end' }
+          continue
+        }
         if (message.type !== 'assistant') continue
         const content = (message as { message?: { content?: unknown[] } }).message?.content ?? []
         for (const rawBlock of content) {
@@ -114,7 +148,11 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
 
     return {
       events: mapStream(),
+      sendMessage: (text: string) => push(text),
       interrupt: async () => {
+        closed = true
+        wake?.()
+        wake = null
         await run.interrupt?.()
       },
     }

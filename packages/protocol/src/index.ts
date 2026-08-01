@@ -30,7 +30,7 @@ const sessionStatusPayload = z
 
 const streamDeltaPayload = z
   .object({
-    kind: z.enum(['text', 'tool', 'thinking']),
+    kind: z.enum(['text', 'tool', 'thinking', 'user']),
     text: z.string(),
   })
   .passthrough()

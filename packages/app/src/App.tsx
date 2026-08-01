@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createStore, type PendingApproval, type SessionView } from './lib/store.js'
+import { approvalsFor, createStore, type PendingApproval, type SessionView } from './lib/store.js'
 import {
   checkReachable,
   connect,
@@ -20,6 +20,13 @@ const ORIGIN_LABEL: Record<string, string> = {
   unknown: 'origin unknown',
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  running: 'working',
+  waiting: 'waiting for you',
+  ended: 'finished',
+  errored: 'failed',
+}
+
 export default function App() {
   const store = useMemo(() => createStore(), [])
   const [, forceRender] = useState(0)
@@ -27,10 +34,11 @@ export default function App() {
   const [token, setToken] = useState<string | null>(() => storedToken())
   const [pairError, setPairError] = useState<string | null>(null)
   const [diagnostic, setDiagnostic] = useState<string | null>(null)
-  const [prompt, setPrompt] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [roots, setRoots] = useState<string[]>([])
   const [root, setRoot] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [subdir, setSubdir] = useState('')
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null)
   const clientRef = useRef<Client | null>(null)
 
   useEffect(() => {
@@ -58,7 +66,6 @@ export default function App() {
       onState: setState,
       onHello: (hello: Hello) => {
         setRoots(hello.roots)
-        // Preselect when there is nothing to choose, so the common case is one tap.
         setRoot((current) => current || hello.roots[0] || '')
       },
       onError: setError,
@@ -88,21 +95,11 @@ export default function App() {
     [store],
   )
 
-  const start = useCallback(() => {
-    if (!prompt.trim() || !root.trim()) return
-    setError(null)
-    // Keep the text until it is actually on the wire — losing a typed task is unforgivable.
-    const sent = clientRef.current?.startSession(root.trim(), prompt.trim())
-    if (sent) setPrompt('')
-  }, [prompt, root])
-
   if (!token) {
     return (
       <main className="pane">
         <h1>LongLeash</h1>
-        <p className="muted">
-          Scan the QR code shown on your laptop to pair this device. The link works once.
-        </p>
+        <p className="muted">Scan the QR code on your laptop to pair this device. The link works once.</p>
         {pairError ? <p className="bad">Pairing failed: {pairError}</p> : null}
       </main>
     )
@@ -132,22 +129,50 @@ export default function App() {
 
   const snapshot = store.getState()
   const sessions = Object.values(snapshot.sessions).reverse()
+  const openSession = openSessionId ? snapshot.sessions[openSessionId] : undefined
+  const connected = state === 'connected'
 
-  return (
+  const banners = (
     <>
-      <header>
-        <strong>LongLeash</strong>
-        <span className={state === 'connected' ? 'ok' : 'warn'}>
-          {state === 'connected' ? 'connected' : 'reconnecting…'}
-        </span>
-      </header>
-
       {diagnostic ? <p className="diagnostic">{diagnostic}</p> : null}
       {error ? (
         <p className="errorbar" onClick={() => setError(null)}>
           {error} <span className="muted small">(tap to dismiss)</span>
         </p>
       ) : null}
+    </>
+  )
+
+  // Focused view: one conversation, its approvals, and a box to keep talking to it.
+  if (openSession) {
+    return (
+      <>
+        <header>
+          <button className="link" onClick={() => setOpenSessionId(null)}>
+            ‹ All sessions
+          </button>
+          <span className={connected ? 'ok' : 'warn'}>{connected ? 'connected' : 'reconnecting…'}</span>
+        </header>
+        {banners}
+        <SessionDetail
+          session={openSession}
+          approvals={approvalsFor(snapshot, openSession.sessionId)}
+          connected={connected}
+          onDecide={decide}
+          onStop={() => clientRef.current?.stopSession(openSession.sessionId)}
+          onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
+        />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <header>
+        <strong>LongLeash</strong>
+        <span className={connected ? 'ok' : 'warn'}>{connected ? 'connected' : 'reconnecting…'}</span>
+      </header>
+      {banners}
 
       <section>
         <h2>Waiting on you {snapshot.approvals.length > 0 ? `(${snapshot.approvals.length})` : ''}</h2>
@@ -155,40 +180,31 @@ export default function App() {
           <p className="muted pad">Nothing needs a decision right now.</p>
         ) : (
           snapshot.approvals.map((approval) => (
-            <ApprovalCard key={approval.approvalId} approval={approval} onDecide={decide} />
+            <ApprovalCard
+              key={approval.approvalId}
+              approval={approval}
+              onDecide={decide}
+              onOpen={() => setOpenSessionId(approval.sessionId)}
+            />
           ))
         )}
       </section>
 
       <section>
-        <h2>Start something</h2>
+        <h2>Start a new session</h2>
         <div className="composer">
-          {roots.length === 0 ? (
-            <p className="muted small">
-              This daemon has no project directories configured, so nothing can be started.
-            </p>
-          ) : roots.length === 1 ? (
-            <p className="muted small">
-              Working in <code>{shortPath(roots[0] ?? '')}</code>
-            </p>
-          ) : (
-            <select value={root} onChange={(e) => setRoot(e.target.value)} aria-label="project">
-              {roots.map((candidate) => (
-                <option key={candidate} value={candidate}>
-                  {shortPath(candidate)}
-                </option>
-              ))}
-            </select>
-          )}
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Tell Claude what to do…"
-            aria-label="task"
+          <NewSessionForm
+            roots={roots}
+            root={root}
+            subdir={subdir}
+            connected={connected}
+            onRootChange={setRoot}
+            onSubdirChange={setSubdir}
+            onStart={(dir, prompt) => {
+              setError(null)
+              return clientRef.current?.startSession(dir, prompt) ?? false
+            }}
           />
-          <button onClick={start} disabled={!prompt.trim() || !root.trim() || state !== 'connected'}>
-            {state === 'connected' ? 'Send to Claude' : 'Waiting for your laptop…'}
-          </button>
         </div>
       </section>
 
@@ -198,10 +214,11 @@ export default function App() {
           <p className="muted pad">No sessions yet.</p>
         ) : (
           sessions.map((session) => (
-            <SessionCard
+            <SessionRow
               key={session.sessionId}
               session={session}
-              onStop={() => clientRef.current?.stopSession(session.sessionId)}
+              pending={approvalsFor(snapshot, session.sessionId).length}
+              onOpen={() => setOpenSessionId(session.sessionId)}
             />
           ))
         )}
@@ -214,18 +231,191 @@ export default function App() {
   )
 }
 
-/** Long absolute paths are unreadable on a phone; show the tail that identifies the project. */
-function shortPath(path: string): string {
-  const parts = path.split('/').filter(Boolean)
-  return parts.length <= 2 ? path : `…/${parts.slice(-2).join('/')}`
+function NewSessionForm({
+  roots,
+  root,
+  subdir,
+  connected,
+  onRootChange,
+  onSubdirChange,
+  onStart,
+}: {
+  roots: string[]
+  root: string
+  subdir: string
+  connected: boolean
+  onRootChange: (value: string) => void
+  onSubdirChange: (value: string) => void
+  onStart: (dir: string, prompt: string) => boolean
+}) {
+  const [prompt, setPrompt] = useState('')
+  const target = subdir.trim() ? `${root.replace(/\/$/, '')}/${subdir.trim().replace(/^\//, '')}` : root
+
+  if (roots.length === 0) {
+    return <p className="muted small">No project directories are configured on the laptop.</p>
+  }
+
+  return (
+    <>
+      {roots.length > 1 ? (
+        <select value={root} onChange={(e) => onRootChange(e.target.value)} aria-label="project">
+          {roots.map((candidate) => (
+            <option key={candidate} value={candidate}>
+              {shortPath(candidate)}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <p className="muted small">
+          Working in <code>{shortPath(root)}</code>
+        </p>
+      )}
+      <input
+        value={subdir}
+        onChange={(e) => onSubdirChange(e.target.value)}
+        placeholder="subfolder (optional, e.g. packages/api)"
+        aria-label="subfolder"
+      />
+      <textarea
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        placeholder="Tell Claude what to do…"
+        aria-label="task"
+      />
+      <button
+        onClick={() => {
+          if (onStart(target, prompt.trim())) setPrompt('')
+        }}
+        disabled={!prompt.trim() || !root || !connected}
+      >
+        {connected ? 'Start session' : 'Waiting for your laptop…'}
+      </button>
+    </>
+  )
+}
+
+function SessionRow({
+  session,
+  pending,
+  onOpen,
+}: {
+  session: SessionView
+  pending: number
+  onOpen: () => void
+}) {
+  const preview = session.output.trim().slice(-140)
+  return (
+    <button className="card sessionrow" onClick={onOpen}>
+      <div className="row spread">
+        <h3>{session.title || session.sessionId}</h3>
+        <span className={`pill ${session.status}`}>{STATUS_LABEL[session.status] ?? session.status}</span>
+      </div>
+      <p className="muted small">
+        {shortPath(session.cwd)} · {ORIGIN_LABEL[session.origin] ?? session.origin}
+      </p>
+      {pending > 0 ? <p className="needsyou">{pending} waiting on you</p> : null}
+      {preview ? <p className="preview">{preview}</p> : null}
+    </button>
+  )
+}
+
+function SessionDetail({
+  session,
+  approvals,
+  connected,
+  onDecide,
+  onStop,
+  onSend,
+}: {
+  session: SessionView
+  approvals: PendingApproval[]
+  connected: boolean
+  onDecide: (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => void
+  onStop: () => void
+  onSend: (text: string) => boolean
+}) {
+  const [message, setMessage] = useState('')
+  const live = session.status === 'running' || session.status === 'waiting'
+  const outputRef = useRef<HTMLPreElement | null>(null)
+
+  useEffect(() => {
+    const node = outputRef.current
+    if (node) node.scrollTop = node.scrollHeight
+  }, [session.output])
+
+  return (
+    <>
+      <section>
+        <div className="detailhead">
+          <h3>{session.title || session.sessionId}</h3>
+          <p className="muted small">
+            {shortPath(session.cwd)} · {ORIGIN_LABEL[session.origin] ?? session.origin} ·{' '}
+            {STATUS_LABEL[session.status] ?? session.status}
+          </p>
+          {live ? (
+            <button className="secondary small" onClick={onStop}>
+              Stop this agent
+            </button>
+          ) : null}
+        </div>
+      </section>
+
+      {approvals.length > 0 ? (
+        <section>
+          <h2>Waiting on you</h2>
+          {approvals.map((approval) => (
+            <ApprovalCard key={approval.approvalId} approval={approval} onDecide={onDecide} />
+          ))}
+        </section>
+      ) : null}
+
+      <section>
+        <h2>Conversation</h2>
+        <pre className="output tall" ref={outputRef}>
+          {session.output || '…'}
+        </pre>
+        {session.error ? <p className="bad small pad">{session.error}</p> : null}
+        {session.activity.length > 0 ? (
+          <p className="muted small pad">
+            auto-approved: {session.activity.slice(-4).map((a) => a.toolName).join(', ')}
+          </p>
+        ) : null}
+      </section>
+
+      <div className="composer sticky">
+        {live ? (
+          <>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Reply to this session…"
+              aria-label="reply"
+            />
+            <button
+              onClick={() => {
+                if (onSend(message.trim())) setMessage('')
+              }}
+              disabled={!message.trim() || !connected}
+            >
+              Send
+            </button>
+          </>
+        ) : (
+          <p className="muted small">This session has finished. Start a new one to keep going.</p>
+        )}
+      </div>
+    </>
+  )
 }
 
 function ApprovalCard({
   approval,
   onDecide,
+  onOpen,
 }: {
   approval: PendingApproval
   onDecide: (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => void
+  onOpen?: () => void
 }) {
   const [reply, setReply] = useState('')
   return (
@@ -236,6 +426,11 @@ function ApprovalCard({
         <p className="bad">
           This reaches outside your project directory: <code>{approval.targetPath}</code>
         </p>
+      ) : null}
+      {onOpen ? (
+        <button className="link" onClick={onOpen}>
+          open this session ›
+        </button>
       ) : null}
       <input
         value={reply}
@@ -255,32 +450,8 @@ function ApprovalCard({
   )
 }
 
-function SessionCard({ session, onStop }: { session: SessionView; onStop: () => void }) {
-  return (
-    <article className="card session">
-      <div className="row spread">
-        <div>
-          <h3>{session.title || session.sessionId}</h3>
-          <p className="muted small">
-            {session.cwd} · {ORIGIN_LABEL[session.origin] ?? session.origin}
-          </p>
-        </div>
-        <div className="right">
-          <span className={`pill ${session.status}`}>{session.status}</span>
-          {session.status === 'running' ? (
-            <button className="secondary small" onClick={onStop}>
-              Stop
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {session.error ? <p className="bad small">{session.error}</p> : null}
-      {session.activity.length > 0 ? (
-        <p className="muted small">
-          auto-approved: {session.activity.slice(-3).map((a) => a.toolName).join(', ')}
-        </p>
-      ) : null}
-      <pre className="output">{session.output || '…'}</pre>
-    </article>
-  )
+/** Long absolute paths are unreadable on a phone; show the tail that identifies the project. */
+function shortPath(path: string): string {
+  const parts = path.split('/').filter(Boolean)
+  return parts.length <= 2 ? path : `…/${parts.slice(-2).join('/')}`
 }

@@ -80,6 +80,23 @@ Full report: `agents/2026-08-01-audit-a1-a6.md`. Seven flaws found; all critical
 
 **Externally-started sessions are addressable after all.** Verified: a `PreToolUse` hook in `~/.claude/settings.json` fires for EVERY Claude Code session on the machine (CLI and VS Code extension) and can return allow/deny; all sessions write live transcripts to `~/.claude/projects/**/*.jsonl` that any process may tail. So LongLeash can list and gate sessions it did not start. Constraint: hooks are timeout-bounded (~600 s default), so foreign-session approvals cannot park indefinitely the way our own do — the UI must say so. New **Phase D1 (Attach Mode)** added to PLAN.md, gated on spike **D0**. Still impossible: injecting a prompt into a foreign running session; driving the VS Code chat webview. Full analysis: `agents/2026-08-01-external-sessions-feasibility.md`.
 
+## Dogfood round 2 (2026-08-01) — the interaction model was wrong
+
+Sahith: "why is each message a new session?" Correct and fundamental. The composer only ever
+called `startSession`, so every message spawned a one-shot agent — not a conversation. Fixed as
+slice **A9**:
+- **Multi-turn sessions.** The Claude adapter now drives the SDK in streaming-input mode: an
+  async generator feeds user messages, so a session stays open between turns. A finished turn
+  emits `session.status: waiting` instead of ending the session. `sendMessage` delivers
+  follow-ups to the same agent and the same transcript. Verified against real Claude: it
+  remembered a value across turns and used it three turns later.
+- **Session focus.** Tapping a session opens a detail view with its own conversation, its own
+  approvals, a reply box, and a stop button; the list shows status, origin, pending-approval
+  count and a preview.
+- **Directory choice restored.** A picker when several roots exist, plus an optional subfolder
+  field, so a single-root daemon no longer traps the user.
+- **Approvals appear per session** as well as in the global inbox.
+
 ## Dogfood findings (2026-08-01, Sahith on his iPhone)
 
 First real use of the app found four defects, all fixed the same session:

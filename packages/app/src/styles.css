@@ -97,3 +97,30 @@ select {
 }
 .footnote { margin-top: 14px; opacity: 0.75; }
 .composer code { background: #141416; padding: 2px 6px; border-radius: 5px; font-size: 13px; }
+
+button.link {
+  background: none; color: var(--accent); padding: 0; font-size: 14px; font-weight: 600;
+}
+.sessionrow {
+  display: block; width: calc(100% - 24px); text-align: left; background: var(--raised);
+  color: var(--text); font: inherit; padding: 14px; border: 1px solid var(--line);
+}
+.sessionrow:active { background: #3a3a3c; }
+.sessionrow h3 { margin: 0; }
+.needsyou {
+  color: var(--warn); font-size: 13px; font-weight: 600; margin: 8px 0 0;
+}
+.preview {
+  margin: 8px 0 0; font: 12.5px/1.4 ui-monospace, Menlo, monospace; color: #98989f;
+  max-height: 3.2em; overflow: hidden;
+}
+.pill.waiting { background: #3a2f00; color: var(--warn); }
+.detailhead { padding: 14px 16px 0; }
+.detailhead h3 { margin: 0 0 4px; font-size: 18px; }
+.detailhead button { margin-top: 10px; }
+.output.tall { max-height: 55vh; margin: 0 12px; }
+.composer.sticky {
+  position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--line);
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+}
+.composer.sticky textarea { min-height: 56px; margin-top: 0; }

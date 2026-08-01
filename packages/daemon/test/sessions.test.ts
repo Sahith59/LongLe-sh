@@ -16,14 +16,24 @@ class FakeAgent {
   private finished = false
   private failure: Error | null = null
 
+  /** Follow-up messages the session delivered to this agent. */
+  readonly received: string[] = []
+
   readonly factory: AgentFactory = (request) => {
     this.request = request
     return {
       events: this.iterate(),
+      sendMessage: (text: string) => {
+        this.received.push(text)
+      },
       interrupt: async () => {
         this.finish()
       },
     }
+  }
+
+  endTurn(): void {
+    this.push({ type: 'turn-end' })
   }
 
   get cwd(): string {
@@ -594,6 +604,94 @@ describe('hardening: stop, limits, origin, audit (audit A1-A6)', () => {
       actor: string
     }[]
     expect(rows.map((r) => r.actor)).toEqual(['dev_a', 'dev_b'])
+  })
+})
+
+describe('conversations: a session is a dialogue, not a one-shot', () => {
+  let h: Harness
+  beforeEach(() => {
+    clock = 1_000_000
+    h = makeHarness()
+  })
+  afterEach(() => {
+    rmSync(h.dir, { recursive: true, force: true })
+    h.log.close()
+    h.approvals.close()
+  })
+
+  it('a finished turn leaves the session alive and waiting, not ended', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'hi' })
+    h.agent.say('hello there')
+    h.agent.endTurn()
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('waiting')
+    const types = typesOf(h.log, sessionId)
+    expect(types).not.toContain('session.ended')
+    expect(types).toContain('session.status')
+  })
+
+  it('a follow-up reaches the same agent and keeps one transcript', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'hi' })
+    h.agent.say('first answer')
+    h.agent.endTurn()
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(h.manager.sendMessage(sessionId, 'now do the next thing', 'dev_phone')).toBe(true)
+    expect(h.agent.received).toEqual(['now do the next thing'])
+
+    h.agent.say('second answer')
+    await new Promise((r) => setTimeout(r, 20))
+    const text = eventsOf(h.log, sessionId)
+      .filter((e) => e.type === 'stream.delta')
+      .map((e) => (e.payload as { text: string }).text)
+      .join('')
+    // One conversation: both answers and the human's message live in the same session.
+    expect(text).toContain('first answer')
+    expect(text).toContain('now do the next thing')
+    expect(text).toContain('second answer')
+    expect(h.manager.listSessions()).toHaveLength(1)
+  })
+
+  it('shows the human message in the transcript so the phone reads like a conversation', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'hi' })
+    h.manager.sendMessage(sessionId, 'follow up', 'dev_phone')
+    const userDelta = eventsOf(h.log, sessionId).find(
+      (e) => e.type === 'stream.delta' && (e.payload as { kind: string }).kind === 'user',
+    )
+    expect((userDelta?.payload as { text: string }).text).toContain('follow up')
+  })
+
+  it('refuses an empty follow-up', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'hi' })
+    expect(h.manager.sendMessage(sessionId, '   ', 'dev_phone')).toBe(false)
+    expect(h.agent.received).toHaveLength(0)
+  })
+
+  it('refuses a follow-up to an unknown or finished session instead of losing it silently', async () => {
+    expect(h.manager.sendMessage('ses_ghost', 'hello?', 'dev_phone')).toBe(false)
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'hi' })
+    h.agent.finish()
+    await h.manager.waitForIdle(sessionId)
+    expect(h.manager.sendMessage(sessionId, 'too late', 'dev_phone')).toBe(false)
+  })
+
+  it('a waiting session can still be stopped', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'hi' })
+    h.agent.endTurn()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(await h.manager.stopSession(sessionId, 'dev_phone')).toBe(true)
+  })
+
+  it('records follow-ups in the audit trail', async () => {
+    const { sessionId } = await h.manager.startSession({
+      agent: 'claude',
+      cwd: h.root,
+      prompt: 'hi',
+      actor: 'dev_phone',
+    })
+    h.manager.sendMessage(sessionId, 'keep going', 'dev_phone')
+    expect(h.manager.listAuditEntries().map((e) => e.action)).toContain('message.send')
   })
 })
 

@@ -11,6 +11,8 @@ export type AgentStreamMessage =
   | { type: 'text'; text: string }
   | { type: 'thinking'; text: string }
   | { type: 'tool'; text: string }
+  /** The agent finished replying and is waiting for the human — the session stays alive. */
+  | { type: 'turn-end' }
 
 export interface AgentRunRequest {
   sessionId: string
@@ -26,6 +28,8 @@ export interface AgentRunRequest {
 export interface AgentRunHandle {
   events: AsyncIterable<AgentStreamMessage>
   interrupt: () => Promise<void>
+  /** Continue the conversation. A session is a dialogue, not a one-shot command. */
+  sendMessage: (text: string) => void
 }
 
 export type AgentFactory = (request: AgentRunRequest) => AgentRunHandle

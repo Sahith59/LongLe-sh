@@ -310,6 +310,26 @@ export class LongLeashServer {
       return
     }
 
+    if (message.type === 'sendMessage') {
+      const delivered = this.sessions.sendMessage(message.sessionId, message.text, connection.deviceId)
+      this.send(connection.socket, {
+        v: PROTOCOL_VERSION,
+        type: 'ack',
+        of: 'sendMessage',
+        sessionId: message.sessionId,
+        outcome: delivered ? 'sent' : 'not-running',
+      })
+      if (!delivered) {
+        this.send(connection.socket, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          code: 'session-not-running',
+          message: 'That session has finished — start a new one.',
+        })
+      }
+      return
+    }
+
     if (message.type === 'stopSession') {
       void this.sessions.stopSession(message.sessionId, connection.deviceId).then((stopped) => {
         this.send(connection.socket, {

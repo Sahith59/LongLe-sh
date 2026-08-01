@@ -8,7 +8,7 @@ import { AgentKind, SessionOrigin, type SessionEvent } from '@longleash/protocol
 
 const DEFAULT_APPROVAL_TTL_MS = 24 * 60 * 60_000
 
-export type SessionStatus = 'running' | 'ended' | 'errored'
+export type SessionStatus = 'running' | 'waiting' | 'ended' | 'errored'
 export type DecisionOutcome = 'decided' | 'already-decided' | 'unknown'
 
 export class SessionError extends Error {
@@ -141,7 +141,9 @@ export class SessionManager {
   readonly orphansClosed: number = 0
 
   async startSession(input: StartSessionInput): Promise<{ sessionId: string }> {
-    const running = [...this.sessions.values()].filter((s) => s.status === 'running').length
+    const running = [...this.sessions.values()].filter(
+      (s) => s.status === 'running' || s.status === 'waiting',
+    ).length
     if (running >= this.maxConcurrentSessions) {
       throw new SessionError(
         'too-many-sessions',
@@ -256,12 +258,29 @@ export class SessionManager {
   }
 
   /**
+   * Continue an existing conversation. Without this every message would start a new session,
+   * which is not a conversation at all.
+   */
+  sendMessage(sessionId: string, text: string, actor: string): boolean {
+    const trimmed = text.trim()
+    if (trimmed.length === 0) return false
+    const session = this.sessions.get(sessionId)
+    if (!session || (session.status !== 'running' && session.status !== 'waiting')) return false
+    this.audit(actor, 'message.send', `${sessionId}: ${trimmed.slice(0, 80)}`)
+    session.status = 'running'
+    this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${trimmed}\n` } })
+    this.emit(sessionId, { type: 'session.status', payload: { status: 'running' } })
+    session.handle.sendMessage(trimmed)
+    return true
+  }
+
+  /**
    * Stop a running agent. Without this a remote control has no brake: denying the next
    * approval does nothing to an agent that never asks for one again.
    */
   async stopSession(sessionId: string, actor: string): Promise<boolean> {
     const session = this.sessions.get(sessionId)
-    if (!session || session.status !== 'running') return false
+    if (!session || (session.status !== 'running' && session.status !== 'waiting')) return false
     this.audit(actor, 'session.stop', sessionId)
     try {
       await session.handle.interrupt()
@@ -405,9 +424,15 @@ export class SessionManager {
   private async consume(session: LiveSession): Promise<void> {
     try {
       for await (const message of session.handle.events) {
+        if (message.type === 'turn-end') {
+          // The agent replied and is now waiting on the human; the conversation continues.
+          session.status = 'waiting'
+          this.emit(session.sessionId, { type: 'session.status', payload: { status: 'waiting' } })
+          continue
+        }
         this.emit(session.sessionId, {
           type: 'stream.delta',
-          payload: { kind: message.type === 'text' ? 'text' : message.type, text: message.text },
+          payload: { kind: message.type, text: message.text },
         })
       }
       session.status = 'ended'

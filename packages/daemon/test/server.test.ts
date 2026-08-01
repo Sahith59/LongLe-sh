@@ -19,7 +19,7 @@ class DemoAgent {
 
   readonly factory: AgentFactory = (request) => {
     this.request = request
-    return { events: this.iterate(), interrupt: async () => this.finish() }
+    return { events: this.iterate(), sendMessage: () => {}, interrupt: async () => this.finish() }
   }
   requestTool(name: string, input: unknown = {}): Promise<PermissionDecision> {
     return this.request.canUseTool(name, input)

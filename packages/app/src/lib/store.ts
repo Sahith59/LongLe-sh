@@ -1,6 +1,6 @@
 import type { SessionEvent } from '@longleash/protocol'
 
-export type SessionStatus = 'running' | 'ended' | 'errored'
+export type SessionStatus = 'running' | 'waiting' | 'ended' | 'errored'
 
 export interface ActivityItem {
   toolName: string
@@ -33,6 +33,11 @@ export interface PendingApproval {
 export interface StoreState {
   sessions: Record<string, SessionView>
   approvals: PendingApproval[]
+}
+
+/** Approvals belonging to one session, so a focused view shows only what is relevant. */
+export function approvalsFor(state: StoreState, sessionId: string): PendingApproval[] {
+  return state.approvals.filter((approval) => approval.sessionId === sessionId)
 }
 
 export interface StoreOptions {
@@ -124,6 +129,11 @@ export function createStore(options: StoreOptions = {}) {
         settled.add(payload.approvalId)
         approvals.delete(payload.approvalId)
         deciding.delete(payload.approvalId)
+        break
+      }
+      case 'session.status': {
+        const payload = event.payload as { status: SessionStatus }
+        if (payload.status === 'waiting' || payload.status === 'running') session.status = payload.status
         break
       }
       case 'session.ended': {
