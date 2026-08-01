@@ -7,5 +7,7 @@ export type { SessionSummary, SessionStatus, StartSessionInput, SessionManagerOp
 export { ApprovalStore } from './approvals.js'
 export type { ApprovalRecord, ApprovalStatus } from './approvals.js'
 export type { AgentFactory, AgentRunHandle, AgentRunRequest, AgentStreamMessage, PermissionDecision } from './agent.js'
+export { createClaudeAgentFactory } from './adapters/claude.js'
+export type { ClaudeAdapterOptions } from './adapters/claude.js'
 export { DeviceRegistry, PairingError } from './auth.js'
 export type { Device, PairingChallenge, PairingFailure, CompletePairingInput } from './auth.js'

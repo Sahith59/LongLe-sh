@@ -37,13 +37,16 @@ We own every product surface: daemon, phone app, relay, protocol, installer, ext
 | **F — IDE eyes + hardening** ~4d | VS Code companion extension; device management/revocation screen; Activity feed from PreToolUse hooks; desk-handoff (defer + release → `claude --resume`). | Phone shows what the IDE is doing; clean handoff to the desk; security surfaces complete. |
 | **G — Open-source release** ~5d | `longleash` CLI installer end-to-end; docs (incl. honest limits); license (MIT) + attribution; security self-review vs invariants; repo, CI, README, demo video. | Anyone: one command + one app (TestFlight/APK) + 5 minutes. |
 
-~29 solo dev-days total. Verification spikes before building on them: **S0** Agent SDK under subscription OAuth (auth + ToS + cost) — gate for Phase A; S1–S5 from v1 (push payload audit → now ours by construction; killed-state actions; concurrent-resume assumption; Gemini ACP quality; relay push viability → moot, we own the relay).
+~29 solo dev-days total. **No API key or paid API account is needed anywhere:** the Agent SDK inherits the Claude Code CLI's subscription OAuth (spike S0 confirmed `apiKeySource: "none"`), so agent runs draw on the user's existing Claude plan allowance, not a billed API account. The SDK's reported `total_cost_usd` is the token-equivalent value, not a charge. Keep contract-test runs few to respect plan rate limits.
+
+Verification spikes before building on them: **S0** Agent SDK under subscription OAuth — PASSED, gate for Phase A; S1–S5 from v1 (push payload audit → now ours by construction; killed-state actions; concurrent-resume assumption; Gemini ACP quality; relay push viability → moot, we own the relay).
 
 ## Costs (honest)
 
 | Item | Cost |
 |---|---|
 | All software/libraries | Free (open source) |
+| Running agents (Claude) | **The user's existing Claude subscription** — no API key, no billed API account (spike S0) |
 | Push notifications (Web Push + self-generated VAPID keys) | **Free** — no Apple or Google account required |
 | App distribution (PWA: open a URL, add to home screen) | **Free** — no store review, no TestFlight |
 | Relay hosting (Sahith's instance; users self-host free) | $0–5/mo (free tiers cover single-user) |
