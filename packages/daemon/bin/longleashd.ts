@@ -29,6 +29,7 @@ const daemon = await startDaemon({
   port: Number(process.env.PORT ?? 4321),
   ...(existsSync(join(APP_DIR, 'index.html')) ? { staticRoot: APP_DIR } : {}),
   denyOutsideRoot: process.env.LONGLEASH_STRICT !== '0',
+  log: (line) => console.log(line),
 })
 
 const challenge = daemon.registry.createPairingChallenge()

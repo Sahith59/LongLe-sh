@@ -284,6 +284,11 @@ export class SessionManager {
     return () => clearInterval(timer)
   }
 
+  /** The directories agents may work in — the app offers these instead of asking for a path. */
+  listAllowedRoots(): string[] {
+    return [...this.allowedRoots]
+  }
+
   listAuditEntries(limit = 200): AuditEntry[] {
     return this.approvals.rawDb
       .prepare('SELECT at, actor, action, detail FROM audit ORDER BY at ASC, rowid ASC LIMIT ?')

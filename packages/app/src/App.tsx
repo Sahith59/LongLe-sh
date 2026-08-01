@@ -8,6 +8,7 @@ import {
   storedToken,
   type Client,
   type ConnectionState,
+  type Hello,
 } from './lib/client.js'
 
 const ORIGIN_LABEL: Record<string, string> = {
@@ -27,7 +28,9 @@ export default function App() {
   const [pairError, setPairError] = useState<string | null>(null)
   const [diagnostic, setDiagnostic] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
+  const [roots, setRoots] = useState<string[]>([])
   const [root, setRoot] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const clientRef = useRef<Client | null>(null)
 
   useEffect(() => {
@@ -51,7 +54,15 @@ export default function App() {
 
   useEffect(() => {
     if (!token) return
-    const client = connect(token, store, { onState: setState })
+    const client = connect(token, store, {
+      onState: setState,
+      onHello: (hello: Hello) => {
+        setRoots(hello.roots)
+        // Preselect when there is nothing to choose, so the common case is one tap.
+        setRoot((current) => current || hello.roots[0] || '')
+      },
+      onError: setError,
+    })
     clientRef.current = client
     return () => client.close()
   }, [token, store])
@@ -79,8 +90,10 @@ export default function App() {
 
   const start = useCallback(() => {
     if (!prompt.trim() || !root.trim()) return
-    clientRef.current?.startSession(root.trim(), prompt.trim())
-    setPrompt('')
+    setError(null)
+    // Keep the text until it is actually on the wire — losing a typed task is unforgivable.
+    const sent = clientRef.current?.startSession(root.trim(), prompt.trim())
+    if (sent) setPrompt('')
   }, [prompt, root])
 
   if (!token) {
@@ -130,6 +143,11 @@ export default function App() {
       </header>
 
       {diagnostic ? <p className="diagnostic">{diagnostic}</p> : null}
+      {error ? (
+        <p className="errorbar" onClick={() => setError(null)}>
+          {error} <span className="muted small">(tap to dismiss)</span>
+        </p>
+      ) : null}
 
       <section>
         <h2>Waiting on you {snapshot.approvals.length > 0 ? `(${snapshot.approvals.length})` : ''}</h2>
@@ -145,20 +163,31 @@ export default function App() {
       <section>
         <h2>Start something</h2>
         <div className="composer">
-          <input
-            value={root}
-            onChange={(e) => setRoot(e.target.value)}
-            placeholder="project directory"
-            aria-label="project directory"
-          />
+          {roots.length === 0 ? (
+            <p className="muted small">
+              This daemon has no project directories configured, so nothing can be started.
+            </p>
+          ) : roots.length === 1 ? (
+            <p className="muted small">
+              Working in <code>{shortPath(roots[0] ?? '')}</code>
+            </p>
+          ) : (
+            <select value={root} onChange={(e) => setRoot(e.target.value)} aria-label="project">
+              {roots.map((candidate) => (
+                <option key={candidate} value={candidate}>
+                  {shortPath(candidate)}
+                </option>
+              ))}
+            </select>
+          )}
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Tell Claude what to do…"
             aria-label="task"
           />
-          <button onClick={start} disabled={!prompt.trim() || !root.trim()}>
-            Send to Claude
+          <button onClick={start} disabled={!prompt.trim() || !root.trim() || state !== 'connected'}>
+            {state === 'connected' ? 'Send to Claude' : 'Waiting for your laptop…'}
           </button>
         </div>
       </section>
@@ -176,9 +205,19 @@ export default function App() {
             />
           ))
         )}
+        <p className="muted small pad footnote">
+          Only sessions started through LongLeash appear here. Ones you started yourself in a
+          terminal or in the VS Code chat panel are not visible yet.
+        </p>
       </section>
     </>
   )
+}
+
+/** Long absolute paths are unreadable on a phone; show the tail that identifies the project. */
+function shortPath(path: string): string {
+  const parts = path.split('/').filter(Boolean)
+  return parts.length <= 2 ? path : `…/${parts.slice(-2).join('/')}`
 }
 
 function ApprovalCard({

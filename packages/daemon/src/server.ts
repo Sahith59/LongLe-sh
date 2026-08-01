@@ -32,6 +32,8 @@ export interface ServerOptions {
   heartbeatIntervalMs?: number
   /** Directory holding the built web app. Omitted for a headless daemon. */
   staticRoot?: string
+  /** Where to report activity; the daemon passes console.log so the terminal shows life. */
+  log?: (line: string) => void
 }
 
 interface Connection {
@@ -60,6 +62,7 @@ export class LongLeashServer {
   private peakBufferedBytes = 0
   private sessions: SessionManager | null = null
   private readonly staticRoot: string | undefined
+  private readonly log: (line: string) => void
 
   constructor(opts: ServerOptions) {
     this.eventLog = opts.eventLog
@@ -68,6 +71,7 @@ export class LongLeashServer {
     this.requestedPort = opts.port ?? 0
     this.heartbeatIntervalMs = opts.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS
     this.staticRoot = opts.staticRoot
+    this.log = opts.log ?? (() => {})
     this.app = Fastify({ logger: false })
   }
 
@@ -114,6 +118,7 @@ export class LongLeashServer {
         socket.close(CLOSE_UNAUTHORIZED, 'unauthorized')
         return
       }
+      this.log(`device ${device.name} connected (${device.deviceId})`)
       this.registerConnection(socket, device.deviceId)
     })
 
@@ -223,6 +228,15 @@ export class LongLeashServer {
     socket.on('message', (raw: Buffer) => {
       this.handleMessage(connection, raw.toString())
     })
+
+    // Tell the client what it may do, so it never has to guess a project path.
+    this.send(socket, {
+      v: PROTOCOL_VERSION,
+      type: 'hello',
+      deviceId,
+      roots: this.sessions?.listAllowedRoots() ?? [],
+      capabilities: { startSession: this.sessions !== null, stopSession: this.sessions !== null },
+    })
   }
 
   private dropConnection(connection: Connection): void {
@@ -285,6 +299,7 @@ export class LongLeashServer {
         connection.deviceId,
         message.reply,
       )
+      this.log(`decision ${message.verdict} on ${message.approvalId} -> ${outcome}`)
       this.send(connection.socket, {
         v: PROTOCOL_VERSION,
         type: 'ack',
@@ -318,6 +333,7 @@ export class LongLeashServer {
           actor: connection.deviceId,
         })
         .then(({ sessionId }) => {
+          this.log(`session ${sessionId} started by ${connection.deviceId}`)
           this.send(connection.socket, {
             v: PROTOCOL_VERSION,
             type: 'ack',
@@ -327,6 +343,7 @@ export class LongLeashServer {
           })
         })
         .catch((err: unknown) => {
+          this.log(`start refused: ${err instanceof Error ? err.message : 'unknown'}`)
           // A refused directory is a normal answer, not a daemon failure.
           this.send(connection.socket, {
             v: PROTOCOL_VERSION,

@@ -49,8 +49,18 @@ export async function checkReachable(): Promise<Diagnostics> {
   }
 }
 
+export interface Hello {
+  deviceId: string
+  roots: string[]
+  capabilities: { startSession: boolean; stopSession: boolean }
+}
+
 export interface ClientCallbacks {
   onState: (state: ConnectionState) => void
+  /** The daemon tells us which directories are usable — never make the user type a path. */
+  onHello: (hello: Hello) => void
+  /** Errors must reach the person. Swallowing them makes the app look broken. */
+  onError: (message: string) => void
 }
 
 export function connect(token: string, store: Store, callbacks: ClientCallbacks) {
@@ -98,7 +108,18 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
         subscribe(message.sessionId)
         return
       }
-      if (message.type === 'error') return
+      if (message.type === 'hello') {
+        callbacks.onHello(message as unknown as Hello)
+        return
+      }
+      if (message.type === 'error') {
+        callbacks.onError(String(message.message ?? message.code ?? 'Something went wrong'))
+        return
+      }
+      if (message.type === 'ack' && message.outcome === 'unknown') {
+        callbacks.onError('That approval is no longer waiting — it may have expired.')
+        return
+      }
       if (typeof message.seq === 'number') store.apply(message as unknown as SessionEvent)
     }
 
@@ -125,8 +146,11 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
 
   return {
     subscribe,
-    startSession: (root: string, prompt: string) =>
-      send({ v: PROTOCOL_VERSION, type: 'startSession', agent: 'claude', root, prompt }),
+    startSession: (root: string, prompt: string) => {
+      const sent = send({ v: PROTOCOL_VERSION, type: 'startSession', agent: 'claude', root, prompt })
+      if (!sent) callbacks.onError('Not connected to your laptop — the task was not sent.')
+      return sent
+    },
     stopSession: (sessionId: string) => send({ v: PROTOCOL_VERSION, type: 'stopSession', sessionId }),
     decide: (approvalId: string, verdict: 'allow' | 'deny', reply?: string) =>
       send({

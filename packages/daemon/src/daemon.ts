@@ -22,6 +22,8 @@ export interface DaemonOptions {
   allowedTools?: string[]
   denyOutsideRoot?: boolean
   maxConcurrentSessions?: number
+  /** Where to report activity. The binary passes console.log so the terminal shows life. */
+  log?: (line: string) => void
 }
 
 export interface Daemon {
@@ -57,10 +59,15 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   const registry = new DeviceRegistry(join(dataDir, 'devices.db'))
   const approvals = new ApprovalStore(join(dataDir, 'approvals.db'))
 
+  const log = options.log ?? (() => {})
+  const stamp = () => new Date().toISOString().slice(11, 19)
+  const write = (line: string) => log(`[${stamp()}] ${line}`)
+
   const server = new LongLeashServer({
     eventLog,
     registry,
     host: options.host,
+    log: write,
     ...(options.port === undefined ? {} : { port: options.port }),
     ...(options.staticRoot === undefined ? {} : { staticRoot: options.staticRoot }),
   })
@@ -75,7 +82,24 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
         isolateFromUserSettings: true,
       }),
     },
-    onEvent: (event) => server.broadcastEvent(event),
+    onEvent: (event) => {
+      server.broadcastEvent(event)
+      // Mirror the important beats to the terminal: a daemon that prints nothing looks dead.
+      const payload = event.payload as Record<string, unknown>
+      if (event.type === 'session.started') {
+        write(`▶ ${event.sessionId} started in ${String(payload.cwd)}`)
+      } else if (event.type === 'approval.requested') {
+        write(`? ${event.sessionId} needs approval: ${String(payload.inputSummary)}`)
+      } else if (event.type === 'approval.decided') {
+        write(`${payload.verdict === 'allow' ? '✓' : '✗'} ${String(payload.verdict)} by ${String(payload.decidedBy)}`)
+      } else if (event.type === 'activity.tool') {
+        write(`· ${event.sessionId} auto-approved ${String(payload.inputSummary)}`)
+      } else if (event.type === 'session.ended') {
+        write(`■ ${event.sessionId} finished`)
+      } else if (event.type === 'session.errored') {
+        write(`! ${event.sessionId} errored: ${String(payload.message)}`)
+      }
+    },
     ...(options.denyOutsideRoot === undefined ? {} : { denyOutsideRoot: options.denyOutsideRoot }),
     ...(options.maxConcurrentSessions === undefined
       ? {}

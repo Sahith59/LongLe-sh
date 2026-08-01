@@ -74,9 +74,32 @@ async function startHarness(): Promise<Harness> {
   return { server, log, registry, port, token, deviceId: device.deviceId }
 }
 
+/**
+ * Buffer from the moment the socket exists: the server greets a connection immediately, so a
+ * listener attached after `open` can miss messages that already arrived.
+ */
+const inbox = new WeakMap<WebSocket, Record<string, unknown>[]>()
+
 function connect(port: number, token?: string): WebSocket {
   const query = token === undefined ? '' : `?token=${encodeURIComponent(token)}`
-  return new WebSocket(`ws://${HOST}:${port}/ws${query}`)
+  const ws = new WebSocket(`ws://${HOST}:${port}/ws${query}`)
+  const buffer: Record<string, unknown>[] = []
+  inbox.set(ws, buffer)
+  ws.on('message', (raw: WebSocket.RawData) => {
+    buffer.push(JSON.parse(raw.toString()) as Record<string, unknown>)
+  })
+  return ws
+}
+
+/** The greeting is infrastructure; tests that care about it ask explicitly. */
+async function helloOf(ws: WebSocket): Promise<Record<string, unknown>> {
+  const start = Date.now()
+  while (Date.now() - start < CLIENT_TIMEOUT_MS) {
+    const hello = inbox.get(ws)?.find((m) => m.type === 'hello')
+    if (hello) return hello
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  throw new Error('no hello received')
 }
 
 /** Resolves on close; rejects if the socket opens successfully instead. */
@@ -93,23 +116,26 @@ function expectClosed(ws: WebSocket): Promise<number> {
   })
 }
 
-function nextMessages(ws: WebSocket, count: number): Promise<Record<string, unknown>[]> {
-  return new Promise((resolve, reject) => {
-    const received: Record<string, unknown>[] = []
-    const timer = setTimeout(
-      () => reject(new Error(`timed out waiting for ${count} messages, got ${received.length}`)),
-      4000,
-    )
-    const onMessage = (raw: WebSocket.RawData) => {
-      received.push(JSON.parse(raw.toString()) as Record<string, unknown>)
-      if (received.length === count) {
-        clearTimeout(timer)
-        ws.off('message', onMessage)
-        resolve(received)
+/** Next `count` non-greeting messages, consumed from the buffer so calls compose. */
+async function nextMessages(ws: WebSocket, count: number): Promise<Record<string, unknown>[]> {
+  const buffer = inbox.get(ws)
+  if (!buffer) throw new Error('socket was not created via connect()')
+  const start = Date.now()
+  for (;;) {
+    const index = buffer.findIndex((m) => m.type !== 'hello')
+    if (index !== -1) {
+      const usable = buffer.filter((m) => m.type !== 'hello')
+      if (usable.length >= count) {
+        const taken = usable.slice(0, count)
+        for (const message of taken) buffer.splice(buffer.indexOf(message), 1)
+        return taken
       }
     }
-    ws.on('message', onMessage)
-  })
+    if (Date.now() - start > CLIENT_TIMEOUT_MS) {
+      throw new Error(`timed out waiting for ${count} messages`)
+    }
+    await new Promise((r) => setTimeout(r, 10))
+  }
 }
 
 function opened(ws: WebSocket): Promise<void> {
@@ -136,6 +162,13 @@ describe('auth on connect', () => {
     const ws = connect(h.port, h.token)
     await opened(ws)
     expect(ws.readyState).toBe(WebSocket.OPEN)
+    ws.close()
+  })
+
+  it('greets every authenticated connection', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    expect(await helloOf(ws)).toMatchObject({ type: 'hello', deviceId: h.deviceId })
     ws.close()
   })
 
@@ -257,6 +290,60 @@ describe('subscribe: replay then live tail', () => {
   })
 })
 
+describe('hello: telling the client what it may do', () => {
+  let h: Harness
+  let sessions: SessionManager
+  let approvals: ApprovalStore
+  let root: string
+  let dir: string
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'longleash-hello-'))
+    root = realpathSync(dir)
+    h = await startHarness()
+    approvals = new ApprovalStore(':memory:')
+    sessions = new SessionManager({
+      eventLog: h.log,
+      approvals,
+      allowedRoots: [root],
+      agentFactories: { claude: new DemoAgent().factory },
+    })
+    h.server.attachSessions(sessions)
+  })
+  afterEach(async () => {
+    await h.server.close()
+    h.log.close()
+    h.registry.close()
+    approvals.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('greets a new connection with the directories agents may use', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const hello = await helloOf(ws)
+    expect(hello.roots).toEqual([root])
+    expect(hello.capabilities).toMatchObject({ startSession: true, stopSession: true })
+    ws.close()
+  })
+
+  it('reports no start capability when the daemon is headless', async () => {
+    const bare = await startHarness()
+    try {
+      const ws = connect(bare.port, bare.token)
+      await opened(ws)
+      const hello = await helloOf(ws)
+      expect(hello.roots).toEqual([])
+      expect(hello.capabilities).toMatchObject({ startSession: false })
+      ws.close()
+    } finally {
+      await bare.server.close()
+      bare.log.close()
+      bare.registry.close()
+    }
+  })
+})
+
 describe('typed operations: decisions and remote start', () => {
   let h: Harness
   let sessions: SessionManager
@@ -312,7 +399,8 @@ describe('typed operations: decisions and remote start', () => {
     const ws = connect(h.port, h.token)
     await opened(ws)
     const { sessionId } = await sessions.startSession({ agent: 'claude', cwd: root, prompt: 'x' })
-    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId, fromCursor: 99999 }))
+    // Subscribe from where the log already is, so nothing replays and no gap is signalled.
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId, fromCursor: h.log.latestSeq(sessionId) }))
     await new Promise((r) => setTimeout(r, 50))
 
     const streamed = nextMessages(ws, 1)
