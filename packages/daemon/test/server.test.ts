@@ -318,6 +318,26 @@ describe('hello: telling the client what it may do', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('greets a reconnecting client with the sessions it should rebuild', async () => {
+    const agent = new DemoAgent()
+    const manager = new SessionManager({
+      eventLog: h.log,
+      approvals,
+      allowedRoots: [root],
+      agentFactories: { claude: agent.factory },
+    })
+    h.server.attachSessions(manager)
+    const { sessionId } = await manager.startSession({ agent: 'claude', cwd: root, prompt: 'earlier' })
+
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const hello = await helloOf(ws)
+    const listed = (hello.sessions as { sessionId: string; title: string }[]) ?? []
+    expect(listed.map((s) => s.sessionId)).toContain(sessionId)
+    expect(listed[0]?.title).toBe('earlier')
+    ws.close()
+  })
+
   it('greets a new connection with the directories agents may use', async () => {
     const ws = connect(h.port, h.token)
     await opened(ws)

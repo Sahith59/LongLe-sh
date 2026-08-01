@@ -80,6 +80,23 @@ Full report: `agents/2026-08-01-audit-a1-a6.md`. Seven flaws found; all critical
 
 **Externally-started sessions are addressable after all.** Verified: a `PreToolUse` hook in `~/.claude/settings.json` fires for EVERY Claude Code session on the machine (CLI and VS Code extension) and can return allow/deny; all sessions write live transcripts to `~/.claude/projects/**/*.jsonl` that any process may tail. So LongLeash can list and gate sessions it did not start. Constraint: hooks are timeout-bounded (~600 s default), so foreign-session approvals cannot park indefinitely the way our own do — the UI must say so. New **Phase D1 (Attach Mode)** added to PLAN.md, gated on spike **D0**. Still impossible: injecting a prompt into a foreign running session; driving the VS Code chat webview. Full analysis: `agents/2026-08-01-external-sessions-feasibility.md`.
 
+## Dogfood round 3 (2026-08-01) — reload wiped the screen
+
+Refreshing the app lost every session. Two causes, both fixed:
+- The daemon only tracked **live** sessions in memory, so nothing survived its own restart either
+  (this was deferred audit item #9; it became urgent). Sessions are now persisted in SQLite with
+  agent, cwd, origin, title, status and start time. Anything left `running`/`waiting` when the
+  daemon died is marked `ended` on startup — showing "working" for an agent that no longer exists
+  would be a lie the user cannot act on.
+- The app had no way to **discover** existing sessions; it only learned of ones it started. `hello`
+  now carries the session list, and the client rebuilds the list and resubscribes to every session
+  from its cursor.
+
+Verified end to end: two real Claude sessions, full client reload, both reappear with titles and
+honest statuses, both transcripts replay, and a restored session still answers follow-up questions
+about its own earlier context. Added `LONGLEASH_DATA` so instances (and test runs) can hold
+separate storage.
+
 ## Dogfood round 2 (2026-08-01) — the interaction model was wrong
 
 Sahith: "why is each message a new session?" Correct and fundamental. The composer only ever

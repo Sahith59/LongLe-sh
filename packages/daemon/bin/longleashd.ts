@@ -29,6 +29,8 @@ const daemon = await startDaemon({
   port: Number(process.env.PORT ?? 4321),
   ...(existsSync(join(APP_DIR, 'index.html')) ? { staticRoot: APP_DIR } : {}),
   denyOutsideRoot: process.env.LONGLEASH_STRICT !== '0',
+  // Separate instances (or a clean test run) can keep their own storage.
+  ...(process.env.LONGLEASH_DATA ? { dataDir: process.env.LONGLEASH_DATA } : {}),
   log: (line) => console.log(line),
 })
 

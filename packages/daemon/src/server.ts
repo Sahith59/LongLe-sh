@@ -235,6 +235,8 @@ export class LongLeashServer {
       type: 'hello',
       deviceId,
       roots: this.sessions?.listAllowedRoots() ?? [],
+      // Everything the daemon knows about, so a reloaded phone rebuilds instead of showing nothing.
+      sessions: this.sessions?.listSessions() ?? [],
       capabilities: { startSession: this.sessions !== null, stopSession: this.sessions !== null },
     })
   }

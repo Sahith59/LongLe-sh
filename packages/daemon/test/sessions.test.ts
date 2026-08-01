@@ -720,6 +720,90 @@ describe('single-writer discipline', () => {
   })
 })
 
+describe('sessions survive a reload (and a daemon restart)', () => {
+  let h: Harness
+  beforeEach(() => {
+    clock = 1_000_000
+    h = makeHarness()
+  })
+  afterEach(() => {
+    rmSync(h.dir, { recursive: true, force: true })
+    h.log.close()
+    h.approvals.close()
+  })
+
+  it('lists a session with everything a phone needs to rebuild its view', async () => {
+    const { sessionId } = await h.manager.startSession({
+      agent: 'claude',
+      cwd: h.root,
+      prompt: 'fix the parser',
+      origin: 'phone',
+    })
+    const listed = h.manager.listSessions().find((s) => s.sessionId === sessionId)
+    expect(listed).toMatchObject({ agent: 'claude', cwd: h.root, origin: 'phone', status: 'running' })
+    expect(listed?.title).toBe('fix the parser')
+  })
+
+  it('keeps finished sessions in the list so history does not vanish', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    h.agent.finish()
+    await h.manager.waitForIdle(sessionId)
+    expect(h.manager.listSessions().map((s) => s.sessionId)).toContain(sessionId)
+  })
+
+  it('a fresh manager on the same storage still lists earlier sessions', async () => {
+    const { sessionId } = await h.manager.startSession({
+      agent: 'claude',
+      cwd: h.root,
+      prompt: 'earlier work',
+      origin: 'phone',
+    })
+    h.agent.finish()
+    await h.manager.waitForIdle(sessionId)
+
+    // Simulates the daemon being restarted: same databases, new process state.
+    const revived = new SessionManager({
+      eventLog: h.log,
+      approvals: h.approvals,
+      allowedRoots: [h.root],
+      agentFactories: { claude: new FakeAgent().factory },
+      now: () => clock,
+    })
+    const listed = revived.listSessions().find((s) => s.sessionId === sessionId)
+    expect(listed).toBeDefined()
+    expect(listed?.title).toBe('earlier work')
+    expect(listed?.origin).toBe('phone')
+  })
+
+  it('marks sessions that a crashed daemon left running as ended, never as still working', async () => {
+    await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'was running' })
+
+    const revived = new SessionManager({
+      eventLog: h.log,
+      approvals: h.approvals,
+      allowedRoots: [h.root],
+      agentFactories: { claude: new FakeAgent().factory },
+      now: () => clock,
+    })
+    const statuses = revived.listSessions().map((s) => s.status)
+    expect(statuses).not.toContain('running')
+    expect(statuses).toContain('ended')
+  })
+
+  it('a revived session cannot be messaged, because its agent is gone', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    const revived = new SessionManager({
+      eventLog: h.log,
+      approvals: h.approvals,
+      allowedRoots: [h.root],
+      agentFactories: { claude: new FakeAgent().factory },
+      now: () => clock,
+    })
+    expect(revived.sendMessage(sessionId, 'still there?', 'dev_phone')).toBe(false)
+    expect(await revived.stopSession(sessionId, 'dev_phone')).toBe(false)
+  })
+})
+
 describe('restart recovery', () => {
   it('approvals left pending by a crashed daemon are closed out, not left hanging', () => {
     const approvals = new ApprovalStore(':memory:', { now: () => clock })

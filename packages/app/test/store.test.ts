@@ -172,6 +172,46 @@ describe('approvals inbox', () => {
   })
 })
 
+describe('rebuilding after a reload', () => {
+  it('seeds the list from what the daemon reports, so a refresh does not wipe the screen', () => {
+    const store = createStore()
+    store.seedSessions([
+      { sessionId: 'ses_1', agent: 'claude', cwd: '/proj/api', title: 'fix parser', origin: 'phone', status: 'waiting' },
+      { sessionId: 'ses_2', agent: 'claude', cwd: '/proj/web', title: 'add tests', origin: 'daemon', status: 'ended' },
+    ])
+    const state = stateOf(store)
+    expect(Object.keys(state.sessions)).toHaveLength(2)
+    expect(state.sessions.ses_1?.title).toBe('fix parser')
+    expect(state.sessions.ses_1?.status).toBe('waiting')
+    expect(state.sessions.ses_2?.origin).toBe('daemon')
+  })
+
+  it('replayed events refill a seeded session without duplicating it', () => {
+    const store = createStore()
+    store.seedSessions([
+      { sessionId: 'ses_1', agent: 'claude', cwd: '/proj', title: 't', origin: 'phone', status: 'waiting' },
+    ])
+    store.apply(started('ses_1'))
+    store.apply(delta('ses_1', 2, 'restored output'))
+    expect(Object.keys(stateOf(store).sessions)).toHaveLength(1)
+    expect(stateOf(store).sessions.ses_1?.output).toBe('restored output')
+  })
+
+  it('seeding twice does not lose output already streamed', () => {
+    const store = createStore()
+    store.seedSessions([
+      { sessionId: 'ses_1', agent: 'claude', cwd: '/proj', title: 't', origin: 'phone', status: 'running' },
+    ])
+    store.apply(started('ses_1'))
+    store.apply(delta('ses_1', 2, 'keep me'))
+    store.seedSessions([
+      { sessionId: 'ses_1', agent: 'claude', cwd: '/proj', title: 't', origin: 'phone', status: 'waiting' },
+    ])
+    expect(stateOf(store).sessions.ses_1?.output).toBe('keep me')
+    expect(stateOf(store).sessions.ses_1?.status).toBe('waiting')
+  })
+})
+
 describe('activity', () => {
   it('records auto-approved tools distinctly from things that needed a decision', () => {
     const store = createStore()

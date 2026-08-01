@@ -29,6 +29,8 @@ export interface SessionSummary {
   startedAt: number
   /** Where this session came from, so the phone can distinguish it from others. */
   origin: SessionOrigin
+  /** Human-readable label — the opening request, so a list is scannable. */
+  title: string
 }
 
 export interface StartSessionInput {
@@ -67,6 +69,7 @@ export interface SessionManagerOptions {
 }
 
 interface LiveSession extends SessionSummary {
+  /** Present only while the agent process exists. */
   handle: AgentRunHandle
   done: Promise<void>
   /** Resolvers for approvals this session is currently blocked on. */
@@ -126,6 +129,22 @@ export class SessionManager {
     this.denyOutsideRoot = opts.denyOutsideRoot ?? false
     this.maxConcurrentSessions = opts.maxConcurrentSessions ?? 10
     this.approvals.rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        session_id TEXT PRIMARY KEY,
+        agent TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL
+      )
+    `)
+    // A session whose daemon died has no agent behind it; showing it as "working" would be a
+    // lie the user cannot act on, so anything left live is closed out on startup.
+    this.approvals.rawDb
+      .prepare("UPDATE sessions SET status = 'ended' WHERE status IN ('running','waiting')")
+      .run()
+    this.approvals.rawDb.exec(`
       CREATE TABLE IF NOT EXISTS audit (
         at INTEGER NOT NULL,
         actor TEXT NOT NULL,
@@ -165,9 +184,19 @@ export class SessionManager {
     const sessionId = newId('ses')
     this.claimed.add(sessionId)
 
+    const title = prompt.slice(0, 80)
+    this.persistSession({
+      sessionId,
+      agent: agent.data,
+      cwd,
+      origin,
+      title,
+      status: 'running',
+      startedAt: this.now(),
+    })
     this.emit(sessionId, {
       type: 'session.started',
-      payload: { agent: agent.data, cwd, title: prompt.slice(0, 80), origin },
+      payload: { agent: agent.data, cwd, title, origin },
     })
     this.audit(input.actor ?? 'daemon', 'session.start', `${agent.data} in ${cwd}`)
 
@@ -193,6 +222,7 @@ export class SessionManager {
       status: 'running',
       startedAt: this.now(),
       origin,
+      title,
       handle,
       waiting,
       done: Promise.resolve(),
@@ -246,15 +276,59 @@ export class SessionManager {
     return this.approvals.listPending()
   }
 
+  /**
+   * Every session this daemon knows about, live or historical. A phone that reloads — or a
+   * daemon that restarted — must be able to rebuild the list rather than showing nothing.
+   */
   listSessions(): SessionSummary[] {
-    return [...this.sessions.values()].map(({ sessionId, agent, cwd, status, startedAt, origin }) => ({
-      sessionId,
-      agent,
-      cwd,
-      status,
-      startedAt,
-      origin,
-    }))
+    const rows = this.approvals.rawDb
+      .prepare('SELECT * FROM sessions ORDER BY started_at ASC')
+      .all() as {
+      session_id: string
+      agent: string
+      cwd: string
+      origin: string
+      title: string
+      status: string
+      started_at: number
+    }[]
+    return rows.map((row) => {
+      const live = this.sessions.get(row.session_id)
+      return {
+        sessionId: row.session_id,
+        agent: row.agent as AgentKind,
+        cwd: row.cwd,
+        origin: row.origin as SessionOrigin,
+        title: row.title,
+        // Trust the live process over the stored row while it is running.
+        status: live ? live.status : (row.status as SessionStatus),
+        startedAt: row.started_at,
+      }
+    })
+  }
+
+  private persistSession(summary: SessionSummary): void {
+    this.approvals.rawDb
+      .prepare(
+        `INSERT INTO sessions (session_id, agent, cwd, origin, title, status, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET status = excluded.status`,
+      )
+      .run(
+        summary.sessionId,
+        summary.agent,
+        summary.cwd,
+        summary.origin,
+        summary.title,
+        summary.status,
+        summary.startedAt,
+      )
+  }
+
+  private markStatus(sessionId: string, status: SessionStatus): void {
+    this.approvals.rawDb
+      .prepare('UPDATE sessions SET status = ? WHERE session_id = ?')
+      .run(status, sessionId)
   }
 
   /**
@@ -268,6 +342,7 @@ export class SessionManager {
     if (!session || (session.status !== 'running' && session.status !== 'waiting')) return false
     this.audit(actor, 'message.send', `${sessionId}: ${trimmed.slice(0, 80)}`)
     session.status = 'running'
+    this.markStatus(sessionId, 'running')
     this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${trimmed}\n` } })
     this.emit(sessionId, { type: 'session.status', payload: { status: 'running' } })
     session.handle.sendMessage(trimmed)
@@ -288,6 +363,7 @@ export class SessionManager {
       // An agent that cannot be interrupted cleanly is still torn down below.
     }
     session.status = 'ended'
+    this.markStatus(sessionId, 'ended')
     this.releasePending(session, 'Session stopped from your device')
     this.emit(sessionId, { type: 'session.ended', payload: { reason: `stopped by ${actor}` } })
     return true
@@ -427,6 +503,7 @@ export class SessionManager {
         if (message.type === 'turn-end') {
           // The agent replied and is now waiting on the human; the conversation continues.
           session.status = 'waiting'
+          this.markStatus(session.sessionId, 'waiting')
           this.emit(session.sessionId, { type: 'session.status', payload: { status: 'waiting' } })
           continue
         }
@@ -436,9 +513,11 @@ export class SessionManager {
         })
       }
       session.status = 'ended'
+      this.markStatus(session.sessionId, 'ended')
       this.emit(session.sessionId, { type: 'session.ended', payload: {} })
     } catch (err) {
       session.status = 'errored'
+      this.markStatus(session.sessionId, 'errored')
       this.emit(session.sessionId, {
         type: 'session.errored',
         payload: { message: err instanceof Error ? err.message : 'Agent failed' },

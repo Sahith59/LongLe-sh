@@ -1,5 +1,5 @@
 import { PROTOCOL_VERSION, type SessionEvent } from '@longleash/protocol'
-import type { Store } from './store.js'
+import type { SessionSeed, Store } from './store.js'
 
 export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'unauthorized' | 'revoked'
 
@@ -52,6 +52,7 @@ export async function checkReachable(): Promise<Diagnostics> {
 export interface Hello {
   deviceId: string
   roots: string[]
+  sessions: SessionSeed[]
   capabilities: { startSession: boolean; stopSession: boolean }
 }
 
@@ -109,7 +110,11 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
         return
       }
       if (message.type === 'hello') {
-        callbacks.onHello(message as unknown as Hello)
+        const hello = message as unknown as Hello
+        // Rebuild the list, then resume each stream from wherever this client left off.
+        store.seedSessions(hello.sessions ?? [])
+        for (const session of hello.sessions ?? []) subscribe(session.sessionId)
+        callbacks.onHello(hello)
         return
       }
       if (message.type === 'error') {

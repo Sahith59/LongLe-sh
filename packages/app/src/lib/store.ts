@@ -40,6 +40,15 @@ export function approvalsFor(state: StoreState, sessionId: string): PendingAppro
   return state.approvals.filter((approval) => approval.sessionId === sessionId)
 }
 
+export interface SessionSeed {
+  sessionId: string
+  agent: string
+  cwd: string
+  title: string
+  origin: string
+  status: SessionStatus
+}
+
 export interface StoreOptions {
   /** Bound retained output: a phone cannot hold an unbounded transcript. */
   maxOutputChars?: number
@@ -151,6 +160,22 @@ export function createStore(options: StoreOptions = {}) {
     notify()
   }
 
+  /**
+   * Rebuild the list from what the daemon knows. A reload wipes memory, so without this the
+   * app would show nothing even though every session and event is safely stored.
+   */
+  function seedSessions(seeds: SessionSeed[]): void {
+    for (const seed of seeds) {
+      const session = ensure(seed.sessionId)
+      session.agent = seed.agent
+      session.cwd = seed.cwd
+      session.title = seed.title
+      session.origin = seed.origin
+      session.status = seed.status
+    }
+    notify()
+  }
+
   /** The daemon could not honour our cursor: drop what we have and replay from the start. */
   function applyGap(sessionId: string): void {
     cursors[sessionId] = 0
@@ -185,6 +210,7 @@ export function createStore(options: StoreOptions = {}) {
 
   return {
     apply,
+    seedSessions,
     applyGap,
     markDeciding,
     rollbackDecision,
