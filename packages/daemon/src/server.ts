@@ -9,6 +9,7 @@ import type { EventLog, AppendInput } from './eventlog.js'
 import type { DeviceRegistry } from './auth.js'
 import { PairingError } from './auth.js'
 import { SessionError, type SessionManager } from './sessions.js'
+import type { FolderIndex } from './folders.js'
 
 /** Application close codes (4000-4999 is the private range). */
 export const CLOSE_UNAUTHORIZED = 4401
@@ -68,6 +69,7 @@ export class LongLeashServer {
   private boundPort = 0
   private peakBufferedBytes = 0
   private sessions: SessionManager | null = null
+  private folders: FolderIndex | null = null
   private readonly staticRoot: string | undefined
   private readonly log: (line: string) => void
 
@@ -189,6 +191,11 @@ export class LongLeashServer {
     this.sessions = sessions
   }
 
+  /** Lets a phone find a project by name instead of typing an absolute path. */
+  attachFolders(folders: FolderIndex): void {
+    this.folders = folders
+  }
+
   /** Persist an event, then fan it out to every subscriber of that session. */
   publish(sessionId: string, input: AppendInput): SessionEvent {
     const event = this.eventLog.append(sessionId, input)
@@ -292,6 +299,16 @@ export class LongLeashServer {
         return
       }
       for (const event of replay.events) this.send(connection.socket, event)
+      return
+    }
+
+    if (message.type === 'findFolders') {
+      this.send(connection.socket, {
+        v: PROTOCOL_VERSION,
+        type: 'folders',
+        query: message.query,
+        results: this.folders?.search(message.query) ?? [],
+      })
       return
     }
 

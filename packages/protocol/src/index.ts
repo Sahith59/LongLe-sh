@@ -134,6 +134,14 @@ const startSessionMessage = z
   })
   .passthrough()
 
+const findFoldersMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('findFolders'),
+    query: z.string().max(200),
+  })
+  .passthrough()
+
 const resumeSessionMessage = z
   .object({
     ...clientBase,
@@ -157,6 +165,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   startSessionMessage,
   stopSessionMessage,
   resumeSessionMessage,
+  findFoldersMessage,
 ])
 export type ClientMessage = z.infer<typeof ClientMessageSchema>
 

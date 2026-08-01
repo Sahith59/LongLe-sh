@@ -125,3 +125,12 @@ button.link {
 }
 .composer.sticky textarea { min-height: 56px; margin-top: 0; }
 .sessionrow .pill.ended, .sessionrow .pill.errored { opacity: 0.8; }
+.folderlist { list-style: none; margin: 8px 0 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.folderlist li { margin: 0 0 6px; }
+button.folder {
+  width: 100%; text-align: left; background: #141416; color: var(--text);
+  border: 1px solid var(--line); font-size: 14.5px; font-weight: 500; padding: 12px;
+}
+button.folder:active { background: var(--raised); }
+.chosen { margin: 6px 0 0; font-size: 14px; }
+.chosen code { background: #141416; padding: 3px 7px; border-radius: 5px; font-size: 13px; }

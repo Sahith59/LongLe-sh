@@ -8,6 +8,7 @@ import {
   storedToken,
   type Client,
   type ConnectionState,
+  type FolderHit,
   type Hello,
 } from './lib/client.js'
 
@@ -36,8 +37,7 @@ export default function App() {
   const [diagnostic, setDiagnostic] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [roots, setRoots] = useState<string[]>([])
-  const [root, setRoot] = useState('')
-  const [subdir, setSubdir] = useState('')
+  const [folders, setFolders] = useState<FolderHit[]>([])
   const [openSessionId, setOpenSessionId] = useState<string | null>(null)
   const clientRef = useRef<Client | null>(null)
 
@@ -66,9 +66,9 @@ export default function App() {
       onState: setState,
       onHello: (hello: Hello) => {
         setRoots(hello.roots)
-        setRoot((current) => current || hello.roots[0] || '')
       },
       onError: setError,
+      onFolders: (_query, results) => setFolders(results),
     })
     clientRef.current = client
     return () => client.close()
@@ -199,11 +199,9 @@ export default function App() {
         <div className="composer">
           <NewSessionForm
             roots={roots}
-            root={root}
-            subdir={subdir}
+            folders={folders}
             connected={connected}
-            onRootChange={setRoot}
-            onSubdirChange={setSubdir}
+            onSearch={(query) => clientRef.current?.findFolders(query)}
             onStart={(dir, prompt) => {
               setError(null)
               return clientRef.current?.startSession(dir, prompt) ?? false
@@ -254,63 +252,88 @@ export default function App() {
 
 function NewSessionForm({
   roots,
-  root,
-  subdir,
+  folders,
   connected,
-  onRootChange,
-  onSubdirChange,
+  onSearch,
   onStart,
 }: {
   roots: string[]
-  root: string
-  subdir: string
+  folders: FolderHit[]
   connected: boolean
-  onRootChange: (value: string) => void
-  onSubdirChange: (value: string) => void
+  onSearch: (query: string) => void
   onStart: (dir: string, prompt: string) => boolean
 }) {
+  const [query, setQuery] = useState('')
+  const [chosen, setChosen] = useState<FolderHit | null>(null)
   const [prompt, setPrompt] = useState('')
-  const target = subdir.trim() ? `${root.replace(/\/$/, '')}/${subdir.trim().replace(/^\//, '')}` : root
+
+  // Search as you type, debounced: nobody should have to recall an absolute path from memory.
+  useEffect(() => {
+    if (chosen) return
+    const timer = setTimeout(() => onSearch(query), 180)
+    return () => clearTimeout(timer)
+  }, [query, chosen, onSearch])
 
   if (roots.length === 0) {
     return <p className="muted small">No project directories are configured on the laptop.</p>
   }
 
+  if (chosen) {
+    return (
+      <>
+        <p className="chosen">
+          <span className="muted small">Working in</span> <code>{chosen.label}</code>{' '}
+          <button
+            className="link"
+            onClick={() => {
+              setChosen(null)
+              setQuery('')
+            }}
+          >
+            change
+          </button>
+        </p>
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="Tell Claude what to do…"
+          aria-label="task"
+        />
+        <button
+          onClick={() => {
+            if (onStart(chosen.path, prompt.trim())) setPrompt('')
+          }}
+          disabled={!prompt.trim() || !connected}
+        >
+          {connected ? 'Start session' : 'Waiting for your laptop…'}
+        </button>
+      </>
+    )
+  }
+
   return (
     <>
-      {roots.length > 1 ? (
-        <select value={root} onChange={(e) => onRootChange(e.target.value)} aria-label="project">
-          {roots.map((candidate) => (
-            <option key={candidate} value={candidate}>
-              {shortPath(candidate)}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <p className="muted small">
-          Working in <code>{shortPath(root)}</code>
-        </p>
-      )}
       <input
-        value={subdir}
-        onChange={(e) => onSubdirChange(e.target.value)}
-        placeholder="subfolder (optional, e.g. packages/api)"
-        aria-label="subfolder"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Which folder? e.g. FD_Engineer, or test in downloads"
+        aria-label="find a folder"
       />
-      <textarea
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        placeholder="Tell Claude what to do…"
-        aria-label="task"
-      />
-      <button
-        onClick={() => {
-          if (onStart(target, prompt.trim())) setPrompt('')
-        }}
-        disabled={!prompt.trim() || !root || !connected}
-      >
-        {connected ? 'Start session' : 'Waiting for your laptop…'}
-      </button>
+      {folders.length === 0 ? (
+        <p className="muted small">
+          {query.trim() ? 'No folder matches that.' : 'Type a folder name, or pick one below.'}
+        </p>
+      ) : (
+        <ul className="folderlist">
+          {folders.map((folder) => (
+            <li key={folder.path}>
+              <button className="folder" onClick={() => setChosen(folder)}>
+                {folder.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   )
 }

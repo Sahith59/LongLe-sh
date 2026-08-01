@@ -56,12 +56,19 @@ export interface Hello {
   capabilities: { startSession: boolean; stopSession: boolean }
 }
 
+export interface FolderHit {
+  path: string
+  label: string
+}
+
 export interface ClientCallbacks {
   onState: (state: ConnectionState) => void
   /** The daemon tells us which directories are usable — never make the user type a path. */
   onHello: (hello: Hello) => void
   /** Errors must reach the person. Swallowing them makes the app look broken. */
   onError: (message: string) => void
+  /** Folder search results, so a project can be picked by name rather than typed as a path. */
+  onFolders: (query: string, results: FolderHit[]) => void
 }
 
 export function connect(token: string, store: Store, callbacks: ClientCallbacks) {
@@ -117,6 +124,10 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
         callbacks.onHello(hello)
         return
       }
+      if (message.type === 'folders') {
+        callbacks.onFolders(String(message.query ?? ''), (message.results ?? []) as FolderHit[])
+        return
+      }
       if (message.type === 'error') {
         callbacks.onError(String(message.message ?? message.code ?? 'Something went wrong'))
         return
@@ -157,6 +168,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       return sent
     },
     stopSession: (sessionId: string) => send({ v: PROTOCOL_VERSION, type: 'stopSession', sessionId }),
+    findFolders: (query: string) => send({ v: PROTOCOL_VERSION, type: 'findFolders', query }),
     resumeSession: (sessionId: string) => {
       const sent = send({ v: PROTOCOL_VERSION, type: 'resumeSession', sessionId })
       if (!sent) callbacks.onError('Not connected to your laptop.')

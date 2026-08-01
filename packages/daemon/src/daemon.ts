@@ -8,6 +8,7 @@ import { SessionManager } from './sessions.js'
 import { LongLeashServer } from './server.js'
 import { createClaudeAgentFactory } from './adapters/claude.js'
 import { readPermissionPosture, type PermissionPosture } from './posture.js'
+import { FolderIndex } from './folders.js'
 
 export interface DaemonOptions {
   /** Directories agents may work in. Nothing outside these can be targeted. */
@@ -106,6 +107,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       : { maxConcurrentSessions: options.maxConcurrentSessions }),
   })
   server.attachSessions(sessions)
+  server.attachFolders(new FolderIndex(roots))
 
   const { port } = await server.listen()
   const stopMaintenance = sessions.startMaintenance()

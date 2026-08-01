@@ -80,6 +80,23 @@ Full report: `agents/2026-08-01-audit-a1-a6.md`. Seven flaws found; all critical
 
 **Externally-started sessions are addressable after all.** Verified: a `PreToolUse` hook in `~/.claude/settings.json` fires for EVERY Claude Code session on the machine (CLI and VS Code extension) and can return allow/deny; all sessions write live transcripts to `~/.claude/projects/**/*.jsonl` that any process may tail. So LongLeash can list and gate sessions it did not start. Constraint: hooks are timeout-bounded (~600 s default), so foreign-session approvals cannot park indefinitely the way our own do — the UI must say so. New **Phase D1 (Attach Mode)** added to PLAN.md, gated on spike **D0**. Still impossible: injecting a prompt into a foreign running session; driving the VS Code chat webview. Full analysis: `agents/2026-08-01-external-sessions-feasibility.md`.
 
+## Dogfood round 5 (2026-08-01) — picking a folder without knowing its path
+
+Two problems. First a bug: the subfolder field appended blindly to the root, so pasting an
+absolute path produced `/Users/x/Desktop/Users/x/Desktop/FD_Engineer`. Second, and more
+important, Sahith's point that nobody away from their laptop remembers exact paths.
+
+Replaced the path field with **folder search**: `FolderIndex` walks the allowed roots (bounded
+depth 4, 4000 entries, 10s cache), skipping hidden and noise directories, and scores matches by
+name with location words used only to disambiguate. Deliberately NOT an LLM call — matching is
+instant, deterministic, works offline, and the exact folder is shown before anything runs.
+Symlinks that resolve outside a root are dropped, so search cannot leak paths the allowlist
+forbids. Verified against the real Desktop: "FD_Engineer", "fd_eng" and "FD_Engineer folder in
+desktop" all resolve to the right folder; nonsense returns nothing rather than a wrong guess.
+
+**Open decision for Sahith:** search only covers directories passed to `longleashd`. Passing
+`~` makes everything findable but widens what an agent could be pointed at.
+
 ## Dogfood round 4 (2026-08-01) — reopening closed sessions
 
 Sahith: "if session A closes, can I open it again?" Yes, and it now works. The Claude adapter
