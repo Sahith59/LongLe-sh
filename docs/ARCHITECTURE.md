@@ -82,7 +82,7 @@ of appearing as a phantom inbox.
 2. The relay never sees plaintext and never stores credentials.
 3. Push payloads carry IDs, never content.
 4. Tokens are random 256-bit values stored only as hashes, compared timing-safe, revocable instantly (revocation also drops live connections).
-5. Remote session start is restricted to allowlisted project roots.
+5. Remote session start is restricted to allowlisted project roots — and so is what tools may touch: a tool declaring a path has it resolved and checked, with anything reaching outside the project flagged to you or refused outright. Shell commands are not parsed, because guessing at shell syntax would be security theatre; you see the whole command and decide.
 
 ## What we deliberately do not build
 

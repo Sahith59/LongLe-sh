@@ -74,6 +74,8 @@ Bar for public v1: **one command on the laptop, one app on the phone, working in
 
 ## Field findings
 
+- **2026-08-01 — SECURITY HOLE FOUND BY HAND-TESTING, now fixed.** Live demo with real Claude: asked to create a file, it wrote to `/tmp/phone_test.txt`, OUTSIDE the sandbox, and the approval layer allowed it. The allowlist only governed where a session *started*, never where its tools *wrote*. Fixed: tools declaring a path have it resolved against the session cwd and checked against allowlisted roots; approvals carry `targetPath` + `outsideRoot` so the human sees the reach; `denyOutsideRoot` refuses outright for sandboxed use. Shell commands are deliberately not parsed (that would be security theatre) — they still go to a human who sees the full command. Verified against real Claude: escape attempt refused, no file created. Lesson: automated tests all passed while the product was insecure; only driving a real agent by hand exposed it.
+
 - **2026-08-01 — agents can target paths outside the session directory.** A contract run attempted `Write: /tmp/approved.txt` before self-correcting. cwd pinning governs the agent's process, not every absolute path a tool is handed. The approval card must always show the full target path (it does), and Phase F should flag or block writes landing outside the session's allowlisted root.
 - **2026-08-01 — approval behaviour is machine-dependent unless pinned.** Inheriting the developer's Claude Code settings made the same prompt sometimes raise an approval and sometimes not. The adapter now takes `allowedTools` + `isolateFromUserSettings`; the product must choose its permission posture explicitly rather than inherit one.
 
