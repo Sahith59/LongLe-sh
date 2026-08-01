@@ -136,7 +136,8 @@ export class SessionManager {
         origin TEXT NOT NULL,
         title TEXT NOT NULL,
         status TEXT NOT NULL,
-        started_at INTEGER NOT NULL
+        started_at INTEGER NOT NULL,
+        agent_session_id TEXT
       )
     `)
     // A session whose daemon died has no agent behind it; showing it as "working" would be a
@@ -201,19 +202,7 @@ export class SessionManager {
     this.audit(input.actor ?? 'daemon', 'session.start', `${agent.data} in ${cwd}`)
 
     const waiting = new Map<string, (decision: PermissionDecision) => void>()
-    const handle = factory({
-      sessionId,
-      cwd,
-      prompt,
-      canUseTool: (toolName, toolInput) =>
-        this.requestApproval(sessionId, cwd, waiting, toolName, toolInput),
-      onAutoApprovedTool: (toolName, toolInput) => {
-        this.emit(sessionId, {
-          type: 'activity.tool',
-          payload: { toolName, inputSummary: summarize(toolName, toolInput), autoApproved: true },
-        })
-      },
-    })
+    const handle = this.spawn(factory, sessionId, cwd, prompt, waiting)
 
     const session: LiveSession = {
       sessionId,
@@ -329,6 +318,99 @@ export class SessionManager {
     this.approvals.rawDb
       .prepare('UPDATE sessions SET status = ? WHERE session_id = ?')
       .run(status, sessionId)
+  }
+
+  private spawn(
+    factory: AgentFactory,
+    sessionId: string,
+    cwd: string,
+    prompt: string,
+    waiting: Map<string, (decision: PermissionDecision) => void>,
+    resume?: string,
+  ) {
+    return factory({
+      sessionId,
+      cwd,
+      prompt,
+      ...(resume === undefined ? {} : { resume }),
+      canUseTool: (toolName, toolInput) =>
+        this.requestApproval(sessionId, cwd, waiting, toolName, toolInput),
+      onAutoApprovedTool: (toolName, toolInput) => {
+        this.emit(sessionId, {
+          type: 'activity.tool',
+          payload: { toolName, inputSummary: summarize(toolName, toolInput), autoApproved: true },
+        })
+      },
+      // Remember how to reopen this conversation later.
+      onAgentSession: (agentSessionId) => {
+        this.approvals.rawDb
+          .prepare('UPDATE sessions SET agent_session_id = ? WHERE session_id = ?')
+          .run(agentSessionId, sessionId)
+      },
+    })
+  }
+
+  /**
+   * Reopen a finished conversation. The agent replays its own transcript, so it resumes
+   * knowing everything it knew before, and the events continue in the same stream rather
+   * than starting a second session that looks like a duplicate.
+   */
+  async resumeSession(sessionId: string, actor: string): Promise<boolean> {
+    const live = this.sessions.get(sessionId)
+    if (live && (live.status === 'running' || live.status === 'waiting')) return false
+
+    const row = this.approvals.rawDb
+      .prepare('SELECT * FROM sessions WHERE session_id = ?')
+      .get(sessionId) as
+      | { agent: string; cwd: string; origin: string; title: string; started_at: number; agent_session_id: string | null }
+      | undefined
+    if (!row) return false
+
+    const agent = AgentKind.safeParse(row.agent)
+    if (!agent.success) return false
+    const factory = this.agentFactories[agent.data]
+    if (!factory) return false
+
+    // The directory must still be permitted: an allowlist change must not be bypassable
+    // by reopening something started under the old configuration.
+    let cwd: string
+    try {
+      cwd = this.assertAllowedCwd(row.cwd)
+    } catch {
+      return false
+    }
+
+    this.audit(actor, 'session.resume', sessionId)
+    const waiting = new Map<string, (decision: PermissionDecision) => void>()
+    const handle = this.spawn(
+      factory,
+      sessionId,
+      cwd,
+      row.title,
+      waiting,
+      row.agent_session_id ?? undefined,
+    )
+    const session: LiveSession = {
+      sessionId,
+      agent: agent.data,
+      cwd,
+      status: 'running',
+      startedAt: row.started_at,
+      origin: SessionOrigin.catch('daemon').parse(row.origin),
+      title: row.title,
+      handle,
+      waiting,
+      done: Promise.resolve(),
+    }
+    this.markStatus(sessionId, 'running')
+    // Resuming makes the agent replay its closing message, so mark the seam rather than
+    // letting repeated text look like a glitch.
+    this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: '\n\n— reopened —\n' } })
+    this.emit(sessionId, { type: 'session.status', payload: { status: 'running', detail: 'reopened' } })
+    session.done = this.consume(session)
+    this.sessions.set(sessionId, session)
+    this.claimed.add(sessionId)
+    return true
   }
 
   /**

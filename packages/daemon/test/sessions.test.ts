@@ -19,8 +19,17 @@ class FakeAgent {
   /** Follow-up messages the session delivered to this agent. */
   readonly received: string[] = []
 
+  /** Runs this fake has been asked to start, with the resume id each was given. */
+  readonly runs: (string | undefined)[] = []
+
   readonly factory: AgentFactory = (request) => {
     this.request = request
+    this.runs.push(request.resume)
+    this.queue = []
+    this.finished = false
+    this.failure = null
+    // Real agents announce their resumable id shortly after starting.
+    queueMicrotask(() => request.onAgentSession(`claude_${this.runs.length}`))
     return {
       events: this.iterate(),
       sendMessage: (text: string) => {
@@ -717,6 +726,87 @@ describe('single-writer discipline', () => {
     h.agent.finish()
     await h.manager.waitForIdle(sessionId)
     expect(() => h.manager.claimSession(sessionId)).not.toThrow()
+  })
+})
+
+describe('reopening a closed session', () => {
+  let h: Harness
+  beforeEach(() => {
+    clock = 1_000_000
+    h = makeHarness()
+  })
+  afterEach(() => {
+    rmSync(h.dir, { recursive: true, force: true })
+    h.log.close()
+    h.approvals.close()
+  })
+
+  const closeIt = async (sessionId: string) => {
+    h.agent.finish()
+    await h.manager.waitForIdle(sessionId)
+  }
+
+  it('reopens a finished session and continues the SAME transcript', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'first' })
+    h.agent.say('original answer')
+    await closeIt(sessionId)
+    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('ended')
+
+    expect(await h.manager.resumeSession(sessionId, 'dev_phone')).toBe(true)
+    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('running')
+    // The agent was asked to resume its own prior conversation, not start a blank one.
+    expect(h.agent.runs[1]).toBe('claude_1')
+
+    h.agent.say('continued answer')
+    await new Promise((r) => setTimeout(r, 20))
+    const text = eventsOf(h.log, sessionId)
+      .filter((e) => e.type === 'stream.delta')
+      .map((e) => (e.payload as { text: string }).text)
+      .join('')
+    expect(text).toContain('original answer')
+    expect(text).toContain('continued answer')
+    // One session, not a copy.
+    expect(h.manager.listSessions()).toHaveLength(1)
+  })
+
+  it('accepts follow-up messages again once reopened', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    await closeIt(sessionId)
+    expect(h.manager.sendMessage(sessionId, 'too early', 'dev_phone')).toBe(false)
+
+    await h.manager.resumeSession(sessionId, 'dev_phone')
+    expect(h.manager.sendMessage(sessionId, 'now it works', 'dev_phone')).toBe(true)
+    expect(h.agent.received).toContain('now it works')
+  })
+
+  it('refuses to reopen a session that is already running', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    expect(await h.manager.resumeSession(sessionId, 'dev_phone')).toBe(false)
+  })
+
+  it('refuses an unknown session', async () => {
+    expect(await h.manager.resumeSession('ses_ghost', 'dev_phone')).toBe(false)
+  })
+
+  it('re-checks the directory, so a root removed from the allowlist cannot be reopened', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    await closeIt(sessionId)
+
+    const narrowed = new SessionManager({
+      eventLog: h.log,
+      approvals: h.approvals,
+      allowedRoots: [mkdtempSync(join(tmpdir(), 'longleash-other-'))],
+      agentFactories: { claude: new FakeAgent().factory },
+      now: () => clock,
+    })
+    expect(await narrowed.resumeSession(sessionId, 'dev_phone')).toBe(false)
+  })
+
+  it('records reopening in the audit trail', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    await closeIt(sessionId)
+    await h.manager.resumeSession(sessionId, 'dev_phone')
+    expect(h.manager.listAuditEntries().map((e) => e.action)).toContain('session.resume')
   })
 })
 

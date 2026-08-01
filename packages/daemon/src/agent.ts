@@ -23,6 +23,10 @@ export interface AgentRunRequest {
   canUseTool: (toolName: string, input: unknown) => Promise<PermissionDecision>
   /** Tools that bypassed approval still belong in the activity feed (spike S0 finding). */
   onAutoApprovedTool: (toolName: string, input: unknown) => void
+  /** The agent's own session id, captured so the conversation can be reopened later. */
+  onAgentSession: (agentSessionId: string) => void
+  /** Reopen a previous conversation instead of starting fresh. */
+  resume?: string
 }
 
 export interface AgentRunHandle {

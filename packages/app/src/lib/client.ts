@@ -157,6 +157,11 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       return sent
     },
     stopSession: (sessionId: string) => send({ v: PROTOCOL_VERSION, type: 'stopSession', sessionId }),
+    resumeSession: (sessionId: string) => {
+      const sent = send({ v: PROTOCOL_VERSION, type: 'resumeSession', sessionId })
+      if (!sent) callbacks.onError('Not connected to your laptop.')
+      return sent
+    },
     sendMessage: (sessionId: string, text: string) => {
       const sent = send({ v: PROTOCOL_VERSION, type: 'sendMessage', sessionId, text })
       if (!sent) callbacks.onError('Not connected to your laptop — the message was not sent.')

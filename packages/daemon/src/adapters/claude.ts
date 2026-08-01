@@ -82,6 +82,9 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
         ...(options.model === undefined ? {} : { model: options.model }),
         ...(options.allowedTools === undefined ? {} : { allowedTools: options.allowedTools }),
         ...(options.isolateFromUserSettings ? { settingSources: [] } : {}),
+        // Reopening a closed conversation: Claude replays its own transcript, so the agent
+        // picks up with everything it knew before.
+        ...(request.resume === undefined ? {} : { resume: request.resume }),
         canUseTool: async (toolName: string, input: Record<string, unknown>) => {
           askedForPermission.add(toolKey(toolName, input))
           const decision = await request.canUseTool(toolName, input)
@@ -125,6 +128,11 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
 
     async function* mapStream(): AsyncGenerator<AgentStreamMessage> {
       for await (const message of run) {
+        if (message.type === 'system' && (message as { subtype?: string }).subtype === 'init') {
+          const id = (message as { session_id?: string }).session_id
+          if (id) request.onAgentSession(id)
+          continue
+        }
         if (message.type === 'result') {
           // A turn finished; the human may reply, so do not end the session here.
           yield { type: 'turn-end' }

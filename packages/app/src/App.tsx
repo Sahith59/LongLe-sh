@@ -163,6 +163,7 @@ export default function App() {
           connected={connected}
           onDecide={decide}
           onStop={() => clientRef.current?.stopSession(openSession.sessionId)}
+          onResume={() => clientRef.current?.resumeSession(openSession.sessionId)}
           onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
         />
       </>
@@ -345,6 +346,7 @@ function SessionDetail({
   connected,
   onDecide,
   onStop,
+  onResume,
   onSend,
 }: {
   session: SessionView
@@ -352,6 +354,7 @@ function SessionDetail({
   connected: boolean
   onDecide: (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => void
   onStop: () => void
+  onResume: () => void
   onSend: (text: string) => boolean
 }) {
   const [message, setMessage] = useState('')
@@ -376,7 +379,11 @@ function SessionDetail({
             <button className="secondary small" onClick={onStop}>
               Stop this agent
             </button>
-          ) : null}
+          ) : (
+            <button className="small" onClick={onResume}>
+              Reopen this session
+            </button>
+          )}
         </div>
       </section>
 
@@ -421,7 +428,10 @@ function SessionDetail({
             </button>
           </>
         ) : (
-          <p className="muted small">This session has finished. Start a new one to keep going.</p>
+          <p className="muted small">
+            This session has finished. Tap <strong>Reopen this session</strong> above to carry on
+            where you left off — the agent picks up knowing everything it knew before.
+          </p>
         )}
       </div>
     </>

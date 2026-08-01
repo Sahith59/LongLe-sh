@@ -80,6 +80,24 @@ Full report: `agents/2026-08-01-audit-a1-a6.md`. Seven flaws found; all critical
 
 **Externally-started sessions are addressable after all.** Verified: a `PreToolUse` hook in `~/.claude/settings.json` fires for EVERY Claude Code session on the machine (CLI and VS Code extension) and can return allow/deny; all sessions write live transcripts to `~/.claude/projects/**/*.jsonl` that any process may tail. So LongLeash can list and gate sessions it did not start. Constraint: hooks are timeout-bounded (~600 s default), so foreign-session approvals cannot park indefinitely the way our own do — the UI must say so. New **Phase D1 (Attach Mode)** added to PLAN.md, gated on spike **D0**. Still impossible: injecting a prompt into a foreign running session; driving the VS Code chat webview. Full analysis: `agents/2026-08-01-external-sessions-feasibility.md`.
 
+## Dogfood round 4 (2026-08-01) — reopening closed sessions
+
+Sahith: "if session A closes, can I open it again?" Yes, and it now works. The Claude adapter
+captures the agent's own session id from the init message; `resumeSession` restarts the agent
+with `resume: <id>` in the same pinned directory and reattaches to the SAME LongLeash session, so
+events continue in one stream instead of creating a duplicate. Reopening re-checks the allowlist,
+so a directory removed from the configuration cannot be reached by reopening old work, and it is
+recorded in the audit trail. Verified with real Claude: told it a fact, stopped the session,
+reopened it, and it answered a question about that fact correctly.
+
+Known cosmetic artifact: resuming makes Claude replay its closing message, so a line can appear
+twice. A "— reopened —" marker now labels the seam.
+
+Also fixed this round: the heartbeat dropped a connection after ONE missed pong, which made the
+phone reconnect every ~30s and appear to lose sessions; it now tolerates three misses and treats
+any inbound message as proof of life. And finished sessions were listed alongside running ones,
+so history read as "four agents running" — Active and Earlier are now separate.
+
 ## Dogfood round 3 (2026-08-01) — reload wiped the screen
 
 Refreshing the app lost every session. Two causes, both fixed:

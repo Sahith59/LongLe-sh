@@ -134,6 +134,14 @@ const startSessionMessage = z
   })
   .passthrough()
 
+const resumeSessionMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('resumeSession'),
+    sessionId: z.string().min(1),
+  })
+  .passthrough()
+
 const stopSessionMessage = z
   .object({
     ...clientBase,
@@ -148,6 +156,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   sendMessageMessage,
   startSessionMessage,
   stopSessionMessage,
+  resumeSessionMessage,
 ])
 export type ClientMessage = z.infer<typeof ClientMessageSchema>
 

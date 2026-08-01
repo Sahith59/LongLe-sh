@@ -344,6 +344,28 @@ export class LongLeashServer {
       return
     }
 
+    if (message.type === 'resumeSession') {
+      void this.sessions.resumeSession(message.sessionId, connection.deviceId).then((reopened) => {
+        this.log(`resume ${message.sessionId} -> ${reopened ? 'reopened' : 'refused'}`)
+        this.send(connection.socket, {
+          v: PROTOCOL_VERSION,
+          type: 'ack',
+          of: 'resumeSession',
+          sessionId: message.sessionId,
+          outcome: reopened ? 'reopened' : 'cannot-reopen',
+        })
+        if (!reopened) {
+          this.send(connection.socket, {
+            v: PROTOCOL_VERSION,
+            type: 'error',
+            code: 'cannot-reopen',
+            message: 'This session cannot be reopened — its project directory may no longer be allowed.',
+          })
+        }
+      })
+      return
+    }
+
     if (message.type === 'stopSession') {
       void this.sessions.stopSession(message.sessionId, connection.deviceId).then((stopped) => {
         this.send(connection.socket, {
