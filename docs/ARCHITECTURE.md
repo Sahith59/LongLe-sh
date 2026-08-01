@@ -56,6 +56,26 @@ One sentence: **a TypeScript daemon on your laptop is the single source of truth
 4. The decision travels back encrypted, resolves the pending callback, and the agent continues.
 5. Every mutating action lands in the audit log; both desk and phone render the same event stream.
 
+## How an agent session actually runs
+
+`SessionManager` owns every session. Starting one resolves the requested directory through
+symlinks and refuses anything outside your allowlisted roots — so remote start cannot reach
+`/etc`, cannot climb out with `..`, and cannot be tricked by a sibling path that merely shares
+a prefix. The directory is then **pinned** for the session's life, because resuming an agent
+from a different working directory silently forks a fresh, empty session.
+
+While it runs, the adapter contract (`AgentFactory`) is all `SessionManager` knows about the
+agent, so Claude via the official SDK, ACP agents, and the deterministic test double are
+interchangeable. Output becomes `stream.delta` events; tools that ask permission become
+approvals that **block the agent until a human answers**; tools that were auto-approved still
+surface in the activity feed, because a permission callback alone would leave them invisible.
+
+Failure is designed for, not hoped against: an agent that dies mid-stream marks the session
+errored while keeping its partial output, any approval it left pending is closed out rather
+than hanging forever, unanswered approvals expire into a safe deny, repeated decisions are
+idempotent, and approvals left pending by a crashed daemon are reconciled at startup instead
+of appearing as a phantom inbox.
+
 ## Security model, in five rules
 
 1. Typed operations only — there is no generic "run this command" endpoint; the API's shape is the security boundary.

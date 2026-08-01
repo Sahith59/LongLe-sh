@@ -25,7 +25,7 @@ Nothing to install yet. The plan is real, the research is done, the architecture
 
 | Phase | What ships | State |
 |---|---|---|
-| A | Approve/steer/launch Claude from your phone (LAN) | in progress — daemon core done, 70 tests |
+| A | Approve/steer/launch Claude from your phone (LAN) | in progress — daemon complete (event log, auth, live streaming, agent sessions + approvals), 92 tests |
 | B | Our encrypted relay — works from anywhere | planned |
 | C | Push notifications (Web Push, free) | planned |
 | D | Terminals on your phone | planned |
