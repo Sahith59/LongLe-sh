@@ -26,16 +26,23 @@ const HOST = best.address
  * that needs permission. Nothing is faked about the waiting — the real SessionManager holds
  * this agent until a decision arrives from the phone.
  */
-class ScriptedAgent {
-  private request!: AgentRunRequest
+class ScriptedRun {
   private queue: unknown[] = []
   private waiter: (() => void) | null = null
   private finished = false
 
-  readonly factory: AgentFactory = (request) => {
-    this.request = request
+  private readonly tag: string
+
+  constructor(private readonly request: AgentRunRequest) {
+    this.tag = request.sessionId.slice(0, 10)
+  }
+
+  start(): { events: AsyncIterable<never>; interrupt: () => Promise<void> } {
     void this.run()
-    return { events: this.iterate(), interrupt: async () => this.stop() }
+    return {
+      events: this.iterate(),
+      interrupt: async () => this.stop(),
+    }
   }
 
   private async run(): Promise<void> {
@@ -48,26 +55,26 @@ class ScriptedAgent {
     await wait(900)
     say('\nFound a TypeScript monorepo. I want to add a feature file.')
 
-    console.log('\n>>> AGENT IS NOW BLOCKED, waiting for your phone to approve "Write"')
+    console.log(`\n>>> [${this.tag}] BLOCKED, waiting for your phone to approve "Write"`)
     const write = await this.ask('Write', { file_path: 'src/feature.ts', content: '// 240 lines' })
     if (write.behavior === 'allow') {
       say('\n\nWrote src/feature.ts.')
-      console.log('>>> APPROVED — agent continued')
+      console.log(`>>> [${this.tag}] APPROVED — agent continued`)
     } else {
       say(`\n\nSkipping the write. You said: "${write.message}"`)
-      console.log(`>>> DENIED — agent received your reply: "${write.message}"`)
+      console.log(`>>> [${this.tag}] DENIED — agent received your reply: "${write.message}"`)
     }
 
     await wait(900)
     say('\nNow I would like to run the test suite.')
-    console.log('\n>>> AGENT IS BLOCKED AGAIN, waiting on "Bash: pnpm test"')
+    console.log(`\n>>> [${this.tag}] BLOCKED AGAIN, waiting on "Bash: pnpm test"`)
     const bash = await this.ask('Bash', { command: 'pnpm test' })
     if (bash.behavior === 'allow') {
       say('\n\nRunning pnpm test…\n97 tests passed.')
-      console.log('>>> APPROVED — agent continued')
+      console.log(`>>> [${this.tag}] APPROVED — agent continued`)
     } else {
       say(`\n\nNot running tests. You said: "${bash.message}"`)
-      console.log(`>>> DENIED — agent received your reply: "${bash.message}"`)
+      console.log(`>>> [${this.tag}] DENIED — agent received your reply: "${bash.message}"`)
     }
 
     await wait(700)
@@ -102,16 +109,18 @@ class ScriptedAgent {
   }
 }
 
+/** One independent run per session, so concurrent sessions never share state. */
+const scriptedAgentFactory: AgentFactory = (request) => new ScriptedRun(request).start()
+
 const log = new EventLog(':memory:')
 const registry = new DeviceRegistry(':memory:')
 const approvals = new ApprovalStore(':memory:')
 const server = new LongLeashServer({ eventLog: log, registry, host: HOST, port: WS_PORT })
-const scripted = new ScriptedAgent()
 const sessions = new SessionManager({
   eventLog: log,
   approvals,
   allowedRoots: [PROJECT_ROOT],
-  agentFactories: { claude: scripted.factory },
+  agentFactories: { claude: scriptedAgentFactory },
   onEvent: (event) => server.broadcastEvent(event),
 })
 server.attachSessions(sessions)
@@ -143,7 +152,8 @@ const PAGE = `<!doctype html>
 const params = new URLSearchParams(location.search)
 const statusEl=document.getElementById('status'), inboxEl=document.getElementById('inbox')
 const streamEl=document.getElementById('stream'), emptyEl=document.getElementById('empty')
-let cursor=0, token=sessionStorage.getItem('llt')||null, ws=null, dead=false, sessionId=null
+let token=sessionStorage.getItem('llt')||null, ws=null, dead=false
+const subs=new Map()  // sessionId -> cursor: several agents can run at once
 const cards={}
 
 function setStatus(t,c){statusEl.textContent=t;statusEl.className=c}
@@ -181,14 +191,14 @@ function connect(){
   if(dead) return
   ws=new WebSocket('ws://'+location.hostname+':${WS_PORT}/ws?token='+encodeURIComponent(token))
   ws.onopen=()=>{ setStatus('connected — watching the agent','ok')
-    if(sessionId) ws.send(JSON.stringify({v:1,type:'subscribe',sessionId,fromCursor:cursor})) }
+    for(const [sid,cur] of subs) ws.send(JSON.stringify({v:1,type:'subscribe',sessionId:sid,fromCursor:cur})) }
   ws.onmessage=(e)=>{
     const m=JSON.parse(e.data)
-    if(m.type==='ack'&&m.of==='startSession'){ sessionId=m.sessionId
-      ws.send(JSON.stringify({v:1,type:'subscribe',sessionId,fromCursor:0})); return }
+    if(m.type==='ack'&&m.of==='startSession'){ subs.set(m.sessionId,0)
+      ws.send(JSON.stringify({v:1,type:'subscribe',sessionId:m.sessionId,fromCursor:0})); return }
     if(m.type==='error'){ streamEl.textContent+='\\n[error: '+m.code+'] '+(m.message||''); return }
     if(typeof m.seq==='number'){
-      cursor=m.seq
+      subs.set(m.sessionId,m.seq)
       if(m.type==='stream.delta') streamEl.textContent+=m.payload.text
       if(m.type==='approval.requested') renderCard(m)
       if(m.type==='activity.tool') streamEl.textContent+='\\n[auto-approved: '+m.payload.toolName+']\\n'
@@ -196,7 +206,7 @@ function connect(){
     }
   }
   ws.onclose=(e)=>{ if(e.code===4403||e.code===4401){dead=true;setStatus('access revoked','bad');return}
-    setStatus('disconnected — retrying at cursor '+cursor,'warn'); setTimeout(connect,1000) }
+    setStatus('disconnected — retrying, will resume where each session left off','warn'); setTimeout(connect,1000) }
 }
 
 pair().then(()=>{ connect()
