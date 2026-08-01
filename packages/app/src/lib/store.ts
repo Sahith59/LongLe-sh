@@ -180,9 +180,11 @@ export function createStore(options: StoreOptions = {}) {
     rollbackDecision,
     cursors: () => ({ ...cursors }),
     getState: (): StoreState => ({ sessions, approvals: [...approvals.values()] }),
-    subscribe: (listener: () => void) => {
+    subscribe: (listener: () => void): (() => void) => {
       listeners.add(listener)
-      return () => listeners.delete(listener)
+      return () => {
+        listeners.delete(listener)
+      }
     },
   }
 }
