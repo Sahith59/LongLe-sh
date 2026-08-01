@@ -2,7 +2,7 @@
 
 Standalone, end-to-end, open-source product: control the AI-agent sessions, terminal sessions, and IDE sessions on your laptop from your phone, anywhere in the world. AI does the heavy lifting; LongLeash frees the human's remaining job — prompting and approving — from the desk.
 
-**Scope (final, decided 2026-07-29):** one daemon (`longleashd`), one phone app (Expo), our own E2E relay, our own installer CLI, our own VS Code extension. No Happy/Termius/Tailscale as dependencies — every product surface is ours. Standard libraries underneath (Node, RN, xterm.js, tmux, libsodium) are fine. Base architecture: `agents/archive/tether.json` + our relay. Personal-first dogfooding, then public release.
+**Scope (decided 2026-07-29; client form revised 2026-08-01):** one daemon (`longleashd`), one **web app (PWA, React+Vite)** served by the daemon or relay — not a native app, because $0 cost and zero-friction install matter more for an open-source product than lock-screen action buttons — plus our own E2E relay, installer CLI, and VS Code extension. No Happy/Termius/Tailscale as dependencies — every product surface is ours. Standard libraries underneath (Node, RN, xterm.js, tmux, libsodium) are fine. Base architecture: `agents/archive/tether.json` + our relay. Personal-first dogfooding, then public release.
 
 ## Status
 
@@ -21,7 +21,7 @@ Phone (Expo app: Inbox / Sessions / Activity) ⇄ E2E encrypted channel (LAN dir
 - Typed API operations only — never a generic exec endpoint. Remote start only into allowlisted project roots. Audit-log every mutating call.
 - One writer per Claude session: exclusive attach, defer-based release before `claude --resume` handoff.
 - Nothing binds `0.0.0.0`. Daemon binds localhost/LAN/relay outbound only.
-- FileVault decision is Sahith's, recorded in STATE.md — never trade disk encryption for auto-login silently.
+- **Never require a user to weaken their security.** Disk encryption, firewalls, OS updates are the user's call; LongLeash requires only that the machine is awake, the daemon runs, and the phone can reach it. See `docs/REQUIREMENTS.md` for the three tiers — keep that file honest.
 - Non-tmux terminals are uncapturable on macOS; VS Code chat panels are sealed webviews. Say so in the UI and docs; never pretend.
 
 ## Conventions

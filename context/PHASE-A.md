@@ -47,8 +47,11 @@ FakeAgent implements the SDK surface (query stream, canUseTool, hooks) for fast 
 ### A6 · contract tests (real Agent SDK, budgeted ~5 runs)
 Start/stream/approve/deny/steer on the real SDK; cwd pinning verified by actual file location (the S0 gotcha); session JSONL exists in `~/.claude/projects`; `claude --resume <id>` sees the session.
 
-### A7 · Expo app (LAN)
+### A7 · Web app, PWA (LAN)
+**Revised 2026-08-01: React + Vite PWA, not Expo** — $0, no store review, installable to the home screen, served by the daemon itself, and usable from a desktop browser too. Screens: Pair (QR scan or paste), Sessions, Inbox, Session detail (virtualized stream + approve/deny/steer), New Task (allowlisted roots from daemon), Devices (revoke).
 Carries two requirements proven in the field on 2026-07-31 (see STATE.md field findings): a **reachability check separate from pairing** (so "network blocked" and "pairing failed" are never confused), and **active-VPN/tunnel detection with a plain-language warning**.
+- Tests: vitest for client store (cursor resume after reconnect, optimistic decision reconciliation); Playwright for the real flows against a live daemon; manual device checklist: background → foreground catch-up, app killed → reopen catch-up, airplane-mode flap.
+- No Expo account, no EAS, no Apple Developer enrollment needed for any of Phase A–G.
 Screens: Pair (QR scan), Sessions, Inbox, Session detail (FlashList stream + approve/deny/steer), New Task (allowlisted roots from daemon). Target Expo Go if all deps allow, else free-signed dev build (7-day re-sign accepted until Phase C).
 - Tests: client store unit tests — cursor resume after reconnect, optimistic decision reconciliation; component tests with a mocked daemon client; manual device checklist: background → foreground catch-up, app killed → reopen catch-up, airplane-mode flap.
 
@@ -57,6 +60,6 @@ One real workday driving a real Claude session from the phone on home Wi-Fi. Eve
 
 ## Sahith's inputs for Phase A
 
-- Free Expo account (expo.dev) — needed at A7.
-- iPhone available for device testing at A7/A8.
-- Machine-readiness leftovers (pmset, auto-updates, FileVault decision, healthchecks URL) — independent of coding, still open.
+- iPhone available for device testing at A7/A8. **That is the only hard input.**
+- No accounts needed: the PWA pivot (2026-08-01) removed the Expo account, EAS builds, and the $99/yr Apple Developer enrollment from the entire plan.
+- Optional reliability config for his own machine (pmset, auto-updates, laptop-down alert): advice, not blockers — see `docs/REQUIREMENTS.md`.

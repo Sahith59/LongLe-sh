@@ -4,8 +4,8 @@ One sentence: **a TypeScript daemon on your laptop is the single source of truth
 
 ```
 ┌─────────────────────────────┐
-│   LongLeash app (phone)     │  Expo / React Native + TypeScript
-│   Inbox · Sessions · Activity│  approvals on the lock screen
+│  LongLeash web app (PWA)    │  React + Vite + TypeScript
+│  Inbox · Sessions · Activity│  installable, $0, any device
 └──────────────┬──────────────┘
                │  E2E-encrypted, cursor-addressed event streams
                │  (LAN direct, or via relay from anywhere)
@@ -41,11 +41,11 @@ One sentence: **a TypeScript daemon on your laptop is the single source of truth
 | Agent control (Claude) | official Claude Agent SDK | Structured approvals (`canUseTool`), streaming, session resume — never screen-scraping (screen-scrapers die on every agent UI update; that killed prior projects) |
 | Agent control (others) | ACP — Agent Client Protocol | One client implementation covers Gemini CLI, Codex, and every future ACP agent |
 | Terminal capture | tmux control mode (`tmux -C`) | The only honest way to mirror and drive terminals on macOS; screen-exact, resize-safe |
-| Phone app | Expo / React Native + TypeScript | Real native push with lock-screen actions (a PWA can't do this on iOS); one codebase for iOS + Android |
+| Phone app | React + Vite PWA (installable web app) | Free forever, no store review or sideloading, instant updates, works on desktop browsers too — adoption matters more for an open-source tool than iOS lock-screen action buttons. Native wrappers stay an option later; nothing else changes if we add them |
 | Sync protocol | zod-validated event schemas, cursor-addressed streams | The phone assumes it is always disconnected and catches up from its last cursor — mobile networks are treated as hostile, not exceptional |
 | Relay | small Node WSS service, Docker, self-hostable | NAT traversal without a third party in the trust path: it routes ciphertext it cannot read and stores no credentials |
 | Pairing & auth | QR one-time challenge, per-device random tokens (stored hashed, timing-safe compare), instant revocation | A stolen database leaks no tokens; a lost phone is one tap to revoke |
-| Notifications | Expo Push → APNs / FCM, payloads carry IDs only | Nothing sensitive ever transits push infrastructure; the app fetches real state over the encrypted channel |
+| Notifications | Web Push with self-generated VAPID keys, payloads carry IDs only | No vendor account or fee; nothing sensitive transits push infrastructure — the app fetches real state over the encrypted channel |
 | Testing | vitest, TDD, failure-mode tests mandatory | Every guarantee is a test that existed before the code; CI on every push |
 
 ## The approval flow (the product in one trace)

@@ -13,7 +13,7 @@ A standalone, end-to-end, open-source system to control everything running on yo
 - **IDE awareness** — what project is open, what's running, what needs you
 - **A laptop-down alarm** — because a home laptop is a home server, and servers lie about being fine
 
-No third-party apps required. One daemon, one phone app, one relay — all LongLeash, all open source, end-to-end encrypted, zero public endpoints on your machine.
+No third-party apps required, no app store, no fees. One daemon on your laptop, one installable web app on your phone, one self-hostable relay — all LongLeash, all open source, end-to-end encrypted, zero public endpoints on your machine.
 
 ## Why
 
@@ -25,9 +25,9 @@ Nothing to install yet. The plan is real, the research is done, the architecture
 
 | Phase | What ships | State |
 |---|---|---|
-| A | Approve/steer/launch Claude from your phone (LAN) | up next |
+| A | Approve/steer/launch Claude from your phone (LAN) | in progress — daemon core done, 70 tests |
 | B | Our encrypted relay — works from anywhere | planned |
-| C | Push notifications, lock-screen actions | planned |
+| C | Push notifications (Web Push, free) | planned |
 | D | Terminals on your phone | planned |
 | E | Gemini + Codex in the same inbox | planned |
 | F | VS Code integration + hardening | planned |
@@ -35,7 +35,9 @@ Nothing to install yet. The plan is real, the research is done, the architecture
 
 ## Architecture (one breath)
 
-Phone (Expo/RN: Inbox · Sessions · Activity) ⇄ E2E-encrypted channel (LAN direct, or the self-hostable `longleash-relay` that only ever sees ciphertext) ⇄ `longleashd` on the laptop (TypeScript daemon: typed API, SQLite event log with cursor replay, audit log) → structured adapters: Claude via the official Agent SDK, other agents via ACP, terminals via tmux control mode. Push notifications carry IDs only — never your content.
+An installable web app (React + Vite: Inbox · Sessions · Activity) ⇄ E2E-encrypted channel (LAN direct, or the self-hostable `longleash-relay` that only ever sees ciphertext) ⇄ `longleashd` on the laptop (TypeScript daemon: typed API, SQLite event log with cursor replay, audit log) → structured adapters: Claude via the official Agent SDK, other agents via ACP, terminals via tmux control mode. Push notifications carry IDs only — never your content.
+
+LongLeash never asks you to weaken your security to use it — see [what it requires and what it doesn't](docs/REQUIREMENTS.md).
 
 Design rules we don't break: no TUI scraping, no generic exec endpoints, no credentials on the relay, no pretending macOS lets us capture things it doesn't. The full plan and the "why" behind every decision live in [PLAN.md](PLAN.md) and [context/DECISIONS.md](context/DECISIONS.md).
 

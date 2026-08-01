@@ -9,7 +9,23 @@ Update this file at the end of any session that changes project state. Newest en
 - **Dropped from checklist (v2 pivot):** Tailscale install (stuck standalone app can just be trashed — no longer needed), Termius, Happy, Blink. Claude `/remote-control` stays available as Sahith's personal stopgap until Phase C.
 - **Next actions:** (1) slice A5 — Claude adapter against a FakeAgent (session start w/ pinned cwd, canUseTool → approval, decision resolves, PreToolUse → activity, single-writer lock), test-first per `context/PHASE-A.md`; (2) Sahith's kickoff list below. S0 PASSED; **A1 DONE** (protocol, 14 tests); **A2 DONE** (event log, 18 tests + eyes-on demo `pnpm demo`); **A3 DONE** (pairing + device auth, 19 tests: QR one-time challenge w/ TTL + sweep, tokens hashed + timing-safe, no-plaintext-in-DB proven, revocation w/ crash-safe listeners, restart durability — VERIFIED ON DEVICE, see below); **A4 DONE** (WS server, 19 tests: token auth on upgrade, live revocation drops sockets mid-connection, subscribe→replay→live tail, per-session isolation, gap signals, hostile input survivable, reconnect storms, backpressure watermark with resync-gap instead of unbounded buffering, heartbeat reaping half-open sockets). 70 tests green workspace-wide. `docs/ARCHITECTURE.md` added. Repo live: https://github.com/Sahith59/LongLe-sh (public).
 
-## Sahith's kickoff list (v2)
+## Sahith's kickoff list (v3 — after the PWA pivot)
+
+**Hard blockers: none.** The web-app decision removed every paid account and signup from the plan. Only item that matters for the build: have the iPhone handy at A7/A8.
+
+Optional reliability config for his own always-on machine (advice, not product requirements — `docs/REQUIREMENTS.md` explains the tiers):
+1. `sudo pmset -c sleep 0 && sudo pmset -a autorestart 1` (Mac stays awake on power; recovers after a power cut).
+2. System Settings → General → Software Update → ⓘ → turn OFF "Install macOS updates".
+3. Laptop-down alert: healthchecks.io free check `longleash-deadman` (5 min period, 10 min grace) → paste ping URL. Interim only; the daemon's own heartbeat replaces it.
+4. FileVault: **recommended ON**, Sahith's call, no product impact either way.
+
+## Superseded (do NOT do these)
+
+- ~~Expo account, EAS builds~~ — PWA pivot 2026-08-01.
+- ~~Apple Developer Program $99/yr~~ — not needed for any phase; only if native wrappers are ever added.
+- ~~Tailscale / Termius / Happy installs~~ — dropped at the standalone-product pivot.
+
+## Old kickoff list (v2, historical)
 
 1. Power config (still pending): `sudo pmset -c sleep 0 && sudo pmset -a autorestart 1`. Lid stays open when away.
 2. System Settings → General → Software Update → ⓘ → turn OFF "Install macOS updates".
@@ -61,6 +77,8 @@ Bar for public v1: **one command on the laptop, one app on the phone, working in
 - **2026-07-31 — A full-tunnel VPN silently kills LAN-direct mode; corrected root cause.** First hypothesis was university client isolation. WRONG: once Cisco AnyConnect (full-tunnel, utun default route) was disconnected, the phone reached the laptop fine on the same university Wi-Fi (phone 192.168.1.207 → laptop 192.168.1.71). Verified by Sahith on-device. Two real bugs found: (1) picking the first non-internal IPv4 handed the phone 192.0.0.2, iOS's RFC 7335 service-continuity range, which Safari refuses to route — address selection must exclude 169.254/16 and 192.0.0.0/29 and prefer 172.20.10/24 (hotspot) then RFC1918; (2) no connectivity check existed, so network failure and pairing failure were indistinguishable. Product consequences: the app MUST detect an active VPN/tunnel and say so, MUST ship a reachability check separate from pairing, and MUST NOT assume LAN-direct works — corporate/university VPNs are the norm for the target user. Phase B relay remains required, but for VPN interference at least as much as for remote access.
 
 ## Log
+
+- **2026-08-01 (PIVOT: client is a web app)** — Sahith: no budget for Apple/Google fees, and wants maximum reach for an open-source tool. Client changes from Expo/React Native to an installable **React+Vite PWA** served by the daemon/relay. Rationale: $0 forever, no store review or sideloading, instant updates, desktop browsers get a free client, and adoption friction drops to "open a URL". Accepted trade-off: iOS web push has no lock-screen action buttons (tap → approve in app, ~2s slower); Android does. Native wrappers remain a later option that changes nothing below the client. **A1–A4 unaffected** — the architecture's client-swappability paid off. Also corrected a policy error: "FileVault stays ON" was wrongly recorded as a project invariant; disk encryption is the user's call and LongLeash must never require weakened security. New `docs/REQUIREMENTS.md` codifies required vs recommended vs never-required.
 
 - **2026-07-29 (PIVOT)** — Sahith set final scope: LongLeash is a STANDALONE end-to-end product — no Happy/Termius/Tailscale dependencies, every product surface ours. Adopted the archived Tether architecture + our own E2E relay as PLAN v2 (7 phases A–G, ~29 dev-days, $99/yr Apple at Phase C). Public-product bar unchanged: one command + one app + 5 minutes. Old compose-tools plan superseded; published artifact now outdated (refresh once v2 stabilizes). Checklist pruned: Tailscale/Termius/Happy dropped.
 
