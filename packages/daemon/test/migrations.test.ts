@@ -8,11 +8,16 @@ import { ApprovalStore } from '../src/approvals.js'
 import { SessionManager } from '../src/sessions.js'
 import type { AgentFactory } from '../src/agent.js'
 
-const noopAgent: AgentFactory = () => ({
-  events: (async function* () {})(),
-  sendMessage: () => {},
-  interrupt: async () => {},
-})
+const noopAgent: AgentFactory = (request) => {
+  // Real agents announce a resume id moments after starting; without it a conversation has
+  // no point to carry on from, so a stub that stays silent would test the wrong thing.
+  queueMicrotask(() => request.onAgentSession('claude_migrated'))
+  return {
+    events: (async function* () {})(),
+    sendMessage: () => {},
+    interrupt: async () => {},
+  }
+}
 
 let dir: string
 let root: string
@@ -72,7 +77,12 @@ describe('upgrading a database written by an older release', () => {
     // This is what failed on a real upgrade: "no such column: agent_session_id".
     const listed = manager.listSessions()
     expect(listed.map((s) => s.sessionId)).toContain('ses_old')
-    await expect(manager.resumeSession('ses_old', 'dev_phone')).resolves.toBe(true)
+    // It predates resume points, so it cannot be continued — and says so plainly instead
+    // of crashing or pretending. Sessions started after the upgrade can be.
+    await expect(manager.resumeSession('ses_old', 'dev_phone')).resolves.toBe(false)
+    const { sessionId } = await manager.startSession({ agent: 'claude', cwd: root, prompt: 'new work' })
+    await manager.stopSession(sessionId, 'dev_phone')
+    await expect(manager.resumeSession(sessionId, 'dev_phone')).resolves.toBe(true)
 
     log.close()
     approvals.close()

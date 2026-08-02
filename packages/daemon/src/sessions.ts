@@ -34,6 +34,15 @@ export interface SessionSummary {
   title: string
 }
 
+/**
+ * A summary as the phone receives it. `resumable` is derived from storage rather than
+ * carried as session state — it answers "can typing carry this on?", which is true of
+ * history a live session knows nothing about.
+ */
+export interface SessionListing extends SessionSummary {
+  resumable: boolean
+}
+
 export interface StartSessionInput {
   agent: AgentKind
   cwd: string
@@ -80,6 +89,12 @@ interface LiveSession extends SessionSummary {
   done: Promise<void>
   /** Resolvers for approvals this session is currently blocked on. */
   waiting: Map<string, (decision: PermissionDecision) => void>
+  /**
+   * A newer run (a reopen, or a wake) has taken this conversation over. The old run may still
+   * be draining; when it finishes it must NOT write its terminal status, or a conversation
+   * the person just reopened silently flips back to finished.
+   */
+  superseded?: boolean
 }
 
 const newId = (prefix: string) => `${prefix}_${randomBytes(9).toString('base64url')}`
@@ -136,11 +151,34 @@ export class SessionManager {
     this.denyOutsideRoot = opts.denyOutsideRoot ?? false
     this.maxConcurrentSessions = opts.maxConcurrentSessions ?? 10
     this.excludeSensitive = opts.excludeSensitive ?? false
-    // A session whose daemon died has no agent behind it; showing it as "working" would be a
-    // lie the user cannot act on, so anything left live is closed out on startup.
-    this.approvals.rawDb
-      .prepare("UPDATE sessions SET status = 'ended' WHERE status IN ('running','waiting')")
-      .run()
+    // A restart takes every agent process with it — but not the conversations. Anything with
+    // a resume id becomes 'waiting': the transcript survives on disk and a reply wakes it (see
+    // sendMessage). Only a session that never announced a resume id is truly over. Either way
+    // the transition is APPENDED TO THE EVENT LOG: silently rewriting the table once made
+    // hello say "ended" while the replayed stream still ended "waiting" — the phone believed
+    // the stream, showed a live session, and the send bounced.
+    const stranded = this.approvals.rawDb
+      .prepare(
+        "SELECT session_id, status, agent_session_id FROM sessions WHERE status IN ('running','waiting')",
+      )
+      .all() as { session_id: string; status: string; agent_session_id: string | null }[]
+    for (const row of stranded) {
+      if (row.agent_session_id !== null) {
+        if (row.status !== 'waiting') {
+          this.markStatus(row.session_id, 'waiting')
+          this.emit(row.session_id, {
+            type: 'session.status',
+            payload: { status: 'waiting', detail: 'interrupted by a daemon restart' },
+          })
+        }
+      } else {
+        this.markStatus(row.session_id, 'ended')
+        this.emit(row.session_id, {
+          type: 'session.ended',
+          payload: { reason: 'daemon restarted before the agent announced a resume id' },
+        })
+      }
+    }
     // A crashed daemon takes its agents with it; anything still pending can never be answered.
     this.orphansClosed = this.approvals.closeOrphans('Daemon restarted before this was answered').length
   }
@@ -257,7 +295,7 @@ export class SessionManager {
    * Every session this daemon knows about, live or historical. A phone that reloads — or a
    * daemon that restarted — must be able to rebuild the list rather than showing nothing.
    */
-  listSessions(): SessionSummary[] {
+  listSessions(): SessionListing[] {
     const rows = this.approvals.rawDb
       .prepare('SELECT * FROM sessions ORDER BY started_at ASC')
       .all() as {
@@ -268,6 +306,7 @@ export class SessionManager {
       title: string
       status: string
       started_at: number
+      agent_session_id: string | null
     }[]
     return rows.map((row) => {
       const live = this.sessions.get(row.session_id)
@@ -280,6 +319,7 @@ export class SessionManager {
         // Trust the live process over the stored row while it is running.
         status: live ? live.status : (row.status as SessionStatus),
         startedAt: row.started_at,
+        resumable: row.agent_session_id !== null,
       }
     })
   }
@@ -339,9 +379,14 @@ export class SessionManager {
   }
 
   /**
-   * Reopen a finished conversation. The agent replays its own transcript, so it resumes
-   * knowing everything it knew before, and the events continue in the same stream rather
-   * than starting a second session that looks like a duplicate.
+   * Reopen a finished conversation — which means making it READY, not re-running it.
+   *
+   * This used to re-spawn the agent with the original prompt (truncated to the 80-char
+   * title, no less), so tapping Reopen silently re-executed the first instruction. On
+   * "say BETA" that only looked odd; on "delete the old migrations" it would have been a
+   * destructive action nobody asked for twice. Nothing is started here: the conversation is
+   * simply marked live again, and the agent wakes on the human's next message carrying
+   * their actual words (see sendMessage → wake).
    */
   async resumeSession(sessionId: string, actor: string): Promise<boolean> {
     const live = this.sessions.get(sessionId)
@@ -353,14 +398,75 @@ export class SessionManager {
       | { agent: string; cwd: string; origin: string; title: string; started_at: number; agent_session_id: string | null }
       | undefined
     if (!row) return false
+    // Without a resume point there is nothing to carry on from; saying otherwise would
+    // leave the person typing into a conversation that can never answer.
+    if (row.agent_session_id === null) return false
+
+    const agent = AgentKind.safeParse(row.agent)
+    if (!agent.success) return false
+    if (!this.agentFactories[agent.data]) return false
+
+    // The directory must still be permitted: an allowlist change must not be bypassable
+    // by reopening something started under the old configuration.
+    try {
+      this.assertAllowedCwd(row.cwd)
+    } catch {
+      return false
+    }
+
+    this.audit(actor, 'session.resume', sessionId)
+    this.supersede(sessionId)
+    this.markStatus(sessionId, 'waiting')
+    this.emit(sessionId, { type: 'session.status', payload: { status: 'waiting', detail: 'reopened' } })
+    return true
+  }
+
+  /**
+   * Continue an existing conversation. Without this every message would start a new session,
+   * which is not a conversation at all.
+   */
+  sendMessage(sessionId: string, text: string, actor: string): boolean {
+    const trimmed = text.trim()
+    if (trimmed.length === 0) return false
+    const session = this.sessions.get(sessionId)
+    if (!session || (session.status !== 'running' && session.status !== 'waiting')) {
+      return this.wake(sessionId, trimmed, actor)
+    }
+    this.audit(actor, 'message.send', `${sessionId}: ${trimmed.slice(0, 80)}`)
+    session.status = 'running'
+    this.markStatus(sessionId, 'running')
+    this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${trimmed}\n` } })
+    this.emit(sessionId, { type: 'session.status', payload: { status: 'running' } })
+    session.handle.sendMessage(trimmed)
+    return true
+  }
+
+  /**
+   * A conversation without a live process is dormant, not dead: the agent's transcript is on
+   * disk and the SDK can resume it. So a reply revives the agent with that reply as its next
+   * prompt — the alternative was telling the human to start over and lose everything, which is
+   * exactly what happened when a daemon restart stranded a "waiting" session.
+   */
+  private wake(sessionId: string, text: string, actor: string): boolean {
+    const row = this.approvals.rawDb
+      .prepare('SELECT * FROM sessions WHERE session_id = ?')
+      .get(sessionId) as
+      | { agent: string; cwd: string; origin: string; title: string; started_at: number; agent_session_id: string | null }
+      | undefined
+    if (!row || row.agent_session_id === null) return false
 
     const agent = AgentKind.safeParse(row.agent)
     if (!agent.success) return false
     const factory = this.agentFactories[agent.data]
     if (!factory) return false
 
-    // The directory must still be permitted: an allowlist change must not be bypassable
-    // by reopening something started under the old configuration.
+    // Waking starts a real agent process; it obeys the same cap as starting one.
+    const running = [...this.sessions.values()].filter(
+      (s) => s.status === 'running' || s.status === 'waiting',
+    ).length
+    if (running >= this.maxConcurrentSessions) return false
+
+    // The allowlist of today governs, not the one this session was started under.
     let cwd: string
     try {
       cwd = this.assertAllowedCwd(row.cwd)
@@ -368,16 +474,10 @@ export class SessionManager {
       return false
     }
 
-    this.audit(actor, 'session.resume', sessionId)
+    this.audit(actor, 'session.wake', `${sessionId}: ${text.slice(0, 80)}`)
+    this.supersede(sessionId)
     const waiting = new Map<string, (decision: PermissionDecision) => void>()
-    const handle = this.spawn(
-      factory,
-      sessionId,
-      cwd,
-      row.title,
-      waiting,
-      row.agent_session_id ?? undefined,
-    )
+    const handle = this.spawn(factory, sessionId, cwd, text, waiting, row.agent_session_id)
     const session: LiveSession = {
       sessionId,
       agent: agent.data,
@@ -391,31 +491,11 @@ export class SessionManager {
       done: Promise.resolve(),
     }
     this.markStatus(sessionId, 'running')
-    // Resuming makes the agent replay its closing message, so mark the seam rather than
-    // letting repeated text look like a glitch.
-    this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: '\n\n— reopened —\n' } })
-    this.emit(sessionId, { type: 'session.status', payload: { status: 'running', detail: 'reopened' } })
+    this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${text}\n` } })
+    this.emit(sessionId, { type: 'session.status', payload: { status: 'running' } })
     session.done = this.consume(session)
     this.sessions.set(sessionId, session)
     this.claimed.add(sessionId)
-    return true
-  }
-
-  /**
-   * Continue an existing conversation. Without this every message would start a new session,
-   * which is not a conversation at all.
-   */
-  sendMessage(sessionId: string, text: string, actor: string): boolean {
-    const trimmed = text.trim()
-    if (trimmed.length === 0) return false
-    const session = this.sessions.get(sessionId)
-    if (!session || (session.status !== 'running' && session.status !== 'waiting')) return false
-    this.audit(actor, 'message.send', `${sessionId}: ${trimmed.slice(0, 80)}`)
-    session.status = 'running'
-    this.markStatus(sessionId, 'running')
-    this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${trimmed}\n` } })
-    this.emit(sessionId, { type: 'session.status', payload: { status: 'running' } })
-    session.handle.sendMessage(trimmed)
     return true
   }
 
@@ -425,7 +505,9 @@ export class SessionManager {
    */
   async stopSession(sessionId: string, actor: string): Promise<boolean> {
     const session = this.sessions.get(sessionId)
-    if (!session || (session.status !== 'running' && session.status !== 'waiting')) return false
+    if (!session || (session.status !== 'running' && session.status !== 'waiting')) {
+      return this.closeDormant(sessionId, actor)
+    }
     this.audit(actor, 'session.stop', sessionId)
     try {
       await session.handle.interrupt()
@@ -435,6 +517,45 @@ export class SessionManager {
     session.status = 'ended'
     this.markStatus(sessionId, 'ended')
     this.releasePending(session, 'Session stopped from your device')
+    this.emit(sessionId, { type: 'session.ended', payload: { reason: `stopped by ${actor}` } })
+    return true
+  }
+
+  /** Hand this conversation to a newer run; whatever was draining must stop speaking for it. */
+  private supersede(sessionId: string): void {
+    const stale = this.sessions.get(sessionId)
+    if (!stale) return
+    stale.superseded = true
+    this.sessions.delete(sessionId)
+  }
+
+  /**
+   * Stop every agent and wait for it to finish draining. Without this, a shutting-down daemon
+   * closes its databases while a consume loop is still writing — an unhandled rejection at
+   * best, a corrupted final status at worst.
+   */
+  async shutdown(): Promise<void> {
+    const live = [...this.sessions.values()]
+    await Promise.all(
+      live.map(async (session) => {
+        try {
+          await session.handle.interrupt()
+        } catch {
+          // An agent that will not interrupt cleanly still gets awaited below.
+        }
+      }),
+    )
+    await Promise.all(live.map((session) => session.done.catch(() => {})))
+  }
+
+  /** Stopping a dormant conversation: nothing to interrupt, but "this is over" must stick. */
+  private closeDormant(sessionId: string, actor: string): boolean {
+    const row = this.approvals.rawDb
+      .prepare('SELECT status FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { status: string } | undefined
+    if (!row || (row.status !== 'running' && row.status !== 'waiting')) return false
+    this.audit(actor, 'session.stop', sessionId)
+    this.markStatus(sessionId, 'ended')
     this.emit(sessionId, { type: 'session.ended', payload: { reason: `stopped by ${actor}` } })
     return true
   }
@@ -583,19 +704,28 @@ export class SessionManager {
         })
       }
       session.status = 'ended'
-      this.markStatus(session.sessionId, 'ended')
-      this.emit(session.sessionId, { type: 'session.ended', payload: {} })
+      if (!session.superseded) {
+        this.markStatus(session.sessionId, 'ended')
+        this.emit(session.sessionId, { type: 'session.ended', payload: {} })
+      }
     } catch (err) {
       session.status = 'errored'
-      this.markStatus(session.sessionId, 'errored')
-      this.emit(session.sessionId, {
-        type: 'session.errored',
-        payload: { message: err instanceof Error ? err.message : 'Agent failed' },
-      })
+      if (!session.superseded) {
+        this.markStatus(session.sessionId, 'errored')
+        this.emit(session.sessionId, {
+          type: 'session.errored',
+          payload: { message: err instanceof Error ? err.message : 'Agent failed' },
+        })
+      }
     } finally {
       this.claimed.delete(session.sessionId)
       // A dead agent can never answer: close out anything it left pending.
       this.releasePending(session, 'Session ended before a decision')
+      // Leave the live map: a finished run kept lingering here and shadowed the stored row,
+      // so a reopened conversation still reported the dead agent's status.
+      if (this.sessions.get(session.sessionId) === session) {
+        this.sessions.delete(session.sessionId)
+      }
     }
   }
 

@@ -677,12 +677,17 @@ describe('conversations: a session is a dialogue, not a one-shot', () => {
     expect(h.agent.received).toHaveLength(0)
   })
 
-  it('refuses a follow-up to an unknown or finished session instead of losing it silently', async () => {
+  it('refuses a follow-up to an unknown session instead of losing it silently', () => {
     expect(h.manager.sendMessage('ses_ghost', 'hello?', 'dev_phone')).toBe(false)
+  })
+
+  it('a follow-up to a finished conversation is never "too late" — it wakes it', async () => {
     const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'hi' })
     h.agent.finish()
     await h.manager.waitForIdle(sessionId)
-    expect(h.manager.sendMessage(sessionId, 'too late', 'dev_phone')).toBe(false)
+    expect(h.manager.sendMessage(sessionId, 'one more thing', 'dev_phone')).toBe(true)
+    expect(h.agent.runs).toEqual([undefined, 'claude_1'])
+    expect(h.agent.prompt).toBe('one more thing')
   })
 
   it('a waiting session can still be stopped', async () => {
@@ -746,16 +751,39 @@ describe('reopening a closed session', () => {
     await h.manager.waitForIdle(sessionId)
   }
 
-  it('reopens a finished session and continues the SAME transcript', async () => {
+  it('NEVER re-runs the original instruction — reopening is not re-executing', async () => {
+    const { sessionId } = await h.manager.startSession({
+      agent: 'claude',
+      cwd: h.root,
+      prompt: 'delete every file in the build directory',
+    })
+    h.agent.say('deleted them')
+    await closeIt(sessionId)
+
+    expect(await h.manager.resumeSession(sessionId, 'dev_phone')).toBe(true)
+    await new Promise((r) => setTimeout(r, 20))
+    // No second agent run at all: reopening starts nothing, so a destructive instruction
+    // cannot fire again behind the person's back.
+    expect(h.agent.runs).toHaveLength(1)
+    const text = eventsOf(h.log, sessionId)
+      .filter((e) => e.type === 'stream.delta')
+      .map((e) => (e.payload as { text: string }).text)
+      .join('')
+    expect(text).not.toContain('delete every file')
+  })
+
+  it('makes the conversation ready, so the next message wakes it with YOUR words', async () => {
     const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'first' })
     h.agent.say('original answer')
     await closeIt(sessionId)
-    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('ended')
 
     expect(await h.manager.resumeSession(sessionId, 'dev_phone')).toBe(true)
-    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('running')
-    // The agent was asked to resume its own prior conversation, not start a blank one.
-    expect(h.agent.runs[1]).toBe('claude_1')
+    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('waiting')
+
+    expect(h.manager.sendMessage(sessionId, 'now do the other half', 'dev_phone')).toBe(true)
+    // Resumed from its own prior conversation, driven by the human's actual words.
+    expect(h.agent.runs).toEqual([undefined, 'claude_1'])
+    expect(h.agent.prompt).toBe('now do the other half')
 
     h.agent.say('continued answer')
     await new Promise((r) => setTimeout(r, 20))
@@ -765,18 +793,27 @@ describe('reopening a closed session', () => {
       .join('')
     expect(text).toContain('original answer')
     expect(text).toContain('continued answer')
-    // One session, not a copy.
     expect(h.manager.listSessions()).toHaveLength(1)
   })
 
-  it('accepts follow-up messages again once reopened', async () => {
-    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
-    await closeIt(sessionId)
-    expect(h.manager.sendMessage(sessionId, 'too early', 'dev_phone')).toBe(false)
-
-    await h.manager.resumeSession(sessionId, 'dev_phone')
-    expect(h.manager.sendMessage(sessionId, 'now it works', 'dev_phone')).toBe(true)
-    expect(h.agent.received).toContain('now it works')
+  it('refuses a conversation with no resume point rather than pretending', async () => {
+    const silent: AgentFactory = () => ({
+      events: (async function* () {
+        await new Promise(() => {})
+      })(),
+      sendMessage: () => {},
+      interrupt: async () => {},
+    })
+    const manager = new SessionManager({
+      eventLog: h.log,
+      approvals: h.approvals,
+      allowedRoots: [h.root],
+      agentFactories: { claude: silent },
+      now: () => clock,
+    })
+    const { sessionId } = await manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    await manager.stopSession(sessionId, 'dev_phone')
+    expect(await manager.resumeSession(sessionId, 'dev_phone')).toBe(false)
   })
 
   it('refuses to reopen a session that is already running', async () => {
@@ -865,8 +902,8 @@ describe('sessions survive a reload (and a daemon restart)', () => {
     expect(listed?.origin).toBe('phone')
   })
 
-  it('marks sessions that a crashed daemon left running as ended, never as still working', async () => {
-    await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'was running' })
+  it('a restart leaves a resumable session waiting — interrupted, but never falsely working', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'was running' })
 
     const revived = new SessionManager({
       eventLog: h.log,
@@ -875,13 +912,61 @@ describe('sessions survive a reload (and a daemon restart)', () => {
       agentFactories: { claude: new FakeAgent().factory },
       now: () => clock,
     })
-    const statuses = revived.listSessions().map((s) => s.status)
-    expect(statuses).not.toContain('running')
-    expect(statuses).toContain('ended')
+    const listed = revived.listSessions().find((s) => s.sessionId === sessionId)
+    expect(listed?.status).toBe('waiting')
   })
 
-  it('a revived session cannot be messaged, because its agent is gone', async () => {
+  it('appends the restart transition to the event log, so a replaying phone reaches the same status', async () => {
     const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+
+    new SessionManager({
+      eventLog: h.log,
+      approvals: h.approvals,
+      allowedRoots: [h.root],
+      agentFactories: { claude: new FakeAgent().factory },
+      now: () => clock,
+    })
+    // Without this event, hello says one status while the replayed stream says another —
+    // the phone believed the stream and showed "waiting" for a session send rejected.
+    const last = eventsOf(h.log, sessionId).at(-1)
+    expect(last?.type).toBe('session.status')
+    if (last?.type === 'session.status') expect(last.payload.status).toBe('waiting')
+  })
+
+  it('does not re-append the transition on every subsequent restart', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    const restart = () =>
+      new SessionManager({
+        eventLog: h.log,
+        approvals: h.approvals,
+        allowedRoots: [h.root],
+        agentFactories: { claude: new FakeAgent().factory },
+        now: () => clock,
+      })
+    restart()
+    const after = eventsOf(h.log, sessionId).length
+    restart()
+    restart()
+    expect(eventsOf(h.log, sessionId)).toHaveLength(after)
+  })
+
+  it('ends a session that never announced a resume id — nothing could ever continue it', async () => {
+    const silent: AgentFactory = () => ({
+      events: (async function* () {
+        await new Promise(() => {})
+      })(),
+      sendMessage: () => {},
+      interrupt: async () => {},
+    })
+    const manager = new SessionManager({
+      eventLog: h.log,
+      approvals: h.approvals,
+      allowedRoots: [h.root],
+      agentFactories: { claude: silent },
+      now: () => clock,
+    })
+    const { sessionId } = await manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+
     const revived = new SessionManager({
       eventLog: h.log,
       approvals: h.approvals,
@@ -889,8 +974,110 @@ describe('sessions survive a reload (and a daemon restart)', () => {
       agentFactories: { claude: new FakeAgent().factory },
       now: () => clock,
     })
+    expect(revived.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('ended')
+    expect(typesOf(h.log, sessionId)).toContain('session.ended')
     expect(revived.sendMessage(sessionId, 'still there?', 'dev_phone')).toBe(false)
-    expect(await revived.stopSession(sessionId, 'dev_phone')).toBe(false)
+  })
+})
+
+describe('replying to a dormant conversation wakes it', () => {
+  let h: Harness
+  beforeEach(() => {
+    clock = 1_000_000
+    h = makeHarness()
+  })
+  afterEach(() => {
+    rmSync(h.dir, { recursive: true, force: true })
+    h.log.close()
+    h.approvals.close()
+  })
+
+  /** The daemon after a restart: same storage, fresh process, a new agent instance. */
+  const revive = (agent: FakeAgent, roots?: string[], max?: number) =>
+    new SessionManager({
+      eventLog: h.log,
+      approvals: h.approvals,
+      allowedRoots: roots ?? [h.root],
+      agentFactories: { claude: agent.factory },
+      now: () => clock,
+      ...(max === undefined ? {} : { maxConcurrentSessions: max }),
+    })
+
+  it('a reply revives the agent with the resume id and the reply as its prompt', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'find the app' })
+    const fresh = new FakeAgent()
+    const revived = revive(fresh)
+
+    expect(revived.sendMessage(sessionId, 'and now add a test', 'dev_phone')).toBe(true)
+    expect(fresh.runs).toEqual(['claude_1'])
+    expect(fresh.prompt).toBe('and now add a test')
+    expect(revived.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('running')
+  })
+
+  it('the woken conversation continues in the same event stream, as the same session', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    const fresh = new FakeAgent()
+    const revived = revive(fresh)
+    revived.sendMessage(sessionId, 'carry on', 'dev_phone')
+
+    const events = eventsOf(h.log, sessionId)
+    const user = events.filter((e) => e.type === 'stream.delta' && (e.payload as { kind?: string }).kind === 'user')
+    expect(user.at(-1)?.payload).toMatchObject({ text: expect.stringContaining('carry on') })
+    expect(events.at(-1)?.type).toBe('session.status')
+
+    fresh.say('resumed and done')
+    fresh.endTurn()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(typesOf(h.log, sessionId)).toContain('stream.delta')
+    expect(revived.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('waiting')
+  })
+
+  it('follow-up messages after the wake go to the live agent, not another resume', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    const fresh = new FakeAgent()
+    const revived = revive(fresh)
+    revived.sendMessage(sessionId, 'first', 'dev_phone')
+    revived.sendMessage(sessionId, 'second', 'dev_phone')
+    expect(fresh.runs).toHaveLength(1)
+    expect(fresh.received).toEqual(['second'])
+  })
+
+  it('stopping a dormant conversation ends it cleanly instead of erroring', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    const revived = revive(new FakeAgent())
+    expect(await revived.stopSession(sessionId, 'dev_phone')).toBe(true)
+    expect(revived.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('ended')
+    expect(typesOf(h.log, sessionId)).toContain('session.ended')
+    // And a stopped conversation stays stopped on the next restart.
+    expect(revive(new FakeAgent()).listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('ended')
+  })
+
+  it('refuses to wake into a directory that is no longer allowlisted', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'longleash-other-')))
+    try {
+      const revived = revive(new FakeAgent(), [elsewhere])
+      expect(revived.sendMessage(sessionId, 'hello?', 'dev_phone')).toBe(false)
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true })
+    }
+  })
+
+  it('respects the concurrency cap — waking is starting an agent, not free', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'dormant' })
+    const fresh = new FakeAgent()
+    const revived = revive(fresh, [h.root], 1)
+    await revived.startSession({ agent: 'claude', cwd: h.root, prompt: 'occupies the only slot' })
+    expect(revived.sendMessage(sessionId, 'wake up', 'dev_phone')).toBe(false)
+  })
+
+  it('audits the wake like any other mutating action', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    const revived = revive(new FakeAgent())
+    revived.sendMessage(sessionId, 'wake', 'dev_phone')
+    const entry = revived.listAuditEntries().find((e) => e.action === 'session.wake')
+    expect(entry?.actor).toBe('dev_phone')
+    expect(entry?.detail).toContain(sessionId)
   })
 })
 
@@ -910,5 +1097,37 @@ describe('restart recovery', () => {
     expect(orphans).toEqual(['apr_orphan'])
     expect(approvals.listPending()).toHaveLength(0)
     approvals.close()
+  })
+})
+
+describe('a finishing agent must not speak for a conversation that moved on', () => {
+  let h: Harness
+  beforeEach(() => {
+    clock = 1_000_000
+    h = makeHarness()
+  })
+  afterEach(() => {
+    rmSync(h.dir, { recursive: true, force: true })
+    h.log.close()
+    h.approvals.close()
+  })
+
+  it('a late-draining run cannot flip a just-reopened conversation back to finished', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    // Stop marks it ended, but the agent's stream drains a moment later.
+    await h.manager.stopSession(sessionId, 'dev_phone')
+    expect(await h.manager.resumeSession(sessionId, 'dev_phone')).toBe(true)
+
+    await new Promise((r) => setTimeout(r, 30)) // let the old run finish draining
+    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('waiting')
+    // And no bogus session.ended was appended after the reopen.
+    const types = typesOf(h.log, sessionId)
+    expect(types.lastIndexOf('session.status')).toBeGreaterThan(types.lastIndexOf('session.ended'))
+  })
+
+  it('shutdown waits for agents, so nothing writes after the databases close', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    await h.manager.shutdown()
+    expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)).toBeDefined()
   })
 })
