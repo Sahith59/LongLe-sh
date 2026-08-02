@@ -135,3 +135,36 @@ button.folder:active { background: var(--raised); }
 .chosen { margin: 6px 0 0; font-size: 14px; }
 .chosen code { background: #141416; padding: 3px 7px; border-radius: 5px; font-size: 13px; }
 button.folder .kind { opacity: 0.7; margin-right: 4px; }
+
+/* Transcript: prose reads as prose, tool calls stay out of the way. */
+.transcript {
+  margin: 0 12px; padding: 4px 0; max-height: 58vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.blk { border-radius: 10px; }
+.blk.say {
+  font-size: 15px; line-height: 1.55; color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+}
+.blk.say code {
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #222226; padding: 1px 5px; border-radius: 5px; word-break: break-all;
+}
+.blk.say strong { font-weight: 700; }
+.blk.tool {
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #8e8e93; background: #17171a; border-left: 2px solid var(--line);
+  padding: 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.blk.thinking {
+  font-size: 14px; font-style: italic; color: #8e8e93; white-space: pre-wrap;
+  border-left: 2px solid var(--line); padding-left: 10px;
+}
+.blk.mine {
+  align-self: flex-end; max-width: 85%; background: #0a3d70; color: #eaf3ff;
+  padding: 10px 13px; font-size: 15px; line-height: 1.45; white-space: pre-wrap;
+}
+.blk.divider {
+  align-self: center; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); padding: 2px 0;
+}

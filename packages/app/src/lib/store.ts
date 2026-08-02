@@ -8,6 +8,13 @@ export interface ActivityItem {
   autoApproved: boolean
 }
 
+export type BlockKind = 'text' | 'tool' | 'thinking' | 'user'
+
+export interface Block {
+  kind: BlockKind
+  text: string
+}
+
 export interface SessionView {
   sessionId: string
   agent: string
@@ -16,6 +23,9 @@ export interface SessionView {
   /** Where it came from. "unknown" rather than a guess when the daemon did not say. */
   origin: string
   status: SessionStatus
+  /** Structured transcript: what each piece was, so the UI can render it as a conversation. */
+  blocks: Block[]
+  /** Prose only, for one-line previews — tool noise would make a list unreadable. */
   output: string
   activity: ActivityItem[]
   error?: string
@@ -56,6 +66,17 @@ export interface StoreOptions {
 
 const DEFAULT_MAX_OUTPUT = 200_000
 
+/** Drop the oldest blocks once the transcript outgrows what a phone should hold. */
+function trimBlocks(blocks: Block[], maxChars: number): Block[] {
+  let total = blocks.reduce((sum, block) => sum + block.text.length, 0)
+  if (total <= maxChars) return blocks
+  const kept = [...blocks]
+  while (kept.length > 1 && total > maxChars) {
+    total -= (kept.shift() as Block).text.length
+  }
+  return kept
+}
+
 export function createStore(options: StoreOptions = {}) {
   const maxOutput = options.maxOutputChars ?? DEFAULT_MAX_OUTPUT
   const sessions: Record<string, SessionView> = {}
@@ -81,6 +102,7 @@ export function createStore(options: StoreOptions = {}) {
       title: '',
       origin: 'unknown',
       status: 'running',
+      blocks: [],
       output: '',
       activity: [],
     }
@@ -107,8 +129,20 @@ export function createStore(options: StoreOptions = {}) {
         break
       }
       case 'stream.delta': {
-        const payload = event.payload as { text: string }
-        session.output = (session.output + payload.text).slice(-maxOutput)
+        const payload = event.payload as { text: string; kind?: BlockKind }
+        const kind: BlockKind = payload.kind ?? 'text'
+        const last = session.blocks[session.blocks.length - 1]
+        // Streaming splits a sentence across many deltas; merge prose, never merge a tool call.
+        if (last && last.kind === kind && kind !== 'tool') {
+          session.blocks = [
+            ...session.blocks.slice(0, -1),
+            { kind, text: last.text + payload.text },
+          ]
+        } else {
+          session.blocks = [...session.blocks, { kind, text: payload.text }]
+        }
+        session.blocks = trimBlocks(session.blocks, maxOutput)
+        if (kind === 'text') session.output = (session.output + payload.text).slice(-maxOutput)
         break
       }
       case 'activity.tool': {
@@ -188,6 +222,7 @@ export function createStore(options: StoreOptions = {}) {
     const session = sessions[sessionId]
     if (session) {
       session.output = ''
+      session.blocks = []
       session.activity = []
       delete session.error
     }

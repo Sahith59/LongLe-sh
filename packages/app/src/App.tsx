@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { approvalsFor, createStore, type PendingApproval, type SessionView } from './lib/store.js'
+import {
+  approvalsFor,
+  createStore,
+  type Block,
+  type PendingApproval,
+  type SessionView,
+} from './lib/store.js'
 import {
   checkReachable,
   connect,
@@ -393,12 +399,12 @@ function SessionDetail({
 }) {
   const [message, setMessage] = useState('')
   const live = session.status === 'running' || session.status === 'waiting'
-  const outputRef = useRef<HTMLPreElement | null>(null)
+  const outputRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const node = outputRef.current
     if (node) node.scrollTop = node.scrollHeight
-  }, [session.output])
+  }, [session.blocks])
 
   return (
     <>
@@ -432,9 +438,13 @@ function SessionDetail({
 
       <section>
         <h2>Conversation</h2>
-        <pre className="output tall" ref={outputRef}>
-          {session.output || '…'}
-        </pre>
+        <div className="transcript" ref={outputRef}>
+          {session.blocks.length === 0 ? (
+            <p className="muted small">Nothing yet.</p>
+          ) : (
+            session.blocks.map((block, i) => <TranscriptBlock key={i} block={block} />)
+          )}
+        </div>
         {session.error ? <p className="bad small pad">{session.error}</p> : null}
         {session.activity.length > 0 ? (
           <p className="muted small pad">
@@ -470,6 +480,45 @@ function SessionDetail({
       </div>
     </>
   )
+}
+
+/**
+ * Renders one piece of the conversation as what it actually is. Agent prose reads as prose;
+ * tool calls are compact and dimmed so a long search does not bury the answer; your own
+ * messages stand apart. Flattening all three into one monospace block made the transcript
+ * unreadable on a phone.
+ */
+function TranscriptBlock({ block }: { block: Block }) {
+  if (block.kind === 'tool') {
+    return (
+      <div className="blk tool" title={block.text}>
+        {block.text}
+      </div>
+    )
+  }
+  if (block.kind === 'user') {
+    const text = block.text.replace(/^[\s›]+/, '').trim()
+    if (text === '— reopened —') return <div className="blk divider">reopened</div>
+    return <div className="blk mine">{text}</div>
+  }
+  if (block.kind === 'thinking') {
+    return <div className="blk thinking">{block.text.trim()}</div>
+  }
+  return <div className="blk say">{renderProse(block.text)}</div>
+}
+
+/** Just enough markdown to stop backticks and asterisks leaking into the reader's face. */
+function renderProse(text: string) {
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g)
+  return parts.map((part, i) => {
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      return <code key={i}>{part.slice(1, -1)}</code>
+    }
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>
+    }
+    return <span key={i}>{part}</span>
+  })
 }
 
 function ApprovalCard({

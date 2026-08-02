@@ -172,6 +172,80 @@ describe('approvals inbox', () => {
   })
 })
 
+describe('readable transcript', () => {
+  const toolDelta = (sessionId: string, seq: number, text: string) =>
+    ev({ v: 1, seq, sessionId, ts: 1, type: 'stream.delta', payload: { kind: 'tool', text } })
+  const userDelta = (sessionId: string, seq: number, text: string) =>
+    ev({ v: 1, seq, sessionId, ts: 1, type: 'stream.delta', payload: { kind: 'user', text } })
+
+  it('keeps what each piece was, instead of flattening everything into one blob', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(delta('ses_1', 2, "I'll search for it."))
+    store.apply(toolDelta('ses_1', 3, 'Bash: pwd'))
+    store.apply(delta('ses_1', 4, 'Found it.'))
+
+    const blocks = stateOf(store).sessions.ses_1?.blocks ?? []
+    expect(blocks.map((b) => b.kind)).toEqual(['text', 'tool', 'text'])
+    expect(blocks[1]?.text).toBe('Bash: pwd')
+  })
+
+  it('merges consecutive prose so streaming does not shatter a sentence', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(delta('ses_1', 2, 'Hello '))
+    store.apply(delta('ses_1', 3, 'there'))
+    const blocks = stateOf(store).sessions.ses_1?.blocks ?? []
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]?.text).toBe('Hello there')
+  })
+
+  it('never merges a tool call into prose', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(toolDelta('ses_1', 2, 'Bash: ls'))
+    store.apply(toolDelta('ses_1', 3, 'Bash: pwd'))
+    const blocks = stateOf(store).sessions.ses_1?.blocks ?? []
+    expect(blocks).toHaveLength(2)
+  })
+
+  it('keeps your own messages distinct from the agent speaking', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(delta('ses_1', 2, 'agent says'))
+    store.apply(userDelta('ses_1', 3, '\n\n› do this next\n'))
+    const blocks = stateOf(store).sessions.ses_1?.blocks ?? []
+    expect(blocks[1]?.kind).toBe('user')
+    expect(blocks[1]?.text).toContain('do this next')
+  })
+
+  it('the list preview shows prose only, not tool noise', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(toolDelta('ses_1', 2, 'Bash: find ~ -maxdepth 4 -iname "*stick*"'))
+    store.apply(delta('ses_1', 3, 'Found the app.'))
+    expect(stateOf(store).sessions.ses_1?.output).toBe('Found the app.')
+  })
+
+  it('caps retained blocks so a long session cannot exhaust phone memory', () => {
+    const store = createStore({ maxOutputChars: 200 })
+    store.apply(started('ses_1'))
+    for (let i = 0; i < 100; i++) store.apply(toolDelta('ses_1', i + 2, `Bash: command number ${i}`))
+    const blocks = stateOf(store).sessions.ses_1?.blocks ?? []
+    const total = blocks.reduce((sum, b) => sum + b.text.length, 0)
+    expect(total).toBeLessThanOrEqual(400)
+    expect(blocks[blocks.length - 1]?.text).toContain('99')
+  })
+
+  it('a gap clears blocks along with everything else', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(delta('ses_1', 2, 'stale'))
+    store.applyGap('ses_1')
+    expect(stateOf(store).sessions.ses_1?.blocks).toHaveLength(0)
+  })
+})
+
 describe('stale errors', () => {
   const errored = (sessionId: string, seq: number, message: string) =>
     ev({ v: 1, seq, sessionId, ts: 1, type: 'session.errored', payload: { message } })
