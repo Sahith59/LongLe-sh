@@ -28,6 +28,8 @@ export interface SessionView {
   /** Prose only, for one-line previews — tool noise would make a list unreadable. */
   output: string
   activity: ActivityItem[]
+  /** Whether typing can carry this conversation on — false for pre-resume-id history. */
+  resumable: boolean
   error?: string
 }
 
@@ -57,6 +59,7 @@ export interface SessionSeed {
   title: string
   origin: string
   status: SessionStatus
+  resumable?: boolean
 }
 
 export interface StoreOptions {
@@ -105,6 +108,7 @@ export function createStore(options: StoreOptions = {}) {
       blocks: [],
       output: '',
       activity: [],
+      resumable: false,
     }
     sessions[sessionId] = created
     return created
@@ -212,6 +216,7 @@ export function createStore(options: StoreOptions = {}) {
       session.title = seed.title
       session.origin = seed.origin
       session.status = seed.status
+      session.resumable = seed.resumable ?? false
     }
     notify()
   }
