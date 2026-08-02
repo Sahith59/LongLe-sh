@@ -26,7 +26,7 @@ interface Ctx {
   root: string
 }
 
-function setup(): Ctx {
+function setup(opts: { allowedTools?: string[] } = {}): Ctx {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'longleash-contract-')))
   const log = new EventLog(':memory:')
   const approvals = new ApprovalStore(':memory:')
@@ -40,7 +40,7 @@ function setup(): Ctx {
         // Nothing is pre-approved and machine settings are ignored, so every tool must come
         // through our approval path. Without this the suite depends on whatever the developer's
         // Claude Code settings allow, and approvals appear or vanish between machines.
-        allowedTools: [],
+        allowedTools: opts.allowedTools ?? [],
         isolateFromUserSettings: true,
       }),
     },
@@ -55,11 +55,25 @@ function setup(): Ctx {
   return { manager, log, approvals, root }
 }
 
-function teardown(ctx: Ctx): void {
+async function teardown(ctx: Ctx): Promise<void> {
+  // Agents first: a consume loop still writing into a closed database throws from nowhere.
+  await ctx.manager.shutdown()
   rmSync(ctx.root, { recursive: true, force: true })
   ctx.log.close()
   ctx.approvals.close()
 }
+
+const statusOf = (ctx: Ctx, sessionId: string) =>
+  ctx.manager.listSessions().find((s) => s.sessionId === sessionId)?.status
+
+/**
+ * A conversation does not end when the agent stops talking — it hands control back and waits
+ * for you. `waitForIdle` waits for the agent's stream to CLOSE, which now only happens on
+ * stop; waiting for that here is what made every one of these tests hang after the product
+ * moved from one-shot runs to conversations.
+ */
+const untilTurnEnds = (ctx: Ctx, sessionId: string) =>
+  until(() => ['waiting', 'ended', 'errored'].includes(statusOf(ctx, sessionId) ?? ''))
 
 const eventsOf = (ctx: Ctx, sessionId: string) => {
   const replay = ctx.log.replay(sessionId, 0)
@@ -118,7 +132,7 @@ suite('contract: real Claude through the adapter', () => {
   beforeEach(() => {
     ctx = setup()
   })
-  afterEach(() => teardown(ctx))
+  afterEach(async () => teardown(ctx))
 
   it('runs a real session end to end and streams text back', async () => {
     const { sessionId } = await ctx.manager.startSession({
@@ -126,13 +140,18 @@ suite('contract: real Claude through the adapter', () => {
       cwd: ctx.root,
       prompt: 'Reply with exactly the word LEASH and nothing else. Do not use any tools.',
     })
-    await ctx.manager.waitForIdle(sessionId)
+    await untilTurnEnds(ctx, sessionId)
 
     const types = eventsOf(ctx, sessionId).map((e) => e.type)
     expect(types[0]).toBe('session.started')
     expect(types).toContain('stream.delta')
-    expect(types[types.length - 1]).toBe('session.ended')
     expect(textOf(ctx, sessionId)).toContain('LEASH')
+    // The turn ended, but the conversation stays open for a reply — that is the product.
+    expect(statusOf(ctx, sessionId)).toBe('waiting')
+
+    // And stopping it really does close it.
+    expect(await ctx.manager.stopSession(sessionId, 'contract-test')).toBe(true)
+    expect(eventsOf(ctx, sessionId).map((e) => e.type)).toContain('session.ended')
   }, 180_000)
 
   it('blocks on approval, and ALLOW lets the real tool actually run', async () => {
@@ -157,7 +176,7 @@ suite('contract: real Claude through the adapter', () => {
     expect(existsSync(targetPath)).toBe(false)
 
     const stop = autoRespond(ctx, 'allow')
-    await ctx.manager.waitForIdle(sessionId)
+    await untilTurnEnds(ctx, sessionId)
     stop()
     expectSessionSucceeded(ctx, sessionId)
 
@@ -174,7 +193,7 @@ suite('contract: real Claude through the adapter', () => {
     })
 
     const stop = autoRespond(ctx, 'deny', 'Do not create any files.')
-    await ctx.manager.waitForIdle(sessionId)
+    await untilTurnEnds(ctx, sessionId)
     stop()
 
     expect(existsSync(join(ctx.root, 'denied.txt'))).toBe(false)
@@ -195,7 +214,7 @@ suite('contract: real Claude through the adapter', () => {
       prompt: 'Run the pwd command and reply with ONLY the absolute path it printed.',
     })
     const stop = autoRespond(ctx, 'allow')
-    await ctx.manager.waitForIdle(sessionId)
+    await untilTurnEnds(ctx, sessionId)
     stop()
     expectSessionSucceeded(ctx, sessionId)
 
@@ -204,16 +223,26 @@ suite('contract: real Claude through the adapter', () => {
   }, 180_000)
 
   it('surfaces auto-approved tools in the activity feed', async () => {
-    const { sessionId } = await ctx.manager.startSession({
-      agent: 'claude',
-      cwd: ctx.root,
-      prompt: 'List the files in the current directory using a tool, then reply DONE.',
-    })
-    await ctx.manager.waitForIdle(sessionId)
+    // This needs a harness that actually pre-approves something: with nothing allowed, every
+    // tool goes through the approval path and there is no auto-approval left to observe.
+    // These are the daemon's production defaults — read-only tools run, everything else asks.
+    const readOnly = setup({ allowedTools: ['Read', 'Glob', 'Grep'] })
+    try {
+      const { sessionId } = await readOnly.manager.startSession({
+        agent: 'claude',
+        cwd: readOnly.root,
+        prompt: 'List the files in the current directory using a tool, then reply DONE.',
+      })
+      const stop = autoRespond(readOnly, 'allow') // anything beyond read-only still asks
+      await untilTurnEnds(readOnly, sessionId)
+      stop()
 
-    const activity = eventsOf(ctx, sessionId).filter((e) => e.type === 'activity.tool')
-    expect(activity.length).toBeGreaterThan(0)
-    expect(activity[0]?.payload).toMatchObject({ autoApproved: true })
+      const activity = eventsOf(readOnly, sessionId).filter((e) => e.type === 'activity.tool')
+      expect(activity.length).toBeGreaterThan(0)
+      expect(activity[0]?.payload).toMatchObject({ autoApproved: true })
+    } finally {
+      await teardown(readOnly)
+    }
   }, 180_000)
 
   it('writes a session transcript the Claude CLI can resume from the same directory', async () => {
@@ -222,7 +251,7 @@ suite('contract: real Claude through the adapter', () => {
       cwd: ctx.root,
       prompt: 'Reply with the word MARK and nothing else. Do not use any tools.',
     })
-    await ctx.manager.waitForIdle(sessionId)
+    await untilTurnEnds(ctx, sessionId)
 
     // Claude stores transcripts under ~/.claude/projects/<encoded-cwd>/
     const projectsDir = join(homedir(), '.claude', 'projects')
