@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { ArrowUp, ChevronLeft, Link2, Plus, RotateCcw, Square } from 'lucide-react'
 import {
   approvalsFor,
   createStore,
-  type Block,
   type PendingApproval,
   type SessionView,
 } from './lib/store.js'
@@ -16,28 +17,20 @@ import {
   type ConnectionState,
   type FolderHit,
   type Hello,
+  type LinkPath,
 } from './lib/client.js'
-
-const ORIGIN_LABEL: Record<string, string> = {
-  phone: 'started from your phone',
-  daemon: 'started on the laptop',
-  terminal: 'running in a terminal',
-  vscode: 'running in VS Code',
-  external: 'started outside LongLeash',
-  unknown: 'origin unknown',
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  running: 'working',
-  waiting: 'waiting for you',
-  ended: 'finished',
-  errored: 'failed',
-}
+import { ApprovalCard } from './ui/ApprovalCard.js'
+import { NewSessionSheet } from './ui/NewSessionSheet.js'
+import { SessionCard } from './ui/SessionCard.js'
+import { TranscriptBlock } from './ui/Transcript.js'
+import { EASE, EXIT, Key, Led, Notice, SectionLabel, listVariants } from './ui/primitives.js'
+import { ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
   const [, forceRender] = useState(0)
   const [state, setState] = useState<ConnectionState>('connecting')
+  const [linkPath, setLinkPath] = useState<LinkPath>('lan')
   const [token, setToken] = useState<string | null>(() => storedToken())
   const [pairError, setPairError] = useState<string | null>(null)
   const [diagnostic, setDiagnostic] = useState<string | null>(null)
@@ -45,6 +38,7 @@ export default function App() {
   const [roots, setRoots] = useState<string[]>([])
   const [folders, setFolders] = useState<FolderHit[]>([])
   const [openSessionId, setOpenSessionId] = useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const clientRef = useRef<Client | null>(null)
 
   useEffect(() => {
@@ -75,6 +69,7 @@ export default function App() {
       },
       onError: setError,
       onFolders: (_query, results) => setFolders(results),
+      onPath: setLinkPath,
     })
     clientRef.current = client
     return () => client.close()
@@ -92,6 +87,16 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [state])
 
+  // A sheet that lets the page behind it scroll feels broken on a phone.
+  useEffect(() => {
+    if (!sheetOpen) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previous
+    }
+  }, [sheetOpen])
+
   const decide = useCallback(
     (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => {
       store.markDeciding(approval.approvalId)
@@ -101,34 +106,37 @@ export default function App() {
     [store],
   )
 
+  const search = useCallback((query: string) => clientRef.current?.findFolders(query), [])
+
   if (!token) {
     return (
-      <main className="pane">
+      <main className="gate">
+        <Mark />
         <h1>LongLeash</h1>
-        <p className="muted">Scan the QR code on your laptop to pair this device. The link works once.</p>
-        {pairError ? <p className="bad">Pairing failed: {pairError}</p> : null}
+        <p>Scan the QR code on your laptop to pair this device. The link works once.</p>
+        {pairError ? <p className="err">Pairing failed: {pairError}</p> : null}
       </main>
     )
   }
 
   if (state === 'revoked' || state === 'unauthorized') {
     return (
-      <main className="pane">
+      <main className="gate">
+        <Mark />
         <h1>Access ended</h1>
-        <p className="bad">
+        <p>
           {state === 'revoked'
             ? 'This device was revoked from your laptop.'
             : 'This device is no longer authorized.'}
         </p>
-        <button
-          className="secondary"
+        <Key
           onClick={() => {
             forgetToken()
             setToken(null)
           }}
         >
           Pair again
-        </button>
+        </Key>
       </main>
     )
   }
@@ -141,249 +149,237 @@ export default function App() {
   const openSession = openSessionId ? snapshot.sessions[openSessionId] : undefined
   const connected = state === 'connected'
 
-  const banners = (
-    <>
-      {diagnostic ? <p className="diagnostic">{diagnostic}</p> : null}
-      {error ? (
-        <p className="errorbar" onClick={() => setError(null)}>
-          {error} <span className="muted small">(tap to dismiss)</span>
-        </p>
-      ) : null}
-    </>
-  )
-
-  // Focused view: one conversation, its approvals, and a box to keep talking to it.
-  if (openSession) {
-    return (
-      <>
-        <header>
-          <button className="link" onClick={() => setOpenSessionId(null)}>
-            ‹ All sessions
-          </button>
-          <span className={connected ? 'ok' : 'warn'}>{connected ? 'connected' : 'reconnecting…'}</span>
-        </header>
-        {banners}
-        <SessionDetail
-          session={openSession}
-          approvals={approvalsFor(snapshot, openSession.sessionId)}
-          connected={connected}
-          onDecide={decide}
-          onStop={() => clientRef.current?.stopSession(openSession.sessionId)}
-          onResume={() => clientRef.current?.resumeSession(openSession.sessionId)}
-          onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
-        />
-      </>
-    )
-  }
-
   return (
     <>
-      <header>
-        <strong>LongLeash</strong>
-        <span className={connected ? 'ok' : 'warn'}>{connected ? 'connected' : 'reconnecting…'}</span>
-      </header>
-      {banners}
-
-      <section>
-        <h2>Waiting on you {snapshot.approvals.length > 0 ? `(${snapshot.approvals.length})` : ''}</h2>
-        {snapshot.approvals.length === 0 ? (
-          <p className="muted pad">Nothing needs a decision right now.</p>
-        ) : (
-          snapshot.approvals.map((approval) => (
-            <ApprovalCard
-              key={approval.approvalId}
-              approval={approval}
-              onDecide={decide}
-              onOpen={() => setOpenSessionId(approval.sessionId)}
-            />
-          ))
-        )}
-      </section>
-
-      <section>
-        <h2>Start a new session</h2>
-        <div className="composer">
-          <NewSessionForm
-            roots={roots}
-            folders={folders}
-            connected={connected}
-            onSearch={(query) => clientRef.current?.findFolders(query)}
-            onStart={(dir, prompt) => {
-              setError(null)
-              return clientRef.current?.startSession(dir, prompt) ?? false
-            }}
-          />
-        </div>
-      </section>
-
-      <section>
-        <h2>Active {active.length > 0 ? `(${active.length})` : ''}</h2>
-        {active.length === 0 ? (
-          <p className="muted pad">Nothing running.</p>
-        ) : (
-          active.map((session) => (
-            <SessionRow
-              key={session.sessionId}
-              session={session}
-              pending={approvalsFor(snapshot, session.sessionId).length}
-              onOpen={() => setOpenSessionId(session.sessionId)}
-            />
-          ))
-        )}
-      </section>
-
-      {past.length > 0 ? (
-        <section>
-          <h2>Earlier ({past.length})</h2>
-          {past.slice(0, 20).map((session) => (
-            <SessionRow
-              key={session.sessionId}
-              session={session}
-              pending={0}
-              onOpen={() => setOpenSessionId(session.sessionId)}
-            />
-          ))}
-        </section>
-      ) : null}
-
-      <p className="muted small pad footnote">
-        Only sessions started through LongLeash appear here. Ones you started yourself in a
-        terminal or in the VS Code chat panel are not visible yet — that is coming in a later
-        phase. Finished sessions stay listed as history; restarting the daemon on your laptop
-        ends any that were still running.
-      </p>
-    </>
-  )
-}
-
-function NewSessionForm({
-  roots,
-  folders,
-  connected,
-  onSearch,
-  onStart,
-}: {
-  roots: string[]
-  folders: FolderHit[]
-  connected: boolean
-  onSearch: (query: string) => void
-  onStart: (dir: string, prompt: string) => boolean
-}) {
-  const [query, setQuery] = useState('')
-  const [chosen, setChosen] = useState<FolderHit | null>(null)
-  const [prompt, setPrompt] = useState('')
-
-  // Search as you type, debounced: nobody should have to recall an absolute path from memory.
-  useEffect(() => {
-    if (chosen) return
-    const timer = setTimeout(() => onSearch(query), 180)
-    return () => clearTimeout(timer)
-  }, [query, chosen, onSearch])
-
-  if (roots.length === 0) {
-    return <p className="muted small">No project directories are configured on the laptop.</p>
-  }
-
-  if (chosen) {
-    const workingIn = chosen.kind === 'file' ? (chosen.parent ?? chosen.label) : chosen.label
-    return (
-      <>
-        <p className="chosen">
-          <span className="muted small">Working in</span> <code>{workingIn}</code>{' '}
-          <button
-            className="link"
-            onClick={() => {
-              setChosen(null)
-              setQuery('')
-            }}
-          >
-            change
-          </button>
-        </p>
-        {chosen.kind === 'file' ? (
-          <p className="muted small">
-            Claude will work in that folder, on <code>{fileName(chosen.label)}</code>.
-          </p>
-        ) : null}
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Tell Claude what to do…"
-          aria-label="task"
-        />
-        <button
-          onClick={() => {
-            const dir = chosen.kind === 'file' ? parentPath(chosen.path) : chosen.path
-            const task =
-              chosen.kind === 'file'
-                ? `In the file ${fileName(chosen.label)}: ${prompt.trim()}`
-                : prompt.trim()
-            if (onStart(dir, task)) setPrompt('')
-          }}
-          disabled={!prompt.trim() || !connected}
-        >
-          {connected ? 'Start session' : 'Waiting for your laptop…'}
-        </button>
-      </>
-    )
-  }
-
-  return (
-    <>
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Folder or file — e.g. FD_Engineer, or test in downloads"
-        aria-label="find a folder"
+      <Rail
+        connected={connected}
+        via={linkPath}
+        {...(openSession ? { onBack: () => setOpenSessionId(null) } : {})}
       />
-      {folders.length === 0 ? (
-        <p className="muted small">
-          {query.trim() ? 'No folder matches that.' : 'Type a folder name, or pick one below.'}
-        </p>
-      ) : (
-        <ul className="folderlist">
-          {folders.map((folder) => (
-            <li key={folder.path}>
-              <button className="folder" onClick={() => setChosen(folder)}>
-                <span className="kind">{folder.kind === 'file' ? '📄' : '📁'}</span> {folder.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+
+      <AnimatePresence mode="wait" initial={false}>
+        {openSession ? (
+          <DetailScreen
+            key={openSession.sessionId}
+            session={openSession}
+            approvals={approvalsFor(snapshot, openSession.sessionId)}
+            connected={connected}
+            diagnostic={diagnostic}
+            error={error}
+            onClearError={() => setError(null)}
+            onDecide={decide}
+            onStop={() => clientRef.current?.stopSession(openSession.sessionId)}
+            onResume={() => clientRef.current?.resumeSession(openSession.sessionId)}
+            onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
+          />
+        ) : (
+          <ConsoleScreen
+            key="console"
+            approvals={snapshot.approvals}
+            active={active}
+            past={past}
+            snapshot={snapshot}
+            diagnostic={diagnostic}
+            error={error}
+            onClearError={() => setError(null)}
+            onDecide={decide}
+            onOpen={setOpenSessionId}
+            onNew={() => setSheetOpen(true)}
+          />
+        )}
+      </AnimatePresence>
+
+      <NewSessionSheet
+        open={sheetOpen}
+        roots={roots}
+        folders={folders}
+        connected={connected}
+        onSearch={search}
+        onStart={(dir, prompt) => {
+          setError(null)
+          return clientRef.current?.startSession(dir, prompt) ?? false
+        }}
+        onClose={() => setSheetOpen(false)}
+      />
     </>
   )
 }
 
-function SessionRow({
-  session,
-  pending,
-  onOpen,
+
+/**
+ * The rail never leaves: the link light is the one readout that matters no matter which screen
+ * you are on, because everything else in the app is meaningless if the laptop is unreachable.
+ */
+export function Rail({
+  connected,
+  via,
+  onBack,
 }: {
-  session: SessionView
-  pending: number
-  onOpen: () => void
+  connected: boolean
+  /**
+   * Which road the link takes. This describes the ROUTE, never the person's whereabouts —
+   * "away" was once shown to someone sitting at home on their own Wi-Fi, which is a lie.
+   */
+  via?: LinkPath
+  onBack?: () => void
 }) {
-  const preview = session.output.trim().slice(-140)
   return (
-    <button className="card sessionrow" onClick={onOpen}>
-      <div className="row spread">
-        <h3>{session.title || session.sessionId}</h3>
-        <span className={`pill ${session.status}`}>{STATUS_LABEL[session.status] ?? session.status}</span>
+    <div className="rail">
+      <div className="rail-in">
+        {onBack ? (
+          <button type="button" className="tap" onClick={onBack} aria-label="Back to all sessions">
+            <ChevronLeft size={18} strokeWidth={2.4} aria-hidden="true" />
+            Sessions
+          </button>
+        ) : (
+          <h1 className="wordmark">
+            <LeashGlyph size={20} />
+            LongLeash
+          </h1>
+        )}
+        <span className="spacer" />
+        <span className={`link-state${connected ? ' on' : ''}`}>
+          {connected ? <Led status="running" /> : <Link2 size={13} strokeWidth={2.3} aria-hidden="true" />}
+          {connected ? (via === 'relay' ? 'linked · relay' : 'linked · direct') : 'reconnecting'}
+        </span>
+        <span className="sr" role="status">
+          {connected
+            ? via === 'relay'
+              ? 'Connected to your laptop through the relay, end-to-end encrypted'
+              : 'Connected directly to your laptop on this network'
+            : 'Reconnecting to your laptop'}
+        </span>
       </div>
-      <p className="muted small">
-        {shortPath(session.cwd)} · {ORIGIN_LABEL[session.origin] ?? session.origin}
-      </p>
-      {pending > 0 ? <p className="needsyou">{pending} waiting on you</p> : null}
-      {preview ? <p className="preview">{preview}</p> : null}
-    </button>
+    </div>
   )
 }
 
-function SessionDetail({
+/* ------------------------------------------------------------------ screens */
+
+export function ConsoleScreen({
+  approvals,
+  active,
+  past,
+  snapshot,
+  diagnostic,
+  error,
+  onClearError,
+  onDecide,
+  onOpen,
+  onNew,
+}: {
+  approvals: PendingApproval[]
+  active: SessionView[]
+  past: SessionView[]
+  snapshot: ReturnType<ReturnType<typeof createStore>['getState']>
+  diagnostic: string | null
+  error: string | null
+  onClearError: () => void
+  onDecide: (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => void
+  onOpen: (sessionId: string) => void
+  onNew: () => void
+}) {
+  const still = useReducedMotion()
+  const firstRun = approvals.length === 0 && active.length === 0 && past.length === 0
+
+  return (
+    <Screen depth={-1} still={still}>
+      <main className="shell hasdock">
+        <Banners diagnostic={diagnostic} error={error} onClearError={onClearError} />
+
+        {approvals.length > 0 ? (
+          <section aria-live="polite">
+            <SectionLabel count={approvals.length} urgent>
+              Needs you
+            </SectionLabel>
+            <div className="stack">
+              <AnimatePresence initial={false}>
+                {approvals.map((approval) => (
+                  <ApprovalCard
+                    key={approval.approvalId}
+                    approval={approval}
+                    context={
+                      snapshot.sessions[approval.sessionId]?.title || 'Untitled session'
+                    }
+                    onDecide={onDecide}
+                    onOpen={() => onOpen(approval.sessionId)}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          </section>
+        ) : null}
+
+        {firstRun ? (
+          <FirstRun />
+        ) : (
+        <section>
+          <SectionLabel count={active.length}>Active</SectionLabel>
+          {active.length === 0 ? (
+            <p className="empty">Nothing running. Start a session below.</p>
+          ) : (
+            <motion.div
+              className="stack"
+              variants={listVariants}
+              initial="hidden"
+              animate="shown"
+            >
+              {active.map((session) => (
+                <SessionCard
+                  key={session.sessionId}
+                  session={session}
+                  pending={approvalsFor(snapshot, session.sessionId).length}
+                  onOpen={() => onOpen(session.sessionId)}
+                />
+              ))}
+            </motion.div>
+          )}
+        </section>
+        )}
+
+        {past.length > 0 ? (
+          <section>
+            <SectionLabel count={past.length}>Earlier</SectionLabel>
+            <motion.div className="stack" variants={listVariants} initial="hidden" animate="shown">
+              {past.slice(0, 20).map((session) => (
+                <SessionCard
+                  key={session.sessionId}
+                  session={session}
+                  pending={0}
+                  onOpen={() => onOpen(session.sessionId)}
+                />
+              ))}
+            </motion.div>
+          </section>
+        ) : null}
+
+        <p className="foot">
+          Only sessions started through LongLeash appear here. Ones you started yourself in a
+          terminal or in the VS Code chat panel are not visible yet — that is coming in a later
+          phase. Conversations survive daemon restarts: reply to any of them and the same agent
+          picks up where it left off.
+        </p>
+      </main>
+
+      <div className="dock">
+        <div className="dock-in">
+          <Key className="primary wide" onClick={onNew}>
+            <Plus size={19} strokeWidth={2.6} aria-hidden="true" />
+            New session
+          </Key>
+        </div>
+      </div>
+    </Screen>
+  )
+}
+
+export function DetailScreen({
   session,
   approvals,
   connected,
+  diagnostic,
+  error,
+  onClearError,
   onDecide,
   onStop,
   onResume,
@@ -392,187 +388,236 @@ function SessionDetail({
   session: SessionView
   approvals: PendingApproval[]
   connected: boolean
+  diagnostic: string | null
+  error: string | null
+  onClearError: () => void
   onDecide: (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => void
   onStop: () => void
   onResume: () => void
   onSend: (text: string) => boolean
 }) {
   const [message, setMessage] = useState('')
+  const still = useReducedMotion()
+  // Typing wakes a dormant conversation, so the composer belongs to anything continuable —
+  // not only to what happens to be running right now.
   const live = session.status === 'running' || session.status === 'waiting'
-  const outputRef = useRef<HTMLDivElement | null>(null)
+  const canType = live || session.resumable
+  const readoutRef = useRef<HTMLDivElement | null>(null)
+  const followTail = useRef(true)
 
   useEffect(() => {
-    const node = outputRef.current
-    if (node) node.scrollTop = node.scrollHeight
+    const node = readoutRef.current
+    if (node && followTail.current) node.scrollTop = node.scrollHeight
   }, [session.blocks])
 
+  const send = () => {
+    if (onSend(message.trim())) setMessage('')
+  }
+
   return (
-    <>
-      <section>
+    <Screen depth={1} still={still}>
+      <main className="shell hasdock">
+        <Banners diagnostic={diagnostic} error={error} onClearError={onClearError} />
+
         <div className="detailhead">
-          <h3>{session.title || session.sessionId}</h3>
-          <p className="muted small">
-            {shortPath(session.cwd)} · {ORIGIN_LABEL[session.origin] ?? session.origin} ·{' '}
-            {STATUS_LABEL[session.status] ?? session.status}
+          <div className="toprow">
+            <h2>{session.title || session.sessionId}</h2>
+            {live ? (
+              <Key className="sm stopkey" onClick={onStop} label="Stop this agent">
+                <Square size={13} strokeWidth={2.6} fill="currentColor" aria-hidden="true" />
+                Stop
+              </Key>
+            ) : session.resumable ? (
+              <Key className="sm" onClick={onResume} label="Reopen this conversation">
+                <RotateCcw size={14} strokeWidth={2.4} aria-hidden="true" />
+                Reopen
+              </Key>
+            ) : null}
+          </div>
+          <p className="meta">
+            <Led status={session.status} />
+            <span className={`state ${session.status}`}>
+              {STATUS_LABEL[session.status] ?? session.status}
+            </span>
+            <span className="dot" aria-hidden="true">·</span>
+            <span>{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
+            <span className="dot" aria-hidden="true">·</span>
+            <span className="mono where" title={session.cwd}>
+              {shortPath(session.cwd)}
+            </span>
           </p>
-          {live ? (
-            <button className="secondary small" onClick={onStop}>
-              Stop this agent
-            </button>
-          ) : (
-            <button className="small" onClick={onResume}>
-              Reopen this session
-            </button>
-          )}
         </div>
-      </section>
 
-      {approvals.length > 0 ? (
-        <section>
-          <h2>Waiting on you</h2>
-          {approvals.map((approval) => (
-            <ApprovalCard key={approval.approvalId} approval={approval} onDecide={onDecide} />
-          ))}
-        </section>
-      ) : null}
-
-      <section>
-        <h2>Conversation</h2>
-        <div className="transcript" ref={outputRef}>
-          {session.blocks.length === 0 ? (
-            <p className="muted small">Nothing yet.</p>
-          ) : (
-            session.blocks.map((block, i) => <TranscriptBlock key={i} block={block} />)
-          )}
-        </div>
-        {session.error ? <p className="bad small pad">{session.error}</p> : null}
-        {session.activity.length > 0 ? (
-          <p className="muted small pad">
-            auto-approved: {session.activity.slice(-4).map((a) => a.toolName).join(', ')}
-          </p>
+        {approvals.length > 0 ? (
+          <section aria-live="polite">
+            <SectionLabel count={approvals.length} urgent>
+              Needs you
+            </SectionLabel>
+            <div className="stack">
+              <AnimatePresence initial={false}>
+                {approvals.map((approval) => (
+                  <ApprovalCard key={approval.approvalId} approval={approval} onDecide={onDecide} />
+                ))}
+              </AnimatePresence>
+            </div>
+          </section>
         ) : null}
-      </section>
 
-      <div className="composer sticky">
-        {live ? (
-          <>
+        <section>
+          <SectionLabel>Conversation</SectionLabel>
+          <div
+            className="readout"
+            ref={readoutRef}
+            onScroll={(e) => {
+              const el = e.currentTarget
+              followTail.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90
+            }}
+          >
+            {session.blocks.length === 0 ? (
+              <p className="empty">Nothing yet.</p>
+            ) : (
+              session.blocks.map((block, i) => <TranscriptBlock key={i} block={block} />)
+            )}
+          </div>
+          {session.error ? (
+            <div style={{ marginTop: 12 }}>
+              <Notice tone="bad">{session.error}</Notice>
+            </div>
+          ) : null}
+          {session.activity.length > 0 ? (
+            <p className="small dim" style={{ margin: '12px 2px 0' }}>
+              Ran without asking:{' '}
+              <span className="mono">
+                {session.activity.slice(-5).map((a) => a.toolName).join(', ')}
+              </span>
+            </p>
+          ) : null}
+        </section>
+      </main>
+
+      <div className="dock">
+        {canType ? (
+          <div className="dock-in">
             <textarea
+              className="field"
+              rows={1}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Reply to this session…"
-              aria-label="reply"
-            />
-            <button
-              onClick={() => {
-                if (onSend(message.trim())) setMessage('')
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  send()
+                }
               }}
+              placeholder={live ? 'Reply to this session…' : 'Type to carry this on…'}
+              aria-label="Reply to this session"
+            />
+            <Key
+              className="primary icon"
+              onClick={send}
               disabled={!message.trim() || !connected}
+              label="Send reply"
             >
-              Send
-            </button>
-          </>
+              <ArrowUp size={20} strokeWidth={2.6} aria-hidden="true" />
+            </Key>
+          </div>
         ) : (
-          <p className="muted small">
-            This session has finished. Tap <strong>Reopen this session</strong> above to carry on
-            where you left off — the agent picks up knowing everything it knew before.
+          <p className="note">
+            This conversation cannot be continued — it has no resume point. Start a new session
+            in the same folder to pick the work back up.
           </p>
         )}
       </div>
-    </>
+    </Screen>
   )
 }
+
+/* --------------------------------------------------------------- scaffolding */
 
 /**
- * Renders one piece of the conversation as what it actually is. Agent prose reads as prose;
- * tool calls are compact and dimmed so a long search does not bury the answer; your own
- * messages stand apart. Flattening all three into one monospace block made the transcript
- * unreadable on a phone.
+ * Screens slide along one axis so the hierarchy is legible: a session sits "deeper" than the
+ * console and enters from that side, so going back always feels like retreating the way you came.
  */
-function TranscriptBlock({ block }: { block: Block }) {
-  if (block.kind === 'tool') {
-    return (
-      <div className="blk tool" title={block.text}>
-        {block.text}
-      </div>
-    )
-  }
-  if (block.kind === 'user') {
-    const text = block.text.replace(/^[\s›]+/, '').trim()
-    if (text === '— reopened —') return <div className="blk divider">reopened</div>
-    return <div className="blk mine">{text}</div>
-  }
-  if (block.kind === 'thinking') {
-    return <div className="blk thinking">{block.text.trim()}</div>
-  }
-  return <div className="blk say">{renderProse(block.text)}</div>
-}
-
-/** Just enough markdown to stop backticks and asterisks leaking into the reader's face. */
-function renderProse(text: string) {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g)
-  return parts.map((part, i) => {
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
-      return <code key={i}>{part.slice(1, -1)}</code>
-    }
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>
-    }
-    return <span key={i}>{part}</span>
-  })
-}
-
-function ApprovalCard({
-  approval,
-  onDecide,
-  onOpen,
+function Screen({
+  children,
+  depth,
+  still,
 }: {
-  approval: PendingApproval
-  onDecide: (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => void
-  onOpen?: () => void
+  children: React.ReactNode
+  depth: 1 | -1
+  still: boolean | null
 }) {
-  const [reply, setReply] = useState('')
+  const offset = still ? 0 : depth * 26
   return (
-    <article className={`card ${approval.outsideRoot ? 'danger' : ''}`}>
-      <h3>Claude wants to run {approval.toolName}</h3>
-      <code>{approval.inputSummary}</code>
-      {approval.outsideRoot ? (
-        <p className="bad">
-          This reaches outside your project directory: <code>{approval.targetPath}</code>
-        </p>
-      ) : null}
-      {onOpen ? (
-        <button className="link" onClick={onOpen}>
-          open this session ›
-        </button>
-      ) : null}
-      <input
-        value={reply}
-        onChange={(e) => setReply(e.target.value)}
-        placeholder="optional reply if you deny…"
-        aria-label="reply"
-      />
-      <div className="row">
-        <button className="allow" onClick={() => onDecide(approval, 'allow')}>
-          Approve
-        </button>
-        <button className="deny" onClick={() => onDecide(approval, 'deny', reply || undefined)}>
-          Deny
-        </button>
-      </div>
-    </article>
+    <motion.div
+      initial={{ opacity: 0, x: offset }}
+      animate={{ opacity: 1, x: 0, transition: EASE }}
+      exit={{ opacity: 0, x: offset, transition: EXIT }}
+    >
+      {children}
+    </motion.div>
   )
 }
 
-function fileName(label: string): string {
-  return label.split('/').filter(Boolean).slice(-1)[0] ?? label
+function Banners({
+  diagnostic,
+  error,
+  onClearError,
+}: {
+  diagnostic: string | null
+  error: string | null
+  onClearError: () => void
+}) {
+  return (
+    <AnimatePresence initial={false}>
+      {diagnostic ? <Notice key="diag">{diagnostic}</Notice> : null}
+      {error ? (
+        <Notice key="err" tone="bad" onDismiss={onClearError}>
+          {error}
+        </Notice>
+      ) : null}
+    </AnimatePresence>
+  )
 }
 
-function parentPath(path: string): string {
-  return path.split('/').slice(0, -1).join('/')
+function FirstRun() {
+  return (
+    <motion.section
+      className="firstrun"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={EASE}
+    >
+      <Mark />
+      <h2>Your laptop is linked</h2>
+      <p>
+        Tap <strong>New session</strong>, name a folder the way you would say it out loud, and
+        tell Claude what to do. It asks you before it changes anything.
+      </p>
+    </motion.section>
+  )
 }
 
-/** Long absolute paths are unreadable on a phone; show the tail that identifies the project. */
-function shortPath(path: string): string {
-  const parts = path.split('/').filter(Boolean)
-  return parts.length <= 2 ? path : `…/${parts.slice(-2).join('/')}`
+/** The leash: anchored at your phone, clipped to an agent far away. */
+function LeashGlyph({ size }: { size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
+      <circle cx="9" cy="26" r="5.5" fill="currentColor" />
+      <path
+        d="M9 26C21 26 19 11 31 11"
+        stroke="currentColor"
+        strokeWidth="3.6"
+        strokeLinecap="round"
+      />
+      <circle cx="31" cy="11" r="4.2" fill="#16794a" />
+    </svg>
+  )
+}
+
+function Mark() {
+  return (
+    <span className="mark" aria-hidden="true">
+      <LeashGlyph size={40} />
+    </span>
+  )
 }

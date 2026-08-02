@@ -1,12 +1,17 @@
 {
   "name": "LongLeash",
   "short_name": "LongLeash",
-  "description": "Control the agents on your laptop from anywhere.",
+  "description": "Approve, steer and read your laptop agents from your phone.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0d0d0f",
-  "theme_color": "#0d0d0f",
+  "background_color": "#e9ecf1",
+  "theme_color": "#e9ecf1",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }

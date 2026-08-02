@@ -1,170 +1,1253 @@
-:root {
-  color-scheme: dark;
-  --bg: #0d0d0f;
-  --surface: #1c1c1e;
-  --raised: #2c2c2e;
-  --line: #3a3a3c;
-  --text: #f2f2f7;
-  --muted: #98989f;
-  --ok: #30d158;
-  --warn: #ffd60a;
-  --bad: #ff453a;
-  --accent: #0a84ff;
+/* ==========================================================================
+   LongLeash — "Instrument"
+
+   A control panel milled from one piece of pale grey material. Surfaces
+   extrude toward you, readouts recess into the panel, and every status is a
+   physical LED seated in a drilled socket. Light theme only, deliberately:
+   this is a daylight instrument, and one theme executed properly beats two
+   executed approximately.
+
+   Soft UI, but the accessible kind — depth comes from the shadow pair, never
+   from lowering text contrast. Every text tone here was measured against the
+   surface it actually sits on and clears WCAG AA (4.5:1); the only exception is
+   --hint, which is reserved for decoration that carries no meaning.
+   ========================================================================== */
+
+/* --- Typefaces: self-hosted so the app renders correctly on a laptop
+       hotspot with no internet, and so no third party sees who opens it.
+       Two voices on purpose: Source Serif for what the agent SAYS — reading
+       text, set like writing — and Hanken Grotesk for the instrument around
+       it. Code stays JetBrains Mono. --- */
+@font-face {
+  font-family: 'Hanken Grotesk';
+  src: url('/fonts/hanken-latin.woff2') format('woff2');
+  font-weight: 400 700;
+  font-display: swap;
 }
-* { box-sizing: border-box; }
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('/fonts/sourceserif4-latin.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('/fonts/sourceserif4-italic-latin.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/jetbrainsmono-latin.woff2') format('woff2');
+  font-weight: 400 600;
+  font-display: swap;
+}
+
+
+:root {
+  color-scheme: light;
+
+  /* Substrate — everything visible is milled from this one value. */
+  --panel: #e9ecf1;
+  --raised: #eef1f6;
+  --well: #e0e4ea;
+  --edge: #ffffff;
+
+  /* Ink. Body text is near-black on purpose; grey-on-grey is how soft UI
+     usually fails, and this app is read one-handed in bright daylight. */
+  --ink: #101620;
+  --ink-2: #47525f;
+  --ink-3: #5c6672;
+  /* Decoration only — separators and rules that carry no information and are hidden from
+     assistive tech. Never use this for text a reader has to make out. */
+  --hint: #8b95a2;
+  --hair: rgba(16, 22, 32, 0.09);
+
+  /* Signals. Text tones are darkened until they clear 4.5:1 on the panel;
+     LED tones stay bright because they are lights, not text. */
+  --act: #1e3fcc;
+  --act-soft: rgba(30, 63, 204, 0.09);
+  --live: #16794a;
+  --live-led: #24c46e;
+  --hold: #8a5000;
+  --hold-led: #f5a524;
+  --stop: #ad2820;
+  --stop-led: #ef4d43;
+  --idle-led: #a7b0bc;
+
+  /* The shadow pair is the entire design language. */
+  --lift-1: 5px 5px 12px rgba(20, 27, 40, 0.1), -5px -5px 12px rgba(255, 255, 255, 0.95);
+  --lift-2: 9px 9px 22px rgba(20, 27, 40, 0.12), -8px -8px 20px rgba(255, 255, 255, 1);
+  --press: inset 3px 3px 7px rgba(20, 27, 40, 0.14), inset -3px -3px 7px rgba(255, 255, 255, 0.9);
+  --sink: inset 6px 6px 13px rgba(20, 27, 40, 0.1), inset -5px -5px 11px rgba(255, 255, 255, 0.88);
+  --socket: inset 1px 1px 2px rgba(20, 27, 40, 0.28), inset -1px -1px 2px rgba(255, 255, 255, 0.7);
+
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-pill: 999px;
+
+  --gut: 18px;
+  --ease: cubic-bezier(0.22, 0.61, 0.24, 1);
+
+  --ui: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --prose: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  background: var(--panel);
+}
+
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  padding-bottom: env(safe-area-inset-bottom);
+  min-height: 100dvh;
+  color: var(--ink);
+  font: 400 16px/1.5 var(--ui);
+  letter-spacing: -0.004em;
+  background-color: var(--panel);
+  -webkit-font-smoothing: antialiased;
 }
-header {
-  position: sticky; top: 0; z-index: 10;
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--line);
-  padding-top: calc(12px + env(safe-area-inset-top));
+
+/* Fine graph texture plus a soft overhead light, on a fixed layer: iOS Safari does not
+   support background-attachment: fixed, and a repainting texture janks the scroll. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(120% 70% at 50% -10%, rgba(255, 255, 255, 0.85), transparent 60%),
+    linear-gradient(rgba(16, 22, 32, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 22, 32, 0.028) 1px, transparent 1px);
+  background-size: 100% 100%, 26px 26px, 26px 26px;
 }
-h1 { font-size: 22px; margin: 0 0 8px; }
-h2 {
-  font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--muted); margin: 22px 16px 8px;
+
+::selection {
+  background: var(--act-soft);
 }
-h3 { font-size: 15px; margin: 0 0 6px; }
-.pane { padding: 24px 16px; }
-.pad { padding: 0 16px; }
-.muted { color: var(--muted); }
-.small { font-size: 13px; }
-.ok { color: var(--ok); }
-.warn { color: var(--warn); }
-.bad { color: var(--bad); }
-.diagnostic {
-  margin: 12px 16px; padding: 12px 14px; border-radius: 10px;
-  background: #3a2a00; border: 1px solid var(--warn); color: #ffe89a; font-size: 14px;
+
+/* --------------------------------------------------------------- structure */
+
+.shell {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 0 var(--gut) calc(28px + env(safe-area-inset-bottom));
 }
+
+.shell.hasdock {
+  padding-bottom: calc(104px + env(safe-area-inset-bottom));
+}
+
+/* Any block followed by a section gets the section rhythm — the detail header is a header,
+   not a section, and without this its actions collide with the next label. */
+.shell > * + section {
+  margin-top: 22px;
+}
+
+/* --------------------------------------------------------------- top rail */
+
+.rail {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px var(--gut) 12px;
+  padding-top: calc(10px + env(safe-area-inset-top));
+  background: linear-gradient(var(--panel) 72%, rgba(233, 236, 241, 0));
+}
+
+.rail-in {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+  min-height: 44px;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 0;
+}
+.wordmark svg {
+  flex: none;
+  color: var(--act);
+}
+
+.rail .spacer {
+  flex: 1;
+}
+
+/* Link state doubles as the app's own heartbeat readout. */
+.link-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--ink-3);
+  padding: 6px 12px 6px 10px;
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  box-shadow: var(--press);
+}
+.link-state.on {
+  color: var(--live);
+}
+
+/* --------------------------------------------------------------- LED */
+
+.led {
+  position: relative;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--idle-led);
+  box-shadow: var(--socket);
+}
+.led::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 transparent;
+}
+.led.running {
+  background: var(--live-led);
+  box-shadow: var(--socket), 0 0 9px 1px rgba(36, 196, 110, 0.6);
+}
+.led.waiting {
+  background: var(--hold-led);
+  box-shadow: var(--socket), 0 0 9px 1px rgba(245, 165, 36, 0.65);
+  animation: breathe 1.9s var(--ease) infinite;
+}
+.led.errored {
+  background: var(--stop-led);
+  box-shadow: var(--socket), 0 0 9px 1px rgba(239, 77, 67, 0.55);
+}
+.led.lg {
+  width: 13px;
+  height: 13px;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    box-shadow: var(--socket), 0 0 6px 0 rgba(245, 165, 36, 0.45);
+  }
+  50% {
+    box-shadow: var(--socket), 0 0 16px 3px rgba(245, 165, 36, 0.85);
+  }
+}
+
+/* --------------------------------------------------------------- labels */
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 2px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.label .count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--ink-2);
+  background: var(--panel);
+  box-shadow: var(--press);
+}
+.label .count.urgent {
+  color: #fff;
+  background: var(--hold);
+  box-shadow: 0 2px 6px rgba(138, 80, 0, 0.35);
+}
+.label .rule {
+  flex: 1;
+  height: 1px;
+  min-width: 0;
+  background: linear-gradient(90deg, var(--hair), transparent);
+}
+
+.muted {
+  color: var(--ink-2);
+}
+.dim {
+  color: var(--ink-3);
+}
+.small {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.mono {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  letter-spacing: -0.01em;
+}
+.empty {
+  margin: 0 2px;
+  color: var(--ink-3);
+  font-size: 14px;
+}
+
+/* --------------------------------------------------------------- surfaces */
+
 .card {
-  background: var(--raised); border: 1px solid var(--line); border-radius: 14px;
-  padding: 14px; margin: 10px 12px;
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  box-shadow: var(--lift-1);
+  padding: 16px;
 }
-.card.danger { border-color: var(--bad); }
-.card code {
-  display: block; background: #141416; border-radius: 8px; padding: 9px 10px;
-  font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-  word-break: break-all; margin: 6px 0;
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-input, textarea {
-  width: 100%; padding: 12px; margin-top: 8px; border-radius: 10px;
-  border: 1px solid var(--line); background: #141416; color: var(--text);
-  font: inherit; font-size: 15px;
-}
-textarea { min-height: 76px; resize: vertical; }
+
+/* --------------------------------------------------------------- controls */
+
 button {
-  padding: 13px 16px; border: 0; border-radius: 10px;
-  font-size: 15px; font-weight: 600; background: var(--accent); color: #fff;
-}
-button:disabled { opacity: 0.4; }
-button.allow { background: var(--ok); color: #04210c; }
-button.deny { background: var(--bad); color: #fff; }
-button.secondary { background: var(--line); color: var(--text); }
-button.small { padding: 7px 12px; font-size: 13px; }
-.row { display: flex; gap: 10px; margin-top: 12px; }
-.row > button { flex: 1; }
-.row.spread { justify-content: space-between; align-items: flex-start; margin-top: 0; }
-.right { display: flex; align-items: center; gap: 8px; }
-.right > button { flex: none; }
-.composer { padding: 0 12px; }
-.composer button { width: 100%; margin-top: 10px; }
-.pill {
-  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
-  padding: 3px 9px; border-radius: 999px; background: var(--line); color: var(--muted);
-}
-.pill.running { background: #06341a; color: var(--ok); }
-.pill.errored { background: #3a0f0c; color: var(--bad); }
-.output {
-  margin: 10px 0 0; padding: 10px; background: #141416; border-radius: 8px;
-  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto;
-  color: #c7c7cc;
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
 }
 
-.errorbar {
-  margin: 12px 16px; padding: 12px 14px; border-radius: 10px;
-  background: #3a0f0c; border: 1px solid var(--bad); color: #ffb4ae; font-size: 14px;
+:focus-visible {
+  outline: 2px solid var(--act);
+  outline-offset: 3px;
+  border-radius: 6px;
 }
-select {
-  width: 100%; padding: 12px; margin-top: 8px; border-radius: 10px;
-  border: 1px solid var(--line); background: #141416; color: var(--text); font: inherit; font-size: 15px;
-}
-.footnote { margin-top: 14px; opacity: 0.75; }
-.composer code { background: #141416; padding: 2px 6px; border-radius: 5px; font-size: 13px; }
 
-button.link {
-  background: none; color: var(--accent); padding: 0; font-size: 14px; font-weight: 600;
+/* Every tappable thing is a key on the panel: it extrudes at rest and sinks
+   when pressed. The bounds never change, so nothing around it shifts. */
+.key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: var(--r-pill);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  color: var(--ink);
+  background: var(--raised);
+  box-shadow: var(--lift-1);
+  transition: box-shadow 180ms var(--ease), color 180ms var(--ease);
 }
-.sessionrow {
-  display: block; width: calc(100% - 24px); text-align: left; background: var(--raised);
-  color: var(--text); font: inherit; padding: 14px; border: 1px solid var(--line);
+.key:active:not(:disabled) {
+  box-shadow: var(--press);
 }
-.sessionrow:active { background: #3a3a3c; }
-.sessionrow h3 { margin: 0; }
-.needsyou {
-  color: var(--warn); font-size: 13px; font-weight: 600; margin: 8px 0 0;
+.key:disabled {
+  color: var(--ink-3);
+  box-shadow: var(--press);
+  cursor: default;
 }
-.preview {
-  margin: 8px 0 0; font: 12.5px/1.4 ui-monospace, Menlo, monospace; color: #98989f;
-  max-height: 3.2em; overflow: hidden;
+.key.wide {
+  width: 100%;
 }
-.pill.waiting { background: #3a2f00; color: var(--warn); }
-.detailhead { padding: 14px 16px 0; }
-.detailhead h3 { margin: 0 0 4px; font-size: 18px; }
-.detailhead button { margin-top: 10px; }
-.output.tall { max-height: 55vh; margin: 0 12px; }
-.composer.sticky {
-  position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--line);
-  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+.key.sm {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 13px;
+  gap: 6px;
 }
-.composer.sticky textarea { min-height: 56px; margin-top: 0; }
-.sessionrow .pill.ended, .sessionrow .pill.errored { opacity: 0.8; }
-.folderlist { list-style: none; margin: 8px 0 0; padding: 0; max-height: 240px; overflow-y: auto; }
-.folderlist li { margin: 0 0 6px; }
-button.folder {
-  width: 100%; text-align: left; background: #141416; color: var(--text);
-  border: 1px solid var(--line); font-size: 14.5px; font-weight: 500; padding: 12px;
+.key.icon {
+  padding: 0;
+  width: 48px;
+  min-height: 48px;
+  border-radius: 50%;
 }
-button.folder:active { background: var(--raised); }
-.chosen { margin: 6px 0 0; font-size: 14px; }
-.chosen code { background: #141416; padding: 3px 7px; border-radius: 5px; font-size: 13px; }
-button.folder .kind { opacity: 0.7; margin-right: 4px; }
 
-/* Transcript: prose reads as prose, tool calls stay out of the way. */
-.transcript {
-  margin: 0 12px; padding: 4px 0; max-height: 58vh; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 10px;
+/* Primary: the one filled control on any screen. */
+.key.primary {
+  color: #fff;
+  background: linear-gradient(180deg, #2c50dd, var(--act));
+  box-shadow: 4px 5px 12px rgba(20, 40, 120, 0.3), -4px -4px 10px rgba(255, 255, 255, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
-.blk { border-radius: 10px; }
+.key.primary:active:not(:disabled) {
+  box-shadow: inset 3px 3px 8px rgba(9, 24, 82, 0.5), inset -2px -2px 6px rgba(255, 255, 255, 0.18);
+}
+.key.primary:disabled {
+  color: rgba(255, 255, 255, 0.72);
+  background: #97a2b5;
+  box-shadow: var(--press);
+}
+
+.key.allow {
+  color: var(--live);
+}
+.key.deny {
+  color: var(--stop);
+}
+.key.quiet {
+  color: var(--ink-2);
+}
+
+/* The brake. Filled, red, unmistakable — stopping an agent must never require hunting. */
+.key.stopkey {
+  color: #fff;
+  background: linear-gradient(180deg, #c5443a, var(--stop));
+  box-shadow: 4px 5px 12px rgba(140, 30, 24, 0.3), -4px -4px 10px rgba(255, 255, 255, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.key.stopkey:active:not(:disabled) {
+  box-shadow: inset 3px 3px 8px rgba(84, 15, 11, 0.55), inset -2px -2px 6px rgba(255, 255, 255, 0.15);
+}
+
+/* Text-weight action, still 44px of tap area via padding. */
+.tap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 11px 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--act);
+}
+.tap:active {
+  opacity: 0.6;
+}
+
+/* --------------------------------------------------------------- inputs */
+
+.field {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--well);
+  box-shadow: var(--sink);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px; /* below 16px iOS zooms the whole page on focus */
+  line-height: 1.45;
+}
+.field::placeholder {
+  color: var(--ink-3);
+}
+.field:focus {
+  outline: none;
+  box-shadow: var(--sink), 0 0 0 2px var(--act);
+}
+textarea.field {
+  min-height: 84px;
+  resize: none;
+}
+
+.searchwrap {
+  position: relative;
+}
+.searchwrap .field {
+  padding-left: 44px;
+}
+.searchwrap .glyph {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------- session card */
+
+.session {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 15px 16px;
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  box-shadow: var(--lift-1);
+  transition: box-shadow 200ms var(--ease);
+}
+.session:active {
+  box-shadow: var(--press);
+}
+.session.needs {
+  box-shadow: var(--lift-1), inset 0 0 0 1.5px rgba(245, 165, 36, 0.55);
+}
+.session.past {
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--hair);
+}
+
+.session .top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.session .name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session .chev {
+  flex: none;
+  color: var(--ink-3);
+}
+.session .meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 7px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.session .meta .dot {
+  color: var(--hint);
+}
+.session .preview {
+  margin: 9px 0 0;
+  font-family: var(--prose);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.session .flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 5px 11px 5px 9px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hold);
+  background: rgba(245, 165, 36, 0.16);
+}
+
+.state {
+  font-weight: 600;
+}
+.state.running {
+  color: var(--live);
+}
+.state.waiting {
+  color: var(--hold);
+}
+.state.errored {
+  color: var(--stop);
+}
+.state.ended {
+  color: var(--ink-3);
+}
+
+/* --------------------------------------------------------------- approval */
+
+.approval {
+  border-radius: var(--r-lg);
+  padding: 15px;
+  background: var(--raised);
+  box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(245, 165, 36, 0.5);
+}
+.approval.outside {
+  box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(173, 40, 32, 0.55);
+}
+.approval .head {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+.approval .sigil {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--hold);
+  background: rgba(245, 165, 36, 0.16);
+}
+.approval.outside .sigil {
+  color: var(--stop);
+  background: rgba(173, 40, 32, 0.12);
+}
+.approval .headtext {
+  min-width: 0;
+}
+.approval h3 {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+.approval .who {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.approval .arg {
+  display: block;
+  margin: 12px 0 0;
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  background: var(--well);
+  box-shadow: var(--sink);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  word-break: normal;
+  overflow-wrap: break-word;
+  max-height: calc(5 * 1.5em + 22px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%);
+}
+.approval .breach {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: rgba(173, 40, 32, 0.09);
+  color: var(--stop);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: break-word;
+}
+.approval .breach svg {
+  flex: none;
+  margin-top: 1px;
+}
+.approval .verdict {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+.approval .approvalfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 2px 2px -6px;
+}
+.approval .field.note {
+  margin-top: 10px;
+  font-size: 15px;
+}
+.tap.quiet {
+  color: var(--ink-3);
+}
+
+/* --------------------------------------------------------------- transcript */
+
+.readout {
+  position: relative;
+  padding: 18px 15px;
+  border-radius: var(--r-lg);
+  background: var(--well);
+  box-shadow: var(--sink);
+  max-height: 62dvh;
+  overflow-y: auto;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 22px,
+    #000 calc(100% - 22px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 22px,
+    #000 calc(100% - 22px),
+    transparent 100%
+  );
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16, 22, 32, 0.18) transparent;
+}
+.readout::-webkit-scrollbar {
+  width: 5px;
+}
+.readout::-webkit-scrollbar-thumb {
+  background: rgba(16, 22, 32, 0.18);
+  border-radius: 3px;
+}
+
+/* Agent prose: the thing you actually came to read. Structured, not a wall of string. */
 .blk.say {
-  font-size: 15px; line-height: 1.55; color: var(--text);
-  white-space: pre-wrap; word-break: break-word;
+  font-family: var(--prose);
+  font-size: 16px;
+  line-height: 1.58;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.blk.say strong {
+  font-weight: 700;
+}
+.blk.say .para {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+}
+.blk.say .h {
+  margin: 4px 0 8px;
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.blk.say ul,
+.blk.say ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.blk.say li {
+  margin: 0 0 6px;
+  padding-left: 2px;
+}
+.blk.say li::marker {
+  color: var(--ink-3);
+  font-size: 0.9em;
+}
+.blk.say > :last-child {
+  margin-bottom: 0;
 }
 .blk.say code {
-  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: #222226; padding: 1px 5px; border-radius: 5px; word-break: break-all;
+  font-family: var(--mono);
+  font-size: 12.8px;
+  padding: 1.5px 5px;
+  border-radius: 5px;
+  background: rgba(16, 22, 32, 0.06);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  /* A chip that wraps must keep its shape on every fragment, not become torn halves. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
-.blk.say strong { font-weight: 700; }
+/* Fenced code: a screen within the readout — verbatim, one line per line, side-scroll. */
+.blk.say .fence {
+  position: relative;
+  margin: 2px 0 12px;
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.blk.say .fence code {
+  display: block;
+  padding: 0;
+  background: none;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+}
+.blk.say .fence .lang {
+  float: right;
+  margin: -3px -4px 4px 10px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Tool calls: present and auditable, never competing with the prose. */
 .blk.tool {
-  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #8e8e93; background: #17171a; border-left: 2px solid var(--line);
-  padding: 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  min-width: 0;
 }
+.blk.tool .tname {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.blk.tool .targ {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.blk.tool svg {
+  flex: none;
+  color: var(--ink-3);
+}
+
 .blk.thinking {
-  font-size: 14px; font-style: italic; color: #8e8e93; white-space: pre-wrap;
-  border-left: 2px solid var(--line); padding-left: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--hair);
+  font-family: var(--prose);
+  font-size: 14.5px;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--ink-3);
+  white-space: pre-wrap;
 }
+
 .blk.mine {
-  align-self: flex-end; max-width: 85%; background: #0a3d70; color: #eaf3ff;
-  padding: 10px 13px; font-size: 15px; line-height: 1.45; white-space: pre-wrap;
+  align-self: flex-end;
+  max-width: 86%;
+  padding: 11px 14px;
+  border-radius: 16px 16px 5px 16px;
+  background: linear-gradient(180deg, #2c50dd, var(--act));
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-shadow: 3px 3px 9px rgba(20, 40, 120, 0.22);
 }
+
 .blk.divider {
-  align-self: center; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--muted); padding: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.blk.divider::before,
+.blk.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hair);
+}
+
+/* --------------------------------------------------------------- detail head */
+
+.detailhead {
+  padding: 2px 2px 0;
+}
+.detailhead .toprow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.detailhead .toprow h2 {
+  flex: 1;
+  min-width: 0;
+}
+.detailhead .toprow .key {
+  flex: none;
+  margin-top: 2px;
+}
+.detailhead h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.detailhead .meta .dot {
+  color: var(--hint);
+}
+.detailhead .meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.detailhead .meta .where {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-3);
+}
+
+/* --------------------------------------------------------------- dock */
+
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  padding: 12px var(--gut) calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(rgba(233, 236, 241, 0), var(--panel) 34%);
+}
+.dock-in {
+  max-width: 620px;
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.dock-in .field {
+  flex: 1;
+  min-height: 48px;
+  max-height: 132px;
+  overflow-y: auto;
+  background: var(--raised);
+  box-shadow: var(--press);
+}
+.dock .note {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 13px 16px;
+  border-radius: var(--r-md);
+  background: var(--raised);
+  box-shadow: var(--lift-1);
+  font-family: var(--prose);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+/* --------------------------------------------------------------- sheet */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(22, 28, 38, 0.42);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 51;
+  max-height: 90dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px var(--gut) calc(22px + env(safe-area-inset-bottom));
+  border-radius: 28px 28px 0 0;
+  background: var(--panel);
+  box-shadow: 0 -10px 34px rgba(16, 22, 32, 0.22);
+}
+.sheet-in {
+  max-width: 620px;
+  margin: 0 auto;
+}
+.grab {
+  width: 42px;
+  height: 5px;
+  margin: 0 auto 16px;
+  border-radius: 3px;
+  background: var(--well);
+  box-shadow: var(--socket);
+}
+.sheet h2 {
+  margin: 0 0 4px;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+}
+.sheet .sub {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+/* --------------------------------------------------------------- folders */
+
+.folders {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  max-height: 40dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.folderbtn {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 14px;
+  text-align: left;
+  border-radius: var(--r-md);
+  background: var(--raised);
+  box-shadow: var(--lift-1);
+  transition: box-shadow 160ms var(--ease);
+}
+.folderbtn:active {
+  box-shadow: var(--press);
+}
+.folderbtn svg {
+  flex: none;
+  color: var(--ink-3);
+}
+.folderbtn .fl {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chosen {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--raised);
+  box-shadow: var(--lift-1);
+}
+.chosen .body {
+  flex: 1;
+  min-width: 0;
+}
+.chosen .k {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.chosen .v {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------- notices */
+
+.notice {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+  padding: 13px 15px;
+  border-radius: var(--r-md);
+  font-size: 13.5px;
+  line-height: 1.5;
+  background: var(--raised);
+  box-shadow: var(--lift-1), inset 0 0 0 1.5px rgba(245, 165, 36, 0.45);
+  color: var(--ink-2);
+}
+.notice.bad {
+  box-shadow: var(--lift-1), inset 0 0 0 1.5px rgba(173, 40, 32, 0.45);
+}
+.notice svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--hold);
+}
+.notice.bad svg {
+  color: var(--stop);
+}
+.notice .body {
+  flex: 1;
+}
+.notice button {
+  flex: none;
+  /* A 44pt hit area pulled back into the layout, so the close target is reachable without
+     the icon floating in a large empty box. */
+  width: 44px;
+  height: 44px;
+  margin: -12px -12px -12px 0;
+  color: var(--ink-3);
+  display: grid;
+  place-items: center;
+}
+
+.firstrun {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-top: 44px;
+  padding: 34px 26px;
+  text-align: center;
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  box-shadow: var(--lift-1);
+}
+.firstrun .mark {
+  width: 60px;
+  height: 60px;
+  border-radius: 20px;
+  background: var(--panel);
+  box-shadow: var(--press);
+}
+.firstrun h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.firstrun p {
+  margin: 0;
+  max-width: 34ch;
+  font-family: var(--prose);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.firstrun strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------- gate */
+
+.gate {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  padding: 40px var(--gut) calc(40px + env(safe-area-inset-bottom));
+  text-align: center;
+}
+.mark {
+  display: grid;
+  place-items: center;
+  width: 78px;
+  height: 78px;
+  border-radius: 26px;
+  background: var(--raised);
+  box-shadow: var(--lift-2);
+  color: var(--act);
+}
+.gate h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.gate p {
+  margin: 0;
+  max-width: 32ch;
+  font-family: var(--prose);
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.gate .err {
+  color: var(--stop);
+  font-weight: 600;
+}
+
+.foot {
+  margin: 30px 2px 0;
+  padding: 15px 16px;
+  border-radius: var(--r-md);
+  font-family: var(--prose);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  background: rgba(255, 255, 255, 0.45);
+  box-shadow: inset 0 0 0 1px var(--hair);
+}
+
+/* --------------------------------------------------------------- a11y */
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
