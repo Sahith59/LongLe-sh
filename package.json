@@ -2,7 +2,7 @@
   "name": "longleash",
   "private": true,
   "version": "0.0.1",
-  "description": "Control the AI-agent, terminal, and IDE sessions on your laptop from your phone — anywhere.",
+  "description": "Control the AI-agent, terminal, and IDE sessions on your laptop from your phone \u2014 anywhere.",
   "license": "MIT",
   "repository": "github:Sahith59/LongLe-sh",
   "engines": {
@@ -15,7 +15,9 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "better-sqlite3"
+      "better-sqlite3",
+      "esbuild"
     ]
-  }
+  },
+  "packageManager": "pnpm@10.33.2"
 }

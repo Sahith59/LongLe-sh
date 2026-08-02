@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+.git
+agents
+context
+docs
+*.md
+packages/daemon/demo
+packages/*/test
+deploy
+scripts

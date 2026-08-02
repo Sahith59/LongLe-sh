@@ -1,0 +1,42 @@
+# The relay, with TLS in front. Two containers, no host packages beyond Docker itself.
+#
+#   LONGLEASH_DOMAIN=my-relay.example.com docker compose up -d --build
+#
+# Caddy obtains and renews a real Let's Encrypt certificate automatically, which is what
+# makes the app installable as a phone app and reachable from any network.
+services:
+  relay:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Deliberately not published to the host: the only way in is through Caddy over TLS.
+    expose:
+      - '8080'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:8080/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - relay
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      # Port 80 must stay reachable: Let's Encrypt uses it to prove you own the name.
+      LONGLEASH_DOMAIN: ${LONGLEASH_DOMAIN:?set LONGLEASH_DOMAIN to your relay hostname}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  # Certificates live here — keep this volume and renewals survive restarts and rebuilds.
+  caddy_data:
+  caddy_config:

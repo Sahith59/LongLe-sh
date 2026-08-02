@@ -30,3 +30,4 @@ tmp/
 
 # live demo sandbox — real Claude scratch space
 packages/daemon/demo/sandbox/
+deploy/.env

@@ -1,0 +1,15 @@
+# TLS, and nothing else. Caddy fetches and renews the certificate on its own; WebSocket
+# upgrades pass through untouched, which is all the relay needs.
+{$LONGLEASH_DOMAIN} {
+	encode zstd gzip
+
+	# The app shell is public open-source code; the /ws frames are ciphertext. Neither
+	# benefits from caching by anything in between.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+
+	reverse_proxy relay:8080
+}

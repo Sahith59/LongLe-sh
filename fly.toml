@@ -1,0 +1,25 @@
+# Fly.io config for the LongLeash relay. Fly's edge terminates TLS, which is what makes the
+# app origin an HTTPS place a phone can install the PWA from and reach from anywhere.
+app = "longleash-relay"
+primary_region = "iad"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Rooms are standing connections between real devices; a relay that scales to zero
+  # would drop every laptop's link each time things went quiet.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
