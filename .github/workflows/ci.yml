@@ -20,3 +20,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+
+  # The deploy path is part of the product: a Dockerfile that stopped building would only
+  # be discovered by whoever tried to self-host, which is exactly the wrong person to find it.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t longleash-relay .
+      - name: the relay must actually answer
+        run: |
+          docker run -d -p 8080:8080 --name relay longleash-relay
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/health && break || sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/health | grep -q '"role":"relay"'
+          curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root">'
+          docker rm -f relay

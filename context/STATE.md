@@ -72,6 +72,422 @@ Bar for public v1: **one command on the laptop, one app on the phone, working in
 
 - **A3 pairing + auth — VERIFIED BY SAHITH 2026-07-31**, iPhone → MacBook over Wi-Fi (phone 192.168.1.207 → laptop 192.168.1.71), running the real `DeviceRegistry`: QR scan paired a real device, token auth succeeded repeatedly with lastSeen updates, and pressing `r` revoked it — revocation listener fired and the phone's token was rejected on the next request. Single-use-challenge replay rejection was not eyeballed in that run but is covered by automated tests and was verified via simulated requests.
 
+## Oracle ARM had no capacity anywhere → the relay now runs free on Cloudflare (2026-08-02)
+
+Sahith hit "Out of capacity for VM.Standard.A1.Flex" in every availability domain and has no
+budget. Rather than hunt for another VM, verified current facts with web search and found a
+strictly better answer: **Cloudflare Workers + Durable Objects are on the FREE plan** —
+100k requests/day, 13k GB-s/day, SQLite-backed DO classes, **no credit card**, and WebSocket
+Hibernation is GA so idle rooms accrue no duration. For an open-source product whose users
+also have no money, that is the right default: no VM, no capacity lottery, no card.
+
+**Built:** `packages/relay/worker/index.ts` — each pairing is one Durable Object addressed by
+`idFromName(roomTag)`; roles live in `serializeAttachment` (survives hibernation) rather than
+accept-time tags, so role stays out of the URL. Static assets binding serves the app shell
+(free, never reaches the Worker) with SPA fallback. `wrangler.jsonc` with
+`new_sqlite_classes` (the free-plan requirement).
+
+**One protocol, two runtimes:** extracted `packages/relay/src/protocol.ts` (close codes, zod
+schemas, size caps, `parseClientMessage`) and refactored the Node server onto it — 31 relay
+tests green through the refactor. The two implementations cannot drift.
+
+**Room tag now rides the URL** (`/ws?room=…`) as well as the join message: a Durable Object
+must be chosen before the upgrade completes. The Node relay ignores the query string, so one
+client speaks to both. Applied in the app client, RelayLink, and the pairing host.
+
+**Verified on the real runtime, not mocked:** `wrangler dev --local` (workerd) driven by a
+harness asserting the same 18 behaviours the Node suite asserts — join/presence, byte-exact
+routing, room isolation, second-host refusal, garbage/early-frame/oversize close codes, short
+tag never creating an object, ping, departure. Found and fixed a real bug: the `joined` reply
+excluded the joiner, so a lone host was told no host was present. A second "failure" was my
+harness matching a stale queued peer event, not the Worker — tightened the check rather than
+the code.
+
+**Then the whole product against it:** the one-flow rehearsal now drives either relay
+(`EXTERNAL_RELAY_PORT`). Green on BOTH — Cloudflare Worker (sealed pairing → `linked · relay`
+→ folder search → reload) and the Node relay on the LAN IP under an insecure context.
+
+`docs/DEPLOY.md` restructured: Cloudflare first (recommended, ~5 min), VPS/Docker second with
+an honest table of the Oracle ARM capacity problem and GCP's region limits, Fly third.
+
+324 tests + 8 real-Claude contract tests. Sahith's path is now: sign up, two commands, done.
+
+## B4 engineering complete — Oracle Always Free chosen (2026-08-02)
+
+Sahith chose Oracle Cloud Always Free (permanent, $0) over Fly, moving to paid only once real
+users appear. Fly config kept for that day.
+
+**Shipped:** `deploy/docker-compose.yml` (relay + Caddy; relay NOT published to the host, so
+the only way in is TLS; healthcheck; named volume for certs) + `deploy/Caddyfile` (automatic
+Let's Encrypt, HSTS, WebSocket passthrough) + `scripts/relay-setup.sh` — one idempotent
+command from bare Ubuntu to a working HTTPS relay, which is also the update path.
+
+**Verified, not assumed:**
+- Image builds for BOTH architectures: arm64 (Oracle's free Ampere — already run locally) and
+  linux/amd64 cross-build (their E2.1.Micro fallback when ARM is out of capacity).
+- The real compose stack was brought up locally: relay reports healthy, Caddy proxies to it,
+  `/health` answers `role:relay` through the proxy. Torn down after.
+- `docker compose config` fails loudly with a readable message when the domain is unset.
+
+**Three bugs found while writing the script, before Sahith could hit them:**
+1. `LONGLEASH_DOMAIN=x sudo docker compose` — sudo strips the environment, so compose would
+   have seen no domain. Now written to `deploy/.env` (gitignored), which also makes updates
+   a single command.
+2. `command -v git || apt update && apt install git` parses as `(A||B) && C` — reinstalled
+   git every run. Fixed to an if-block.
+3. `iptables -I INPUT 6` fails with "index too big" on a shorter chain than Oracle's stock
+   one; now falls back to position 1.
+
+The script also refuses to proceed when DNS does not point at the machine (the certificate
+would fail anyway), and ends by polling the public HTTPS endpoint — it does not claim success
+until the relay actually answers from the internet.
+
+`docs/DEPLOY.md` rewritten as a step-by-step Oracle walkthrough (console clicks included),
+honest about the card requirement, the ARM capacity lottery, and Oracle's TWO firewalls —
+the cloud Security List AND the Ubuntu iptables rules, which is the classic trap.
+
+**Blocked on Sahith:** the repo must be pushed before the VM can clone it (52 files of
+Phase B are uncommitted; last commit is 81c7efc). Not committing without his word.
+
+## Field round 8 (2026-08-02) — Reopen was re-executing your instruction
+
+Sahith's screenshots showed a session with "BETA / REOPENED / BETA / REOPENED" then an SDK
+error, and `linked · away` while he sat on his home Wi-Fi. Two real bugs, one dangerous.
+
+**1. Reopen re-ran the original prompt (SAFETY).** `resumeSession` re-spawned the agent with
+`row.title` — the opening instruction, truncated to 80 chars. On "Say BETA" it merely looked
+odd; on "delete the old migrations" it would have re-executed a destructive instruction the
+person never asked for twice. The SDK error (`[ede_diagnostic] result_type=user`, thrown by
+the Agent SDK, not us) was the downstream symptom of hammering resume with a synthetic prompt.
+**Fix:** reopening now makes a conversation READY, never re-runs it — no agent spawned, no
+prompt replayed; the agent wakes on the human's next message with their actual words (the
+`wake()` path from round 7). Refuses honestly when there is no resume point. Verified against
+**real Claude** in a new contract test that reproduces the exact field sequence (stop →
+reopen → reopen → type → agent remembers "BETA"), plus stop→reopen→continue.
+
+**2. Two races the contract test exposed** (invisible to fake-agent unit tests):
+- A finished run lingered in the live-session map and **shadowed the stored row**, so a
+  reopened conversation still reported the dead agent's status. Dead runs now leave the map.
+- A late-draining run **stomped a newer status**: stop → reopen left it 'ended' because the
+  old consume loop wrote its terminal status afterwards. Runs are now marked `superseded`
+  when a reopen/wake takes over, and a superseded run stays silent.
+- `SessionManager.shutdown()` added (interrupt + await every agent) and awaited in
+  `daemon.stop()` — previously shutdown closed SQLite while consume loops were still writing
+  ("database connection is not open" unhandled rejection).
+
+**3. `away` was a lie.** The pill described the person's location; it describes the ROUTE.
+Now `linked · direct` / `linked · relay`, with the honest reason documented: an HTTPS page
+may not open `ws://` to a private IP (mixed content), so the relay-served app always uses the
+relay — even at home. The daemon-origin app still prefers direct with relay failover. Trade
+documented in `docs/DEPLOY.md` with a table.
+
+**4. Composer follows capability, not status.** `SessionListing.resumable` (derived from
+`agent_session_id`, split out of `SessionSummary` so it stays derived data) flows through
+hello → store → UI: anything continuable offers a place to type ("Type to carry this on…");
+anything genuinely dead says so instead of showing a button that refuses.
+
+CI now builds the Docker image and asserts the container answers `/health` with `role:relay`
+and serves the shell — the deploy path is product surface and was breaking silently twice.
+
+**5. The contract suite had been silently stale.** Running it (excluded from CI, so nobody
+had) showed all 6 A6 tests hanging to their 180s timeout — not a new regression: they call
+`waitForIdle`, which waits for the agent's stream to CLOSE, and that stopped happening when
+the product moved from one-shot runs to conversations. One also asserted auto-approval while
+the harness pre-approved nothing, so it could never have passed. Rewritten against today's
+contract: a new `untilTurnEnds` helper (status reaches waiting/ended/errored), the
+auto-approval test gets its own harness using the production read-only defaults, teardown
+awaits `shutdown()`. **8/8 contract tests now green against real Claude in ~39s** (was 18
+minutes of hanging). `waitForIdle` kept for unit tests, with a comment on what it means.
+
+324 tests (28 protocol + 31 relay + 56 app + 209 daemon) + 8 contract green against real
+Claude. One-flow rehearsal re-verified on the LAN IP under an insecure context. Docker image
+rebuilt and verified.
+
+**B4 hand-off to Sahith:** local re-check, then `fly launch`/`fly deploy` (or the $0 VPS
+path), then `LONGLEASH_RELAY_URL=wss://…` and the cellular field test.
+
+## Field bug: WebCrypto is HTTPS-only in browsers (2026-08-02) — envelope moved to noble
+
+Sahith's first scan of the one-QR flow died with "undefined is not an object (evaluating
+'crypto.subtle.importKey')". Root cause: browsers expose `crypto.subtle` ONLY on secure
+contexts; `http://192.168.1.71:8080` is not one. Every rehearsal had run on 127.0.0.1 —
+which browsers exempt — so the landmine was invisible until a real phone hit a real LAN IP.
+
+Fix: `@longleash/protocol/envelope` now uses **@noble/ciphers + @noble/hashes** (audited,
+pure-JS, zero-dep) for the SAME algorithms — AES-256-GCM, HKDF-SHA256, unchanged wire format.
+Runs identically on secure and insecure pages; `crypto.getRandomValues` (not gated) remains
+the nonce source. `RelayIdentity.frameKey` is now raw bytes, API otherwise unchanged; all
+call sites compile untouched. Regression test deletes `crypto.subtle` and proves seal/open
+still work. The one-flow rehearsal now binds the relay on the machine's LAN IP and ASSERTS
+`isSecureContext === false` before proceeding — the phone's reality is the rehearsed reality
+from now on. Full flow green under it. 321 tests (28 protocol + 31 relay + 56 app + 206
+daemon); bundle +6KB gzip.
+
+Explained to Sahith: two terminals exist only in the local try-out (laptop plays both roles);
+deployed shape is cloud relay + one `pnpm start ~`. `linked` = direct over home Wi-Fi;
+`linked · away` = through the relay, sealed — same abilities, different road.
+
+## One-flow rework + B4 artifacts (2026-08-02) — Sahith's manual test failed, so the dance died
+
+Sahith ran the port-switch choreography and got stuck on "reconnecting": for failover to
+work, the phone had to have re-paired against a daemon already running with the relay env —
+order-sensitive, fragile, my fault. Instead of a more careful script, the whole flow was
+replaced:
+
+**The one QR.** With `LONGLEASH_RELAY_URL` set, the daemon's QR now points at the **relay's
+app origin**. The relay serves the built app shell (`staticDir`, SPA fallback, path-climb
+guarded, `/health` now declares `role:'relay'`). Pairing completes **through the relay**:
+both sides derive a short-lived room+key from the QR challenge secret via
+`derivePairingIdentity` (HKDF info strings domain-separated from device rooms — protocol
+tests prove the two identities can never address or decrypt each other), the phone sends
+`completePairing` sealed, the daemon (`pairing-host.ts`) answers `paired {token, relaySecret}`
+sealed, room dies on success/TTL. Registry checks (hash, TTL, one-time burn) unchanged.
+`n + Enter` in the bin mints a fresh QR without restarting (fixes the revoke-then-no-QR
+annoyance too). LAN pairing URL still printed as a fallback line.
+
+**Client origin-awareness.** `detectOrigin()` via /health (`role:'relay'` vs
+`name:'longleash'`): on a relay origin there is no LAN road — lanWire and the home-probe are
+disabled (probing /health there would hit the relay itself and lie "home"), the endpoint is
+the page's own origin, and `pair()` routes to `pairViaRelay()`.
+
+**Rehearsed green end-to-end** (`one-flow-smoke.mjs`, real processes): relay serves shell →
+daemon hosts pairing room → browser opens relay-origin QR → sealed pairing → `linked · away`
+→ folder search round-trip → **reload works at the relay origin** (impossible in the old LAN
+test). Plus 4 new pairing-host tests (sealed success, sealed refusal, wrong-key silence,
+no-double-issue + room death) and 2 protocol domain-separation tests.
+
+**Deploy artifacts, container-verified:** root `Dockerfile` (multi-stage; daemon deps never
+installed; `packageManager` pinned pnpm@10.33.2 — unpinned corepack pulled pnpm 11 in-image
+and broke the build-script allow-list; `onlyBuiltDependencies` += esbuild), `.dockerignore`,
+`fly.toml` (auto_stop off — rooms are standing links), `docs/DEPLOY.md` (Fly ~$2-3/mo
+honest-costed + $0 VPS/Oracle path with Caddy TLS; can/cannot-see table; honest limits).
+Image built and run locally: /health role, shell, sw.js all serve. tsx moved to relay
+runtime deps (image runs TS directly — noted tradeoff).
+
+**320 tests** (27 protocol + 31 relay + 56 app + 206 daemon). Sahith's local check is now
+one flow (relay + daemon + scan). Remaining in B4: he deploys (Fly or VPS), then the
+cellular field test.
+
+## B3 hands-on rehearsal (2026-08-02) — found the come-home bug before Sahith did
+
+Before handing Sahith the end-to-end script, rehearsed his exact test in Playwright with real
+processes (relay + daemon + built app, one tab, no reloads): pair on LAN → daemon leaves that
+address (restart on another port, same storage/relay) → page crosses to the relay by itself
+(`linked · away`) → folder search through ciphertext → daemon returns home.
+
+**Bug found at the last step:** once on the relay, the app NEVER returned to the LAN — a
+healthy relay link never breaks, and nothing retried the direct path. "LAN-first" was only
+true at connect time. Fix: while away, probe `/health` on the home origin every 15s (3s
+abort; the SW never caches /health, so the probe cannot be lied to) and swap to the LAN the
+moment it answers. Rehearsal now green end to end: away in ~5s, home again within ~20s.
+
+**Secure-context finding (sets B4 scope):** on iOS, service workers require HTTPS — a plain
+`http://LAN-IP` origin never registers one, so the installed-PWA-away story cannot rest on
+the daemon origin's cache. B4 therefore: the relay also serves the app shell over the deploy
+platform's TLS (CLAUDE.md anticipated "served by the daemon or relay"), which later wants
+pairing-through-the-relay (sealed with a key derived from the QR challenge secret). For
+Sahith's B3 hands-on test today: keep the tab open while away; reloading while away starts
+working at B4.
+
+Note for his run: his existing device row predates relay secrets → one-time re-pair
+(r + Enter, q, restart, rescan). 313 tests green.
+
+## Phase B3 done (2026-08-02) — the whole product works away from home
+
+Sahith asked how to hand-check B2 → built `pnpm --filter @longleash/daemon demo:relay`: the
+same message shown from three perspectives (phone plaintext / relay ciphertext / daemon
+plaintext), plus a tamper-and-drop. Then B3, both legs:
+
+**Daemon leg:**
+- `LongLeashServer` refactored onto a `ConnectionTransport` seam (send/bufferedAmount/close/
+  terminate/ping/isOpen) — LAN sockets and relay rooms are now the same thing to every rule
+  above it: subscriptions, replay, backpressure watermarks, revocation. All 195 prior tests
+  green through the refactor untouched.
+- `attachRelay(deviceId, {url, secret})`: a standing virtual connection per device room.
+  AES-GCM auth on each frame IS the device identity (stronger than the LAN token check).
+  Hello re-offered whenever the room becomes whole (link reconnect, guest join) — idempotent
+  client-side. Heartbeat skips relay connections (their link owns liveness — the daemon's own
+  32s-reconnect-loop lesson would have recurred here as double-counting).
+- `RelayBridge` keeps rooms in lockstep with the registry: opened at startup + live on
+  `onPaired` (new DeviceRegistry hook), closed on revocation. `normalizeRelayUrl` accepts an
+  https origin. `startDaemon({relayUrl})` + `LONGLEASH_RELAY_URL` env in the bin.
+- `relay-bridge.test.ts` (7): **the full Phase A loop as ciphertext** — hello, startSession,
+  approval.requested, allow, agent streams "wrote it" — plus tamper-drop-continue, revocation
+  closes the room (phone sees host leave), pair-while-running gets a room instantly.
+
+**App leg:**
+- `client.ts` rebuilt on a Wire abstraction: `lanWire` (4s open-timeout — a WS to an
+  unreachable IP hangs longer than a person waits) and `relayWire` (join as guest, seal/open
+  every frame, wait up to 8s for the host, host-left → cycle). **LAN first on every cycle**;
+  relay is the fallback road. Same protocol handling above the seam.
+- Relay URL learned from `hello.relay.url` + stored; secret captured at pairing (B2) — so a
+  device paired today needs nothing extra when the relay goes live.
+- Rail shows `linked · away` via the relay (aria label says so too).
+- Minimal service worker (`public/sw.js`, network-first, cache fallback, **never caches
+  /health or /pair** — a cached /health would fake reachability): the installed PWA boots
+  with the daemon unreachable, which is the precondition for using the relay at all.
+
+**Verified live, not just in unit tests** (Playwright, real processes):
+- LAN smoke: real daemon + built app — QR pair → linked, relay secret in localStorage, token
+  reconnect. The client rewrite did not disturb the working LAN path.
+- Relay smoke: app served from a dead origin (= installed PWA away from home) + real relay
+  process + real daemon → **failed over, `linked · away`, folder search answered through
+  ciphertext**. Screenshot in scratchpad; `demo/smoke-server.ts` is the reusable harness.
+
+313 tests (25 protocol + 30 relay + 56 app + 202 daemon). **B4 remains:** Dockerfile +
+fly.toml/compose, deploy needs Sahith's hands (free Fly.io account or any VPS), then the
+cellular field test — phone on mobile data, Wi-Fi off, approving real work from anywhere.
+
+## Phase B2 done (2026-08-01) — the E2E envelope and the daemon's relay leg
+
+Sahith confirmed the type pass; B1 has no hands-on surface (told him so — his moment is B4).
+
+**Envelope (`@longleash/protocol/envelope`, 11 tests):** one 32-byte pairing secret per device
+→ HKDF-SHA256 derives the relay `roomTag` (one-way; relay learns nothing) and an AES-256-GCM
+`frameKey`. Pure WebCrypto — identical code in Node and browser, zero dependencies. `open()`
+returns null on ANY failure and never throws: tamper, wrong key, truncation, garbage, foreign
+version byte — all covered by tests. Protocol tsconfig gained `lib: [ES2022, DOM]` (type-only).
+
+**Pairing (`auth.ts`, +5 tests):** `completePairing` mints `relaySecret`, stores it (plaintext
+by necessity — unlike the token it must be re-derivable-from every restart; it lives on the
+user's own laptop), returns it in the LAN-only `/pair` response — the one moment the devices
+share a channel the relay is not part of. `listRelayDevices()` = non-revoked with secrets:
+one room per device, so revocation simply stops joining that room. `relay_secret` column via
+`ensureColumns`; migration test builds the real pre-relay schema on a file and upgrades it.
+App `pair()` stores the secret in localStorage TODAY so current pairings work remotely at B3
+without re-pairing; `forgetToken()` clears it.
+
+**RelayLink (`daemon/src/relay-link.ts`, 7 tests, run against the REAL RelayServer):** joins
+as host, seals outbound, opens inbound; failed-open frames dropped (hostile relay assumed —
+verified with a malicious impostor relay speaking garbage: nothing surfaced, no crash);
+reconnects with backoff through a relay restart; `stop()` leaves no zombie; outbound while
+disconnected is dropped because cursor replay heals gaps end-to-end (no second buffering
+layer). Malformed secret → permanent stop, not an infinite retry loop.
+
+283 → **306 tests** (25 protocol + 30 relay + 56 app + 195 daemon). Not yet wired into
+`startDaemon`/LongLeashServer — that bridge is B3's core, together with the app's relay
+client and LAN-first fallback. B4 = Dockerfile + deploy + Sahith's cellular-data field test.
+
+## Phase B started (2026-08-01) — B1: the relay, a zero-knowledge pipe
+
+Sahith approved the type/polish pass and called Phase B. `packages/relay` exists and is green.
+
+**Typography (same session):** Archivo replaced. Agent prose now sets in **Source Serif 4**,
+UI chrome in **Hanken Grotesk**, code stays JetBrains Mono — the open equivalents of Claude's
+own Tiempos/Styrene pairing (those are commercial and cannot ship in an open-source repo).
+Self-hosted like before. Stop is now a filled red key (`.key.stopkey`, measured ≥4.5:1) —
+the brake reads as a brake. Leash glyph sits in the rail wordmark. Audit re-run clean: 24
+screen×width combos, reduced-motion, landscape. App tests/build green.
+
+**B1 — `packages/relay` (30 tests):**
+- Model: rooms keyed by an opaque high-entropy tag (will be HKDF-derived from the pairing
+  secret in B2). One `host` (daemon) per room, capped `guests` (phones). Guest frames → host;
+  host frames → all guests; guests never see each other. Payloads are opaque base64 the relay
+  never parses — asserted byte-for-byte in tests.
+- Holds nothing: no DB, frames to an absent side are dropped (E2E cursors replay the gap),
+  empty rooms evaporate, `/health` reveals only `{ok:true}` (test asserts no room tag leaks).
+- Hygiene: join timeout drops parked sockets; second host rejected (4409) without disturbing
+  the first; guest cap (4429); per-frame size rule (4413) separate from the ws transport cap
+  (1009) so close codes tell the truth; slow consumers are dropped at a buffer watermark, not
+  buffered forever; heartbeat tolerates 3 missed pongs (the daemon's 32s-reconnect-loop lesson,
+  applied on day one).
+- `bin/longleash-relay.ts` binds 0.0.0.0 BY DESIGN — it is the public rendezvous service on a
+  VPS, not the laptop daemon; the "nothing binds 0.0.0.0" invariant governs the daemon. TLS
+  terminates at the platform proxy (Fly/Caddy); relay speaks ws behind it.
+
+**Next:** B2 — E2E envelope (libsodium secretbox; relay key + room tag minted at pairing,
+delivered over the LAN QR channel, never to the relay) + daemon outbound relay connection.
+B3 — app speaks relay with LAN-first fallback. B4 — Dockerfile + deploy (needs Sahith's hands:
+a Fly.io account or any small VPS). 283 tests workspace-wide (14 protocol + 30 relay + 56 app
++ 183 daemon).
+
+## Dogfood round 7 (2026-08-01) — a restart stranded a conversation, and the phone lied about it
+
+Sahith replied to a session showing "waiting for you" and got "That session has finished —
+start a new one." Root cause was a **double defect** introduced by the restart cleanup:
+
+1. On startup the daemon silently rewrote running/waiting rows to 'ended' in SQL **without
+   appending an event**, so `hello` said one status while the replayed stream still ended
+   "waiting". The phone trusts the stream (it must — replay is the source of truth), showed a
+   live session, and the send bounced.
+2. Even with honest events, killing the conversation was the wrong semantics: the transcript
+   and the resume id were sitting on disk the whole time.
+
+**Fix — conversations survive restarts now:**
+- Restart reconciliation: stranded sessions with a resume id become 'waiting' (an honest
+  status — see next line), ones that never announced a resume id are 'ended'; either way the
+  transition is **appended to the event log** so replay and hello agree. Idempotent across
+  repeated restarts (guarded, no boot spam).
+- `sendMessage` to a dormant session **wakes it**: revives the agent via SDK `resume` with the
+  reply as its next prompt — same spawn path the Reopen button already contract-verified
+  against real Claude. Obeys the concurrency cap and re-validates the cwd against today's
+  allowlist. Audited as `session.wake`.
+- `stopSession` on a dormant session ends it cleanly (event appended) instead of erroring.
+- Two old tests pinning "finished sessions refuse messages" rewritten to the new contract;
+  +13 new tests (restart transitions, replay convergence, wake, follow-ups after wake, cap,
+  allowlist re-check, audit). 183 daemon tests green.
+- Server error copy for the truly-unresumable case updated; app footnote no longer claims
+  restarts kill sessions.
+
+## Mobile formatting pass (2026-08-01) — transcripts are markdown, render them as such
+
+Sahith's phone screenshot showed the truth: agent replies are full markdown (bullet recaps,
+fenced commands, numbered steps) and the inline-only renderer produced a ragged wall. Added
+`src/ui/prose.tsx` — a small structured reader (paragraphs, bullets, numbered lists with real
+starts, ### headings, fenced code with language tag, inline code/bold) with 14 parser tests,
+including "unterminated fence mid-stream renders as code" and the exact transcript from his
+screenshot. Fences side-scroll inside their card; the page never scrolls sideways.
+
+Also from the same screenshot review:
+- Detail header compacted: title + Stop/Reopen on one row, single ellipsizing meta strip —
+  the conversation gets the vertical space (readout 56→62dvh).
+- Inline code chips keep their shape across line-wraps (`box-decoration-break: clone`).
+- Auto-scroll only follows the tail when the reader is at the bottom; scrolling up to read is
+  no longer yanked back by streaming.
+- Body texture moved to a fixed layer — iOS Safari does not support
+  `background-attachment: fixed` (janky scroll repaints on the phone, fine in desktop preview).
+- Preview harness gained a `markdown` screen mirroring the screenshot content.
+- Audit clean: 24 screen×width combinations (8 screens × 360/390/430), reduced-motion,
+  landscape. 253 tests green (14 protocol + 56 app + 183 daemon).
+
+## UI rebuild (2026-08-01) — "Instrument"
+
+Sahith flagged the transcript as "hardly readable" and asked for a professional light-theme
+design, explicitly not AI-slop. The whole app was rebuilt around one idea: LongLeash is a
+**control panel**, not a card gallery — one pale substrate, surfaces that extrude, readouts
+that recess, and status as a physical LED in a drilled socket.
+
+- **Type:** Archivo (variable, wdth+wght) + JetBrains Mono, **self-hosted** in `public/fonts/`
+  — the phone may be on a laptop hotspot with no route to the internet, and no third party
+  should see who opens the app.
+- **Palette:** light only, on purpose. Signal tones (`--live` / `--hold` / `--stop` / `--act`)
+  were darkened until each measured ≥4.5:1 on the surface it actually sits on.
+- **Motion:** `motion` (Framer Motion v12) — directional screen transitions, staggered list
+  entrance, spring on the approval card, drag-to-dismiss sheet. `prefers-reduced-motion`
+  honoured and verified.
+- **Icons:** `lucide-react`, one glyph per tool. No emoji anywhere.
+- **New session** moved from an always-open form into a bottom sheet, so the console shows
+  decisions and sessions instead of a form.
+- **First-run state** added — the empty console used to be a blank screen.
+
+**Design harness:** `packages/app/preview.html` + `src/preview.tsx` render the real screens
+against fixture data (including a deliberately hostile `stress` fixture). `pnpm --filter
+@longleash/app dev` → `/preview.html?screen=console`. Not in the production bundle. Vite only
+emits `index.html`; verified in `dist/`.
+
+**Found by looking at it, not by assuming** (Playwright at 360/390/430px):
+1. The approval command block clipped its **last line mid-glyph** — approving a command you
+   cannot fully read. Capped at whole lines with the padding accounted for.
+2. Long paths broke mid-word; now break at separators via `<wbr>`.
+3. Console approvals did not say **which session** was asking when several were waiting.
+4. Secondary ink was 3.7:1 — failing AA. Darkened to 4.7:1; a separate `--hint` token now
+   carries decoration only (separators, `aria-hidden`).
+5. Three controls were 38–43px — under the 44pt floor.
+
+Audit clean at 360/390/430px across all seven screens: no contrast failures, no undersized
+targets, no unlabelled buttons, no horizontal overflow, nothing stuck faded under reduced
+motion, no landscape overflow. 229 tests green (14 protocol + 42 app + 173 daemon).
+
 ## Audit of A1-A6 (2026-08-01)
 
 Full report: `agents/2026-08-01-audit-a1-a6.md`. Seven flaws found; all critical/high ones fixed the same day (stop button, orphan reconciliation actually wired, expiry sweeper actually running, real audit log replacing a doc overclaim, concurrent-session cap, WS frame cap, session origin). Deferred with named phases: external agents are mirror-only (Phase D, platform limit), sessions not persisted across restart (F), token in query string (B, TLS), event-log retention (F), `sendMessage` steering (E).
