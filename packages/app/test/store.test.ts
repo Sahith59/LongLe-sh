@@ -172,6 +172,41 @@ describe('approvals inbox', () => {
   })
 })
 
+describe('stale errors', () => {
+  const errored = (sessionId: string, seq: number, message: string) =>
+    ev({ v: 1, seq, sessionId, ts: 1, type: 'session.errored', payload: { message } })
+  const statusRunning = (sessionId: string, seq: number) =>
+    ev({ v: 1, seq, sessionId, ts: 1, type: 'session.status', payload: { status: 'running' } })
+
+  it('clears an old failure once the session is running again', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(errored('ses_1', 2, 'no such column: agent_session_id'))
+    expect(stateOf(store).sessions.ses_1?.error).toBeTruthy()
+
+    // Reopening emits a running status; the previous failure is history, not current state.
+    store.apply(statusRunning('ses_1', 3))
+    expect(stateOf(store).sessions.ses_1?.error).toBeUndefined()
+    expect(stateOf(store).sessions.ses_1?.status).toBe('running')
+  })
+
+  it('keeps the failure visible while the session is still failed', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(errored('ses_1', 2, 'boom'))
+    expect(stateOf(store).sessions.ses_1?.error).toBe('boom')
+  })
+
+  it('does not carry a failure across a replay of a now-healthy session', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(errored('ses_1', 2, 'old failure'))
+    store.applyGap('ses_1')
+    store.apply(started('ses_1', 1))
+    expect(stateOf(store).sessions.ses_1?.error).toBeUndefined()
+  })
+})
+
 describe('rebuilding after a reload', () => {
   it('seeds the list from what the daemon reports, so a refresh does not wipe the screen', () => {
     const store = createStore()

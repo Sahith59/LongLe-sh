@@ -97,6 +97,8 @@ export function createStore(options: StoreOptions = {}) {
     const session = ensure(event.sessionId)
     switch (event.type) {
       case 'session.started': {
+        // A fresh start supersedes any earlier failure.
+        delete session.error
         const payload = event.payload as { agent: string; cwd: string; title?: string; origin?: string }
         session.agent = payload.agent
         session.cwd = payload.cwd
@@ -142,7 +144,11 @@ export function createStore(options: StoreOptions = {}) {
       }
       case 'session.status': {
         const payload = event.payload as { status: SessionStatus }
-        if (payload.status === 'waiting' || payload.status === 'running') session.status = payload.status
+        if (payload.status === 'waiting' || payload.status === 'running') {
+          session.status = payload.status
+          // The session is alive again, so a past failure is history rather than current state.
+          delete session.error
+        }
         break
       }
       case 'session.ended': {
@@ -183,6 +189,7 @@ export function createStore(options: StoreOptions = {}) {
     if (session) {
       session.output = ''
       session.activity = []
+      delete session.error
     }
     for (const [id, approval] of approvals) {
       if (approval.sessionId === sessionId) approvals.delete(id)

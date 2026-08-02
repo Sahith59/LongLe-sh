@@ -34,6 +34,24 @@ LongLeash does not care whether it's on. The only interaction worth knowing: if 
 
 Similarly never required: disabling your firewall, disabling SIP/Gatekeeper, running anything as root, opening ports on your router, or granting LongLeash access to anything beyond the project directories you allowlist.
 
+## What runs without asking you
+
+By default LongLeash pre-approves three read-only tools — **Read, Glob, Grep** — so an agent can
+look around a project without interrupting you every few seconds. Anything that *changes*
+something (writing a file, running a shell command that modifies state) comes to your phone.
+
+Two things worth knowing plainly:
+
+- **Your editor's settings do not apply.** LongLeash runs its own agent process with on-machine
+  Claude Code settings ignored, so whatever mode your VS Code panel is in has no effect here.
+- **Some read-only shell commands (`ls`, `find`, `pwd`) may also run without asking**, because
+  the agent runtime treats them as safe. We do not control that completely — which is exactly
+  why every tool that ran without asking is listed in the session's **activity feed**. Nothing
+  runs invisibly, even when it runs unasked.
+
+Want to be asked about literally everything, including reads? Start the daemon with
+`LONGLEASH_ASK_EVERYTHING=1`.
+
 ## One honest caveat about approvals
 
 Claude Code lets you pre-approve commands in your own settings (`~/.claude/settings.json`,

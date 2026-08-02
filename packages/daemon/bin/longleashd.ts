@@ -29,6 +29,8 @@ const daemon = await startDaemon({
   port: Number(process.env.PORT ?? 4321),
   ...(existsSync(join(APP_DIR, 'index.html')) ? { staticRoot: APP_DIR } : {}),
   denyOutsideRoot: process.env.LONGLEASH_STRICT !== '0',
+  // LONGLEASH_ASK_EVERYTHING=1 pre-approves nothing, so even reading a file comes to your phone.
+  ...(process.env.LONGLEASH_ASK_EVERYTHING === '1' ? { allowedTools: [] } : {}),
   // Separate instances (or a clean test run) can keep their own storage.
   ...(process.env.LONGLEASH_DATA ? { dataDir: process.env.LONGLEASH_DATA } : {}),
   log: (line) => console.log(line),
@@ -52,6 +54,18 @@ if (daemon.posture.gateWeakened) {
 }
 if (daemon.orphansClosed > 0) {
   console.log(`Closed ${daemon.orphansClosed} approval(s) left pending by a previous run.\n`)
+}
+const preApproved = process.env.LONGLEASH_ASK_EVERYTHING === '1' ? [] : ['Read', 'Glob', 'Grep']
+console.log(
+  preApproved.length === 0
+    ? 'Approvals: EVERY tool asks your phone first.'
+    : `Approvals: ${preApproved.join(', ')} run without asking (they only read); everything that`,
+)
+if (preApproved.length > 0) {
+  console.log('changes something asks your phone. Auto-approved tools still appear in the')
+  console.log('activity feed. Run with LONGLEASH_ASK_EVERYTHING=1 to be asked about everything.\n')
+} else {
+  console.log('')
 }
 console.log('Agents may work only in:')
 for (const root of roots) console.log(`  ${resolve(root)}`)
