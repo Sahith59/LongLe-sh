@@ -2,42 +2,86 @@ import { motion } from 'motion/react'
 import type { Block } from '../lib/store.js'
 import { EASE } from './primitives.js'
 import { splitTool, toolIcon } from './format.js'
+import { PathChip } from './PathChip.js'
 import { Prose } from './prose.js'
 
 /**
- * Renders each piece of the conversation as what it actually is. Agent prose reads as prose,
- * tool calls stay compact and auditable without burying the answer, and your own messages sit
- * apart. Flattening all three into one monospace block made the transcript unreadable on a
- * phone — that was the single worst thing about the old UI.
+ * The conversation, rendered as a conversation.
+ *
+ * The rule that makes it readable: consecutive tool calls collapse into ONE
+ * action group with a shared spine, instead of N identical grey lines. An
+ * agent that reads six files then answers should look like "it did some work,
+ * then said this" — not like a log file with a sentence buried in it.
  */
-export function TranscriptBlock({ block }: { block: Block }) {
-  if (block.kind === 'tool') {
-    const { name, detail } = splitTool(block.text)
-    const Glyph = toolIcon(name)
-    return (
-      <motion.div
-        className="blk tool"
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={EASE}
-        title={block.text}
-      >
-        <Glyph size={14} strokeWidth={2} aria-hidden="true" />
-        <span className="tname">{name}</span>
-        {detail ? (
-          <span className="targ">{detail}</span>
-        ) : null}
-      </motion.div>
-    )
-  }
+export function Transcript({ blocks }: { blocks: Block[] }) {
+  const groups = groupBlocks(blocks)
+  return (
+    <>
+      {groups.map((group, i) =>
+        group.kind === 'actions' ? (
+          <ActionGroup key={i} items={group.items} />
+        ) : (
+          <TranscriptBlock key={i} block={group.block} />
+        ),
+      )}
+    </>
+  )
+}
 
+type Group = { kind: 'actions'; items: string[] } | { kind: 'block'; block: Block }
+
+/** Consecutive tool calls belong together; everything else stands alone. */
+function groupBlocks(blocks: Block[]): Group[] {
+  const groups: Group[] = []
+  for (const block of blocks) {
+    const last = groups[groups.length - 1]
+    if (block.kind === 'tool') {
+      if (last?.kind === 'actions') last.items.push(block.text)
+      else groups.push({ kind: 'actions', items: [block.text] })
+    } else {
+      groups.push({ kind: 'block', block })
+    }
+  }
+  return groups
+}
+
+function ActionGroup({ items }: { items: string[] }) {
+  return (
+    <motion.div
+      className="actions"
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={EASE}
+    >
+      {items.map((text, i) => {
+        const { name, detail } = splitTool(text)
+        const Glyph = toolIcon(name)
+        // A shell command is not a path; showing it with a file icon would lie.
+        const isCommand = name === 'Bash' || name === 'BashOutput'
+        return (
+          <div className="action" key={i} title={text}>
+            <span className="ico">
+              <Glyph size={13} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="verb">{name}</span>
+            {detail ? (
+              <PathChip text={detail} kind={isCommand ? 'command' : 'file'} max={38} />
+            ) : null}
+          </div>
+        )
+      })}
+    </motion.div>
+  )
+}
+
+export function TranscriptBlock({ block }: { block: Block }) {
   if (block.kind === 'user') {
     const text = block.text.replace(/^[\s›]+/, '').trim()
     if (text === '— reopened —') return <div className="blk divider">reopened</div>
     return (
       <motion.div
         className="blk mine"
-        initial={{ opacity: 0, y: 8, scale: 0.98 }}
+        initial={{ opacity: 0, y: 8, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={EASE}
       >

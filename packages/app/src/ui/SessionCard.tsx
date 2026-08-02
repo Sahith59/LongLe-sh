@@ -3,6 +3,7 @@ import { ChevronRight, Radio } from 'lucide-react'
 import type { SessionView } from '../lib/store.js'
 import { Led, SPRING, itemVariants } from './primitives.js'
 import { ORIGIN_LABEL, STATUS_LABEL, shortPath } from './format.js'
+import { PathChip } from './PathChip.js'
 
 export function SessionCard({
   session,
@@ -36,7 +37,7 @@ export function SessionCard({
           {STATUS_LABEL[session.status] ?? session.status}
         </span>
         <span className="dot" aria-hidden="true">·</span>
-        <span className="mono">{shortPath(session.cwd)}</span>
+        <PathChip text={shortPath(session.cwd)} kind="folder" max={26} />
         <span className="dot" aria-hidden="true">·</span>
         <span>{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
       </p>

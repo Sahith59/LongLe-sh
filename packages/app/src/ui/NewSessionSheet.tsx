@@ -127,11 +127,13 @@ function SheetBody({
         <p className="sub">Claude runs in this folder and asks before it touches anything else.</p>
 
         <div className="chosen">
-          {chosen.kind === 'file' ? (
-            <File size={18} strokeWidth={2} aria-hidden="true" />
-          ) : (
-            <Folder size={18} strokeWidth={2} aria-hidden="true" />
-          )}
+          <span className="fico">
+            {chosen.kind === 'file' ? (
+              <File size={16} strokeWidth={2} aria-hidden="true" />
+            ) : (
+              <Folder size={16} strokeWidth={2} aria-hidden="true" />
+            )}
+          </span>
           <span className="body">
             <span className="k">Working in</span>
             <span className="v" title={workingIn}>
@@ -217,11 +219,13 @@ function SheetBody({
           {folders.map((folder) => (
             <li key={folder.path}>
               <button type="button" className="folderbtn" onClick={() => setChosen(folder)}>
-                {folder.kind === 'file' ? (
-                  <File size={17} strokeWidth={2} aria-hidden="true" />
-                ) : (
-                  <Folder size={17} strokeWidth={2} aria-hidden="true" />
-                )}
+                <span className="fico">
+                  {folder.kind === 'file' ? (
+                    <File size={15} strokeWidth={2} aria-hidden="true" />
+                  ) : (
+                    <Folder size={15} strokeWidth={2} aria-hidden="true" />
+                  )}
+                </span>
                 <span className="fl" title={folder.label}>
                   {folder.label}
                 </span>

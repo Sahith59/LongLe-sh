@@ -1,100 +1,86 @@
 /* ==========================================================================
-   LongLeash — "Instrument"
+   LongLeash — "Daylight Instrument"
 
-   A control panel milled from one piece of pale grey material. Surfaces
-   extrude toward you, readouts recess into the panel, and every status is a
-   physical LED seated in a drilled socket. Light theme only, deliberately:
-   this is a daylight instrument, and one theme executed properly beats two
-   executed approximately.
+   A precision control surface seen through frosted glass. Four materials,
+   each with exactly one job, because hierarchy has to come from MATERIAL —
+   piling more shadow onto everything is what made the last pass feel mushy:
 
-   Soft UI, but the accessible kind — depth comes from the shadow pair, never
-   from lowering text contrast. Every text tone here was measured against the
-   surface it actually sits on and clears WCAG AA (4.5:1); the only exception is
-   --hint, which is reserved for decoration that carries no meaning.
+     field  the world behind everything. Fixed, never scrolls, never repaints.
+     glass  chrome that floats above content: rail, dock, sheet. Blurred.
+     card   content that sits on the field: sessions, approvals. Opaque.
+     well   recessed readouts: transcript, code, inputs. Inset.
+
+   PERFORMANCE RULE, non-negotiable: backdrop-filter appears on exactly three
+   fixed, small surfaces. Never on a scrolling list, never on a transcript
+   block, never animated. Blur is per-pixel work every frame it composites;
+   putting it on scrolling content is how glass designs melt phone batteries.
    ========================================================================== */
 
-/* --- Typefaces: self-hosted so the app renders correctly on a laptop
-       hotspot with no internet, and so no third party sees who opens it.
-       Two voices on purpose: Source Serif for what the agent SAYS — reading
-       text, set like writing — and Hanken Grotesk for the instrument around
-       it. Code stays JetBrains Mono. --- */
+/* --- Geist: drawn for developer interfaces, and 52KB for both faces against
+       the 250KB of serif it replaces. Self-hosted so the app renders on a
+       laptop hotspot with no internet, and no third party sees who opens it. */
 @font-face {
-  font-family: 'Hanken Grotesk';
-  src: url('/fonts/hanken-latin.woff2') format('woff2');
-  font-weight: 400 700;
+  font-family: 'Geist';
+  src: url('/fonts/geist-latin.woff2') format('woff2');
+  font-weight: 300 700;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Source Serif 4';
-  src: url('/fonts/sourceserif4-latin.woff2') format('woff2');
-  font-weight: 400 700;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Source Serif 4';
-  src: url('/fonts/sourceserif4-italic-latin.woff2') format('woff2');
-  font-weight: 400 700;
-  font-style: italic;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  src: url('/fonts/jetbrainsmono-latin.woff2') format('woff2');
+  font-family: 'Geist Mono';
+  src: url('/fonts/geistmono-latin.woff2') format('woff2');
   font-weight: 400 600;
   font-display: swap;
 }
 
-
 :root {
   color-scheme: light;
 
-  /* Substrate — everything visible is milled from this one value. */
-  --panel: #e9ecf1;
-  --raised: #eef1f6;
-  --well: #e0e4ea;
-  --edge: #ffffff;
+  /* Materials */
+  --field: #f2f4f7;
+  --card: #ffffff;
+  --well: #eceff3;
+  --glass: rgba(250, 251, 253, 0.72);
+  --glass-line: rgba(255, 255, 255, 0.75);
 
-  /* Ink. Body text is near-black on purpose; grey-on-grey is how soft UI
-     usually fails, and this app is read one-handed in bright daylight. */
-  --ink: #101620;
-  --ink-2: #47525f;
-  --ink-3: #5c6672;
-  /* Decoration only — separators and rules that carry no information and are hidden from
-     assistive tech. Never use this for text a reader has to make out. */
-  --hint: #8b95a2;
-  --hair: rgba(16, 22, 32, 0.09);
+  /* Ink — every tone measured against the surface it actually sits on. */
+  --ink: #0b1220;
+  --ink-2: #48515f;
+  --ink-3: #666f7d;
+  --hint: #99a1ad;
+  --hair: rgba(11, 18, 32, 0.09);
+  --hair-soft: rgba(11, 18, 32, 0.055);
 
-  /* Signals. Text tones are darkened until they clear 4.5:1 on the panel;
-     LED tones stay bright because they are lights, not text. */
-  --act: #1e3fcc;
-  --act-soft: rgba(30, 63, 204, 0.09);
-  --live: #16794a;
-  --live-led: #24c46e;
+  /* Signals */
+  --act: #2247d8;
+  --act-ink: #1c3bb5;
+  --act-wash: rgba(34, 71, 216, 0.08);
+  --live: #12734a;
+  --live-led: #21c46d;
   --hold: #8a5000;
   --hold-led: #f5a524;
+  --hold-wash: rgba(245, 165, 36, 0.13);
   --stop: #ad2820;
   --stop-led: #ef4d43;
-  --idle-led: #a7b0bc;
+  --stop-wash: rgba(173, 40, 32, 0.09);
+  --idle-led: #aeb6c2;
 
-  /* The shadow pair is the entire design language. */
-  --lift-1: 5px 5px 12px rgba(20, 27, 40, 0.1), -5px -5px 12px rgba(255, 255, 255, 0.95);
-  --lift-2: 9px 9px 22px rgba(20, 27, 40, 0.12), -8px -8px 20px rgba(255, 255, 255, 1);
-  --press: inset 3px 3px 7px rgba(20, 27, 40, 0.14), inset -3px -3px 7px rgba(255, 255, 255, 0.9);
-  --sink: inset 6px 6px 13px rgba(20, 27, 40, 0.1), inset -5px -5px 11px rgba(255, 255, 255, 0.88);
-  --socket: inset 1px 1px 2px rgba(20, 27, 40, 0.28), inset -1px -1px 2px rgba(255, 255, 255, 0.7);
+  /* Elevation. Directional and restrained — light comes from above. */
+  --lift-1: 0 1px 2px rgba(11, 18, 32, 0.05), 0 2px 8px rgba(11, 18, 32, 0.045);
+  --lift-2: 0 2px 4px rgba(11, 18, 32, 0.06), 0 8px 24px rgba(11, 18, 32, 0.08);
+  --lift-3: 0 -2px 32px rgba(11, 18, 32, 0.1);
+  --press: inset 0 1px 3px rgba(11, 18, 32, 0.11);
+  --sink: inset 0 1px 2px rgba(11, 18, 32, 0.07), inset 0 0 0 1px var(--hair-soft);
+  --socket: inset 0 0 0 1px rgba(11, 18, 32, 0.16);
 
+  --r-xs: 7px;
   --r-sm: 10px;
-  --r-md: 16px;
-  --r-lg: 22px;
+  --r-md: 14px;
+  --r-lg: 18px;
+  --r-xl: 24px;
   --r-pill: 999px;
 
-  --gut: 18px;
+  --gut: 16px;
   --ease: cubic-bezier(0.22, 0.61, 0.24, 1);
-
-  --ui: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
-  --prose: 'Source Serif 4', Georgia, 'Times New Roman', serif;
-  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 * {
@@ -103,21 +89,22 @@
 }
 
 html {
-  background: var(--panel);
+  background: var(--field);
 }
 
 body {
   margin: 0;
   min-height: 100dvh;
   color: var(--ink);
-  font: 400 16px/1.5 var(--ui);
-  letter-spacing: -0.004em;
-  background-color: var(--panel);
+  font: 400 16px/1.5 'Geist', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.011em;
+  background: var(--field);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Fine graph texture plus a soft overhead light, on a fixed layer: iOS Safari does not
-   support background-attachment: fixed, and a repainting texture janks the scroll. */
+/* The field. Two low-saturation washes and a fine grain give the glass
+   something to actually refract; flat grey makes frosted chrome invisible.
+   Fixed and pointer-transparent, so it never enters a scroll repaint. */
 body::before {
   content: '';
   position: fixed;
@@ -125,91 +112,84 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background-image:
-    radial-gradient(120% 70% at 50% -10%, rgba(255, 255, 255, 0.85), transparent 60%),
-    linear-gradient(rgba(16, 22, 32, 0.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16, 22, 32, 0.028) 1px, transparent 1px);
-  background-size: 100% 100%, 26px 26px, 26px 26px;
+    radial-gradient(70% 55% at 8% 0%, rgba(34, 71, 216, 0.07), transparent 70%),
+    radial-gradient(60% 50% at 100% 100%, rgba(214, 158, 92, 0.09), transparent 72%),
+    linear-gradient(rgba(11, 18, 32, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(11, 18, 32, 0.022) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 30px 30px, 30px 30px;
 }
 
 ::selection {
-  background: var(--act-soft);
+  background: var(--act-wash);
 }
 
 /* --------------------------------------------------------------- structure */
 
 .shell {
-  max-width: 620px;
+  max-width: 640px;
   margin: 0 auto;
   padding: 0 var(--gut) calc(28px + env(safe-area-inset-bottom));
 }
-
 .shell.hasdock {
-  padding-bottom: calc(104px + env(safe-area-inset-bottom));
+  padding-bottom: calc(112px + env(safe-area-inset-bottom));
 }
-
-/* Any block followed by a section gets the section rhythm — the detail header is a header,
-   not a section, and without this its actions collide with the next label. */
 .shell > * + section {
-  margin-top: 22px;
+  margin-top: 24px;
 }
 
-/* --------------------------------------------------------------- top rail */
+/* --------------------------------------------------------------- glass 1/3 */
 
 .rail {
   position: sticky;
   top: 0;
   z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px var(--gut) 12px;
-  padding-top: calc(10px + env(safe-area-inset-top));
-  background: linear-gradient(var(--panel) 72%, rgba(233, 236, 241, 0));
+  padding: 8px var(--gut);
+  padding-top: calc(8px + env(safe-area-inset-top));
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--hair-soft);
 }
-
 .rail-in {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  max-width: 620px;
+  max-width: 640px;
   margin: 0 auto;
   min-height: 44px;
 }
-
 .wordmark {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  font-size: 13.5px;
-  letter-spacing: 0.18em;
+  gap: 9px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink);
-  margin: 0;
 }
 .wordmark svg {
   flex: none;
   color: var(--act);
 }
-
 .rail .spacer {
   flex: 1;
 }
 
-/* Link state doubles as the app's own heartbeat readout. */
 .link-state {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: var(--ink-3);
-  padding: 6px 12px 6px 10px;
+  padding: 6px 12px 6px 9px;
   border-radius: var(--r-pill);
-  background: var(--panel);
-  box-shadow: var(--press);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 0 0 1px var(--hair-soft);
 }
 .link-state.on {
   color: var(--live);
@@ -220,44 +200,36 @@ body::before {
 .led {
   position: relative;
   flex: none;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--idle-led);
   box-shadow: var(--socket);
 }
-.led::after {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 0 transparent;
-}
 .led.running {
   background: var(--live-led);
-  box-shadow: var(--socket), 0 0 9px 1px rgba(36, 196, 110, 0.6);
+  box-shadow: var(--socket), 0 0 8px rgba(33, 196, 109, 0.55);
 }
 .led.waiting {
   background: var(--hold-led);
-  box-shadow: var(--socket), 0 0 9px 1px rgba(245, 165, 36, 0.65);
-  animation: breathe 1.9s var(--ease) infinite;
+  box-shadow: var(--socket), 0 0 8px rgba(245, 165, 36, 0.6);
+  animation: breathe 2s var(--ease) infinite;
 }
 .led.errored {
   background: var(--stop-led);
-  box-shadow: var(--socket), 0 0 9px 1px rgba(239, 77, 67, 0.55);
+  box-shadow: var(--socket), 0 0 8px rgba(239, 77, 67, 0.5);
 }
 .led.lg {
-  width: 13px;
-  height: 13px;
+  width: 10px;
+  height: 10px;
 }
-
 @keyframes breathe {
   0%,
   100% {
-    box-shadow: var(--socket), 0 0 6px 0 rgba(245, 165, 36, 0.45);
+    box-shadow: var(--socket), 0 0 5px rgba(245, 165, 36, 0.4);
   }
   50% {
-    box-shadow: var(--socket), 0 0 16px 3px rgba(245, 165, 36, 0.85);
+    box-shadow: var(--socket), 0 0 14px 2px rgba(245, 165, 36, 0.85);
   }
 }
 
@@ -266,37 +238,36 @@ body::before {
 .label {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin: 0 2px 12px;
+  gap: 8px;
+  margin: 0 2px 10px;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
+  font-weight: 600;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 .label .count {
   display: inline-grid;
   place-items: center;
-  min-width: 19px;
-  height: 19px;
+  min-width: 18px;
+  height: 18px;
   padding: 0 6px;
   border-radius: var(--r-pill);
   font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0;
   color: var(--ink-2);
-  background: var(--panel);
-  box-shadow: var(--press);
+  background: rgba(11, 18, 32, 0.06);
 }
 .label .count.urgent {
   color: #fff;
   background: var(--hold);
-  box-shadow: 0 2px 6px rgba(138, 80, 0, 0.35);
 }
 .label .rule {
   flex: 1;
   height: 1px;
   min-width: 0;
-  background: linear-gradient(90deg, var(--hair), transparent);
+  background: var(--hair-soft);
 }
 
 .muted {
@@ -310,9 +281,9 @@ body::before {
   line-height: 1.45;
 }
 .mono {
-  font-family: var(--mono);
-  font-size: 0.86em;
-  letter-spacing: -0.01em;
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  letter-spacing: -0.02em;
 }
 .empty {
   margin: 0 2px;
@@ -320,19 +291,18 @@ body::before {
   font-size: 14px;
 }
 
-/* --------------------------------------------------------------- surfaces */
+/* --------------------------------------------------------------- cards */
 
 .card {
   border-radius: var(--r-lg);
-  background: var(--raised);
-  box-shadow: var(--lift-1);
-  padding: 16px;
+  background: var(--card);
+  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair-soft);
+  padding: 15px;
 }
-
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* --------------------------------------------------------------- controls */
@@ -344,37 +314,36 @@ button {
   background: none;
   cursor: pointer;
 }
-
 :focus-visible {
   outline: 2px solid var(--act);
-  outline-offset: 3px;
+  outline-offset: 2px;
   border-radius: 6px;
 }
 
-/* Every tappable thing is a key on the panel: it extrudes at rest and sinks
-   when pressed. The bounds never change, so nothing around it shifts. */
 .key {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  min-height: 48px;
-  padding: 0 20px;
-  border-radius: var(--r-pill);
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: var(--r-md);
   font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.005em;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   color: var(--ink);
-  background: var(--raised);
-  box-shadow: var(--lift-1);
-  transition: box-shadow 180ms var(--ease), color 180ms var(--ease);
+  background: var(--card);
+  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair);
+  transition: box-shadow 160ms var(--ease), background 160ms var(--ease);
 }
 .key:active:not(:disabled) {
-  box-shadow: var(--press);
+  background: #f7f8fa;
+  box-shadow: var(--press), inset 0 0 0 1px var(--hair);
 }
 .key:disabled {
-  color: var(--ink-3);
-  box-shadow: var(--press);
+  color: var(--hint);
+  box-shadow: inset 0 0 0 1px var(--hair-soft);
+  background: transparent;
   cursor: default;
 }
 .key.wide {
@@ -382,33 +351,33 @@ button {
 }
 .key.sm {
   min-height: 44px;
-  padding: 0 16px;
-  font-size: 13px;
+  padding: 0 13px;
+  font-size: 13.5px;
   gap: 6px;
+  border-radius: var(--r-sm);
 }
 .key.icon {
   padding: 0;
-  width: 48px;
-  min-height: 48px;
-  border-radius: 50%;
+  width: 46px;
+  min-height: 46px;
+  border-radius: var(--r-md);
 }
 
-/* Primary: the one filled control on any screen. */
 .key.primary {
   color: #fff;
-  background: linear-gradient(180deg, #2c50dd, var(--act));
-  box-shadow: 4px 5px 12px rgba(20, 40, 120, 0.3), -4px -4px 10px rgba(255, 255, 255, 0.85),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  background: linear-gradient(180deg, #2f56e8, var(--act));
+  box-shadow: 0 1px 2px rgba(19, 40, 122, 0.28), 0 6px 18px rgba(19, 40, 122, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 .key.primary:active:not(:disabled) {
-  box-shadow: inset 3px 3px 8px rgba(9, 24, 82, 0.5), inset -2px -2px 6px rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, #2247d8, #1c3bb5);
+  box-shadow: inset 0 2px 5px rgba(9, 22, 74, 0.4);
 }
 .key.primary:disabled {
-  color: rgba(255, 255, 255, 0.72);
-  background: #97a2b5;
-  box-shadow: var(--press);
+  color: rgba(255, 255, 255, 0.75);
+  background: #aab2c0;
+  box-shadow: none;
 }
-
 .key.allow {
   color: var(--live);
 }
@@ -419,18 +388,17 @@ button {
   color: var(--ink-2);
 }
 
-/* The brake. Filled, red, unmistakable — stopping an agent must never require hunting. */
+/* The brake: filled and red, because stopping an agent must never need hunting. */
 .key.stopkey {
   color: #fff;
-  background: linear-gradient(180deg, #c5443a, var(--stop));
-  box-shadow: 4px 5px 12px rgba(140, 30, 24, 0.3), -4px -4px 10px rgba(255, 255, 255, 0.85),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: linear-gradient(180deg, #c8453b, var(--stop));
+  box-shadow: 0 1px 2px rgba(122, 27, 21, 0.28), 0 6px 16px rgba(122, 27, 21, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 .key.stopkey:active:not(:disabled) {
-  box-shadow: inset 3px 3px 8px rgba(84, 15, 11, 0.55), inset -2px -2px 6px rgba(255, 255, 255, 0.15);
+  box-shadow: inset 0 2px 5px rgba(74, 14, 10, 0.45);
 }
 
-/* Text-weight action, still 44px of tap area via padding. */
 .tap {
   display: inline-flex;
   align-items: center;
@@ -438,11 +406,14 @@ button {
   min-height: 44px;
   padding: 11px 4px;
   font-size: 14px;
-  font-weight: 600;
-  color: var(--act);
+  font-weight: 500;
+  color: var(--act-ink);
 }
 .tap:active {
-  opacity: 0.6;
+  opacity: 0.55;
+}
+.tap.quiet {
+  color: var(--ink-3);
 }
 
 /* --------------------------------------------------------------- inputs */
@@ -450,14 +421,14 @@ button {
 .field {
   display: block;
   width: 100%;
-  padding: 14px 16px;
+  padding: 13px 15px;
   border: 0;
   border-radius: var(--r-md);
   background: var(--well);
   box-shadow: var(--sink);
   color: var(--ink);
   font: inherit;
-  font-size: 16px; /* below 16px iOS zooms the whole page on focus */
+  font-size: 16px; /* below 16px iOS zooms the page on focus */
   line-height: 1.45;
 }
 .field::placeholder {
@@ -465,7 +436,8 @@ button {
 }
 .field:focus {
   outline: none;
-  box-shadow: var(--sink), 0 0 0 2px var(--act);
+  background: var(--card);
+  box-shadow: inset 0 0 0 1.5px var(--act), 0 0 0 4px var(--act-wash);
 }
 textarea.field {
   min-height: 84px;
@@ -476,11 +448,11 @@ textarea.field {
   position: relative;
 }
 .searchwrap .field {
-  padding-left: 44px;
+  padding-left: 42px;
 }
 .searchwrap .glyph {
   position: absolute;
-  left: 15px;
+  left: 14px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--ink-3);
@@ -493,35 +465,37 @@ textarea.field {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 15px 16px;
+  padding: 14px 15px;
   border-radius: var(--r-lg);
-  background: var(--raised);
-  box-shadow: var(--lift-1);
-  transition: box-shadow 200ms var(--ease);
+  background: var(--card);
+  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair-soft);
+  transition: box-shadow 160ms var(--ease);
+  /* Paint containment: a long list stays cheap to scroll. */
+  contain: content;
 }
 .session:active {
-  box-shadow: var(--press);
+  box-shadow: var(--press), inset 0 0 0 1px var(--hair-soft);
 }
 .session.needs {
-  box-shadow: var(--lift-1), inset 0 0 0 1.5px rgba(245, 165, 36, 0.55);
+  box-shadow: var(--lift-1), inset 0 0 0 1.5px rgba(245, 165, 36, 0.6);
 }
 .session.past {
-  background: var(--panel);
-  box-shadow: inset 0 0 0 1px var(--hair);
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 0 0 1px var(--hair-soft);
 }
 
 .session .top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
 }
 .session .name {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 16.5px;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.017em;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -529,7 +503,7 @@ textarea.field {
 }
 .session .chev {
   flex: none;
-  color: var(--ink-3);
+  color: var(--hint);
 }
 .session .meta {
   display: flex;
@@ -545,8 +519,7 @@ textarea.field {
 }
 .session .preview {
   margin: 9px 0 0;
-  font-family: var(--prose);
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.5;
   color: var(--ink-2);
   display: -webkit-box;
@@ -560,16 +533,16 @@ textarea.field {
   align-items: center;
   gap: 6px;
   margin: 10px 0 0;
-  padding: 5px 11px 5px 9px;
+  padding: 5px 10px 5px 8px;
   border-radius: var(--r-pill);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--hold);
-  background: rgba(245, 165, 36, 0.16);
+  background: var(--hold-wash);
 }
 
 .state {
-  font-weight: 600;
+  font-weight: 500;
 }
 .state.running {
   color: var(--live);
@@ -584,16 +557,54 @@ textarea.field {
   color: var(--ink-3);
 }
 
+/* --------------------------------------------------------------- path chip
+   A path is a thing, not a sentence. Giving it an icon, a surface and a
+   monospace face is what lets a reader pick it out of a wall of text. */
+
+.pathchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 8px 2px 6px;
+  border-radius: var(--r-xs);
+  background: rgba(11, 18, 32, 0.05);
+  box-shadow: inset 0 0 0 1px var(--hair-soft);
+  font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  letter-spacing: -0.02em;
+  color: var(--ink-2);
+  vertical-align: baseline;
+}
+.pathchip svg {
+  flex: none;
+  color: var(--hint);
+}
+.pathchip .txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pathchip.accent {
+  background: var(--act-wash);
+  color: var(--act-ink);
+  box-shadow: inset 0 0 0 1px rgba(34, 71, 216, 0.14);
+}
+.pathchip.accent svg {
+  color: var(--act);
+}
+
 /* --------------------------------------------------------------- approval */
 
 .approval {
   border-radius: var(--r-lg);
   padding: 15px;
-  background: var(--raised);
-  box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(245, 165, 36, 0.5);
+  background: var(--card);
+  box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(245, 165, 36, 0.55);
 }
 .approval.outside {
-  box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(173, 40, 32, 0.55);
+  box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(173, 40, 32, 0.6);
 }
 .approval .head {
   display: flex;
@@ -606,23 +617,26 @@ textarea.field {
   place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: 10px;
+  border-radius: var(--r-sm);
   color: var(--hold);
-  background: rgba(245, 165, 36, 0.16);
+  background: var(--hold-wash);
 }
 .approval.outside .sigil {
   color: var(--stop);
-  background: rgba(173, 40, 32, 0.12);
+  background: var(--stop-wash);
 }
 .approval .headtext {
   min-width: 0;
 }
 .approval h3 {
   margin: 0;
-  font-size: 15.5px;
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.01em;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+}
+.approval h3 strong {
+  font-weight: 650;
 }
 .approval .who {
   margin: 2px 0 0;
@@ -635,21 +649,22 @@ textarea.field {
 .approval .arg {
   display: block;
   margin: 12px 0 0;
-  padding: 11px 13px;
+  padding: 10px 12px;
   border-radius: var(--r-sm);
   background: var(--well);
   box-shadow: var(--sink);
-  font-family: var(--mono);
+  font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
   font-size: 12.5px;
   line-height: 1.5;
+  letter-spacing: -0.02em;
   color: var(--ink-2);
   word-break: normal;
   overflow-wrap: break-word;
-  max-height: calc(5 * 1.5em + 22px);
+  max-height: calc(5 * 1.5em + 20px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
 }
 .approval .breach {
   display: flex;
@@ -657,10 +672,10 @@ textarea.field {
   margin: 10px 0 0;
   padding: 10px 12px;
   border-radius: var(--r-sm);
-  background: rgba(173, 40, 32, 0.09);
+  background: var(--stop-wash);
   color: var(--stop);
   font-size: 12.5px;
-  line-height: 1.45;
+  line-height: 1.5;
   overflow-wrap: break-word;
 }
 .approval .breach svg {
@@ -669,121 +684,118 @@ textarea.field {
 }
 .approval .verdict {
   display: grid;
-  grid-template-columns: 1fr 1.25fr;
-  gap: 10px;
-  margin-top: 12px;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 9px;
+  margin-top: 13px;
 }
 .approval .approvalfoot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 2px 2px -6px;
+  margin: 2px 2px -8px;
 }
 .approval .field.note {
   margin-top: 10px;
   font-size: 15px;
 }
-.tap.quiet {
-  color: var(--ink-3);
-}
 
-/* --------------------------------------------------------------- transcript */
+/* --------------------------------------------------------------- transcript
+   A readout well. NO blur here — this scrolls, and blurred scrolling content
+   is what turns a glass design into a battery complaint. */
 
 .readout {
   position: relative;
-  padding: 18px 15px;
+  padding: 16px 14px;
   border-radius: var(--r-lg);
   background: var(--well);
   box-shadow: var(--sink);
   max-height: 62dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(11, 18, 32, 0.16) transparent;
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0,
-    #000 22px,
-    #000 calc(100% - 22px),
+    #000 11px,
+    #000 calc(100% - 11px),
     transparent 100%
   );
   mask-image: linear-gradient(
     to bottom,
     transparent 0,
-    #000 22px,
-    #000 calc(100% - 22px),
+    #000 11px,
+    #000 calc(100% - 11px),
     transparent 100%
   );
-  overscroll-behavior: contain;
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(16, 22, 32, 0.18) transparent;
 }
 .readout::-webkit-scrollbar {
-  width: 5px;
+  width: 4px;
 }
 .readout::-webkit-scrollbar-thumb {
-  background: rgba(16, 22, 32, 0.18);
-  border-radius: 3px;
+  background: rgba(11, 18, 32, 0.16);
+  border-radius: 2px;
 }
 
-/* Agent prose: the thing you actually came to read. Structured, not a wall of string. */
+/* Agent prose */
 .blk.say {
-  font-family: var(--prose);
-  font-size: 16px;
-  line-height: 1.58;
+  font-size: 15.5px;
+  line-height: 1.62;
   color: var(--ink);
   overflow-wrap: anywhere;
   min-width: 0;
 }
 .blk.say strong {
-  font-weight: 700;
+  font-weight: 650;
 }
 .blk.say .para {
   margin: 0 0 10px;
   white-space: pre-wrap;
 }
 .blk.say .h {
-  margin: 4px 0 8px;
-  font-family: var(--ui);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  margin: 6px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-2);
 }
 .blk.say ul,
 .blk.say ol {
   margin: 0 0 10px;
-  padding-left: 20px;
+  padding-left: 18px;
 }
 .blk.say li {
   margin: 0 0 6px;
-  padding-left: 2px;
+  padding-left: 3px;
 }
 .blk.say li::marker {
-  color: var(--ink-3);
-  font-size: 0.9em;
+  color: var(--hint);
 }
 .blk.say > :last-child {
   margin-bottom: 0;
 }
 .blk.say code {
-  font-family: var(--mono);
-  font-size: 12.8px;
+  font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+  letter-spacing: -0.02em;
   padding: 1.5px 5px;
-  border-radius: 5px;
-  background: rgba(16, 22, 32, 0.06);
+  border-radius: var(--r-xs);
+  background: rgba(11, 18, 32, 0.055);
   color: var(--ink);
   overflow-wrap: anywhere;
-  /* A chip that wraps must keep its shape on every fragment, not become torn halves. */
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
-/* Fenced code: a screen within the readout — verbatim, one line per line, side-scroll. */
 .blk.say .fence {
   position: relative;
-  margin: 2px 0 12px;
+  margin: 4px 0 12px;
   padding: 11px 13px;
   border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--card);
   box-shadow: inset 0 0 0 1px var(--hair);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -793,60 +805,73 @@ textarea.field {
   padding: 0;
   background: none;
   font-size: 12.5px;
-  line-height: 1.55;
+  line-height: 1.6;
   white-space: pre;
 }
 .blk.say .fence .lang {
   float: right;
-  margin: -3px -4px 4px 10px;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  margin: -2px -3px 4px 10px;
+  font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
-/* Tool calls: present and auditable, never competing with the prose. */
-.blk.tool {
+/* Action group — consecutive tool calls read as one scannable block of work
+   with a spine, rather than N identical grey lines. */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--hair-soft);
+  background: var(--hair-soft);
+}
+.action {
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 8px 11px;
-  border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.6);
-  box-shadow: inset 0 0 0 1px var(--hair);
+  background: var(--card);
   min-width: 0;
 }
-.blk.tool .tname {
+.action .ico {
   flex: none;
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   color: var(--ink-2);
+  background: rgba(11, 18, 32, 0.05);
 }
-.blk.tool .targ {
+.action .verb {
+  flex: none;
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+}
+.action .pathchip {
   flex: 1;
   min-width: 0;
-  font-family: var(--mono);
-  font-size: 12px;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  justify-content: flex-end;
   color: var(--ink-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.blk.tool svg {
-  flex: none;
-  color: var(--ink-3);
+.action .pathchip svg {
+  display: none;
 }
 
 .blk.thinking {
-  padding-left: 12px;
+  padding-left: 11px;
   border-left: 2px solid var(--hair);
-  font-family: var(--prose);
-  font-size: 14.5px;
-  font-style: italic;
+  font-size: 14px;
   line-height: 1.55;
   color: var(--ink-3);
   white-space: pre-wrap;
@@ -855,15 +880,15 @@ textarea.field {
 .blk.mine {
   align-self: flex-end;
   max-width: 86%;
-  padding: 11px 14px;
-  border-radius: 16px 16px 5px 16px;
-  background: linear-gradient(180deg, #2c50dd, var(--act));
+  padding: 10px 14px;
+  border-radius: var(--r-md) var(--r-md) 5px var(--r-md);
+  background: linear-gradient(180deg, #2f56e8, var(--act));
   color: #fff;
   font-size: 15px;
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  box-shadow: 3px 3px 9px rgba(20, 40, 120, 0.22);
+  box-shadow: 0 2px 10px rgba(19, 40, 122, 0.22);
 }
 
 .blk.divider {
@@ -871,17 +896,17 @@ textarea.field {
   align-items: center;
   gap: 10px;
   font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  font-weight: 600;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .blk.divider::before,
 .blk.divider::after {
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--hair);
+  background: var(--hair-soft);
 }
 
 /* --------------------------------------------------------------- detail head */
@@ -900,14 +925,14 @@ textarea.field {
 }
 .detailhead .toprow .key {
   flex: none;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 .detailhead h2 {
   margin: 0;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.22;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.026em;
+  line-height: 1.25;
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -915,27 +940,24 @@ textarea.field {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.detailhead .meta .dot {
-  color: var(--hint);
-}
 .detailhead .meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 8px 0 0;
+  margin: 9px 0 0;
   font-size: 13px;
   color: var(--ink-2);
   white-space: nowrap;
 }
-.detailhead .meta .where {
+.detailhead .meta .dot {
+  color: var(--hint);
+}
+.detailhead .meta .pathchip {
   flex: 0 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--ink-3);
 }
 
-/* --------------------------------------------------------------- dock */
+/* --------------------------------------------------------------- glass 2/3 */
 
 .dock {
   position: fixed;
@@ -943,44 +965,49 @@ textarea.field {
   right: 0;
   bottom: 0;
   z-index: 30;
-  padding: 12px var(--gut) calc(12px + env(safe-area-inset-bottom));
-  background: linear-gradient(rgba(233, 236, 241, 0), var(--panel) 34%);
+  padding: 10px var(--gut) calc(10px + env(safe-area-inset-bottom));
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-top: 1px solid var(--hair-soft);
 }
 .dock-in {
-  max-width: 620px;
+  max-width: 640px;
   margin: 0 auto;
   display: flex;
   align-items: flex-end;
-  gap: 10px;
+  gap: 9px;
 }
 .dock-in .field {
   flex: 1;
-  min-height: 48px;
+  min-height: 46px;
   max-height: 132px;
   overflow-y: auto;
-  background: var(--raised);
-  box-shadow: var(--press);
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: inset 0 0 0 1px var(--hair);
+}
+.dock-in .field:focus {
+  background: var(--card);
 }
 .dock .note {
-  max-width: 620px;
+  max-width: 640px;
   margin: 0 auto;
-  padding: 13px 16px;
+  padding: 12px 14px;
   border-radius: var(--r-md);
-  background: var(--raised);
-  box-shadow: var(--lift-1);
-  font-family: var(--prose);
-  font-size: 14.5px;
-  line-height: 1.55;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 0 0 1px var(--hair-soft);
+  font-size: 13.5px;
+  line-height: 1.5;
   color: var(--ink-2);
 }
 
-/* --------------------------------------------------------------- sheet */
+/* --------------------------------------------------------------- glass 3/3 */
 
 .scrim {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(22, 28, 38, 0.42);
+  background: rgba(16, 22, 34, 0.28);
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
 }
@@ -994,27 +1021,28 @@ textarea.field {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 10px var(--gut) calc(22px + env(safe-area-inset-bottom));
-  border-radius: 28px 28px 0 0;
-  background: var(--panel);
-  box-shadow: 0 -10px 34px rgba(16, 22, 32, 0.22);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  background: rgba(248, 249, 251, 0.92);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: var(--lift-3), inset 0 1px 0 var(--glass-line);
 }
 .sheet-in {
-  max-width: 620px;
+  max-width: 640px;
   margin: 0 auto;
 }
 .grab {
-  width: 42px;
-  height: 5px;
+  width: 38px;
+  height: 4px;
   margin: 0 auto 16px;
-  border-radius: 3px;
-  background: var(--well);
-  box-shadow: var(--socket);
+  border-radius: 2px;
+  background: rgba(11, 18, 32, 0.16);
 }
 .sheet h2 {
   margin: 0 0 4px;
   font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.018em;
+  font-weight: 600;
+  letter-spacing: -0.024em;
 }
 .sheet .sub {
   margin: 0 0 16px;
@@ -1033,33 +1061,39 @@ textarea.field {
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 .folderbtn {
   display: flex;
   align-items: center;
   gap: 11px;
   width: 100%;
-  min-height: 52px;
-  padding: 10px 14px;
+  min-height: 50px;
+  padding: 9px 13px;
   text-align: left;
   border-radius: var(--r-md);
-  background: var(--raised);
-  box-shadow: var(--lift-1);
-  transition: box-shadow 160ms var(--ease);
+  background: var(--card);
+  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair-soft);
+  transition: box-shadow 150ms var(--ease);
 }
 .folderbtn:active {
   box-shadow: var(--press);
 }
-.folderbtn svg {
+.folderbtn .fico {
   flex: none;
-  color: var(--ink-3);
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--act);
+  background: var(--act-wash);
 }
 .folderbtn .fl {
   flex: 1;
   min-width: 0;
   font-size: 14.5px;
-  font-weight: 500;
+  font-weight: 450;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1070,25 +1104,38 @@ textarea.field {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 12px 14px;
+  padding: 12px 13px;
   border-radius: var(--r-md);
-  background: var(--raised);
-  box-shadow: var(--lift-1);
+  background: var(--card);
+  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair-soft);
+}
+.chosen .fico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  color: var(--act);
+  background: var(--act-wash);
 }
 .chosen .body {
   flex: 1;
   min-width: 0;
 }
 .chosen .k {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.13em;
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 .chosen .v {
-  font-family: var(--mono);
+  display: block;
+  font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
   font-size: 13px;
+  letter-spacing: -0.02em;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1101,12 +1148,12 @@ textarea.field {
   display: flex;
   gap: 11px;
   align-items: flex-start;
-  margin-bottom: 14px;
-  padding: 13px 15px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
   border-radius: var(--r-md);
   font-size: 13.5px;
   line-height: 1.5;
-  background: var(--raised);
+  background: var(--card);
   box-shadow: var(--lift-1), inset 0 0 0 1.5px rgba(245, 165, 36, 0.45);
   color: var(--ink-2);
 }
@@ -1126,52 +1173,12 @@ textarea.field {
 }
 .notice button {
   flex: none;
-  /* A 44pt hit area pulled back into the layout, so the close target is reachable without
-     the icon floating in a large empty box. */
   width: 44px;
   height: 44px;
   margin: -12px -12px -12px 0;
   color: var(--ink-3);
   display: grid;
   place-items: center;
-}
-
-.firstrun {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  margin-top: 44px;
-  padding: 34px 26px;
-  text-align: center;
-  border-radius: var(--r-lg);
-  background: var(--raised);
-  box-shadow: var(--lift-1);
-}
-.firstrun .mark {
-  width: 60px;
-  height: 60px;
-  border-radius: 20px;
-  background: var(--panel);
-  box-shadow: var(--press);
-}
-.firstrun h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-}
-.firstrun p {
-  margin: 0;
-  max-width: 34ch;
-  font-family: var(--prose);
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--ink-2);
-}
-.firstrun strong {
-  color: var(--ink);
-  font-weight: 600;
 }
 
 /* --------------------------------------------------------------- gate */
@@ -1189,43 +1196,78 @@ textarea.field {
 .mark {
   display: grid;
   place-items: center;
-  width: 78px;
-  height: 78px;
-  border-radius: 26px;
-  background: var(--raised);
-  box-shadow: var(--lift-2);
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  background: var(--card);
+  box-shadow: var(--lift-2), inset 0 0 0 1px var(--hair-soft);
   color: var(--act);
 }
 .gate h1 {
   margin: 0;
   font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
+  font-weight: 600;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 .gate p {
   margin: 0;
   max-width: 32ch;
-  font-family: var(--prose);
-  font-size: 15.5px;
+  font-size: 15px;
   line-height: 1.6;
   color: var(--ink-2);
 }
 .gate .err {
   color: var(--stop);
+  font-weight: 500;
+}
+
+.firstrun {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-top: 40px;
+  padding: 32px 24px;
+  text-align: center;
+  border-radius: var(--r-xl);
+  background: var(--card);
+  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair-soft);
+}
+.firstrun .mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 17px;
+  background: var(--act-wash);
+  box-shadow: none;
+}
+.firstrun h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.firstrun p {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.firstrun strong {
+  color: var(--ink);
   font-weight: 600;
 }
 
 .foot {
-  margin: 30px 2px 0;
-  padding: 15px 16px;
+  margin: 28px 2px 0;
+  padding: 14px 15px;
   border-radius: var(--r-md);
-  font-family: var(--prose);
-  font-size: 13.5px;
+  font-size: 12.5px;
   line-height: 1.6;
   color: var(--ink-3);
   background: rgba(255, 255, 255, 0.45);
-  box-shadow: inset 0 0 0 1px var(--hair);
+  box-shadow: inset 0 0 0 1px var(--hair-soft);
 }
 
 /* --------------------------------------------------------------- a11y */
@@ -1249,5 +1291,18 @@ textarea.field {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+}
+
+/* Frosted chrome is a nicety; legibility is not. Where the platform cannot
+   blur, the same surfaces go opaque rather than turning into milky glass. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .rail,
+  .dock,
+  .sheet {
+    background: #f7f8fa;
+  }
+  .scrim {
+    background: rgba(16, 22, 34, 0.45);
   }
 }

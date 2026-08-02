@@ -22,9 +22,10 @@ import {
 import { ApprovalCard } from './ui/ApprovalCard.js'
 import { NewSessionSheet } from './ui/NewSessionSheet.js'
 import { SessionCard } from './ui/SessionCard.js'
-import { TranscriptBlock } from './ui/Transcript.js'
+import { Transcript } from './ui/Transcript.js'
 import { EASE, EXIT, Key, Led, Notice, SectionLabel, listVariants } from './ui/primitives.js'
 import { ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
+import { PathChip } from './ui/PathChip.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
@@ -442,9 +443,7 @@ export function DetailScreen({
             <span className="dot" aria-hidden="true">·</span>
             <span>{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
             <span className="dot" aria-hidden="true">·</span>
-            <span className="mono where" title={session.cwd}>
-              {shortPath(session.cwd)}
-            </span>
+            <PathChip text={shortPath(session.cwd)} kind="folder" max={30} />
           </p>
         </div>
 
@@ -476,7 +475,7 @@ export function DetailScreen({
             {session.blocks.length === 0 ? (
               <p className="empty">Nothing yet.</p>
             ) : (
-              session.blocks.map((block, i) => <TranscriptBlock key={i} block={block} />)
+              <Transcript blocks={session.blocks} />
             )}
           </div>
           {session.error ? (
