@@ -172,3 +172,5 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>
 export function parseClientMessage(raw: unknown): ClientMessage {
   return ClientMessageSchema.parse(raw)
 }
+
+export * from './envelope.js'
