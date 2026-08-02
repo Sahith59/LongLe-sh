@@ -6,6 +6,7 @@ import { DeviceRegistry } from './auth.js'
 import { ApprovalStore } from './approvals.js'
 import { SessionManager } from './sessions.js'
 import { LongLeashServer } from './server.js'
+import { RelayBridge } from './relay-bridge.js'
 import { createClaudeAgentFactory } from './adapters/claude.js'
 import { readPermissionPosture, type PermissionPosture } from './posture.js'
 import { FolderIndex } from './folders.js'
@@ -25,6 +26,8 @@ export interface DaemonOptions {
   maxConcurrentSessions?: number
   /** Where to report activity. The binary passes console.log so the terminal shows life. */
   log?: (line: string) => void
+  /** ws(s):// endpoint of a longleash-relay. Omit to stay LAN-only. */
+  relayUrl?: string
   /** Refuse credential/system folders inside allowed roots. On by default. */
   excludeSensitive?: boolean
 }
@@ -73,6 +76,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     log: write,
     ...(options.port === undefined ? {} : { port: options.port }),
     ...(options.staticRoot === undefined ? {} : { staticRoot: options.staticRoot }),
+    ...(options.relayUrl === undefined ? {} : { relayUrl: options.relayUrl }),
   })
 
   const sessions = new SessionManager({
@@ -116,6 +120,15 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   const { port } = await server.listen()
   const stopMaintenance = sessions.startMaintenance()
 
+  // The daemon's presence in the world beyond the LAN: one E2E room per paired device,
+  // kept in lockstep with pairings and revocations. LAN keeps working exactly as before.
+  let bridge: RelayBridge | null = null
+  if (options.relayUrl !== undefined) {
+    bridge = new RelayBridge({ url: options.relayUrl, registry, server, log: write })
+    const rooms = bridge.start()
+    write(`relay: holding ${rooms} room(s) via ${options.relayUrl}`)
+  }
+
   return {
     server,
     sessions,
@@ -127,6 +140,10 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     posture: readPermissionPosture(),
     stop: async () => {
       stopMaintenance()
+      bridge?.stop()
+      // Agents first: a consume loop still writing while the databases close is an
+      // unhandled rejection and a corrupted final status.
+      await sessions.shutdown()
       await server.close()
       eventLog.close()
       registry.close()

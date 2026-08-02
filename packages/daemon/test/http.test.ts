@@ -74,9 +74,13 @@ describe('pairing endpoint', () => {
       { method: 'POST' },
     )
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { token: string }
+    const body = (await res.json()) as { token: string; relaySecret: string; deviceId: string }
     expect(body.token).toMatch(/^llt_/)
     expect(h.registry.verifyToken(body.token)).not.toBeNull()
+    // The relay secret must arrive in this same LAN-only response — there is no later
+    // moment when the two devices share a channel the relay cannot observe.
+    expect(body.relaySecret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(body.deviceId).toMatch(/^dev_/)
   })
 
   it('refuses a replayed challenge', async () => {

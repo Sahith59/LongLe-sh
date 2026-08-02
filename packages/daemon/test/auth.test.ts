@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeviceRegistry, PairingError } from '../src/auth.js'
+import SqliteDatabase from 'better-sqlite3'
 
 describe('pairing: happy path', () => {
   let reg: DeviceRegistry
@@ -272,5 +273,85 @@ describe('durability across restart', () => {
       second.completePairing({ challengeId: challenge.challengeId, secret: challenge.secret, deviceName: 'late' }),
     ).toThrowError(PairingError)
     second.close()
+  })
+})
+
+describe('relay secrets — minted at pairing, never shown to the relay', () => {
+  let reg: DeviceRegistry
+  beforeEach(() => {
+    reg = new DeviceRegistry(':memory:')
+  })
+  afterEach(() => reg.close())
+
+  const pairOne = (name = 'iPhone') => {
+    const challenge = reg.createPairingChallenge()
+    return reg.completePairing({
+      challengeId: challenge.challengeId,
+      secret: challenge.secret,
+      deviceName: name,
+    })
+  }
+
+  it('every pairing returns a high-entropy relay secret for the phone to keep', () => {
+    const { relaySecret } = pairOne()
+    expect(relaySecret).toMatch(/^[A-Za-z0-9_-]{43}$/) // 32 random bytes, base64url
+  })
+
+  it('each device gets its own secret — its own room, its own key', () => {
+    expect(pairOne('a').relaySecret).not.toBe(pairOne('b').relaySecret)
+  })
+
+  it('lists relay devices so the daemon can hold one room per pairing', () => {
+    const { device, relaySecret } = pairOne()
+    const endpoints = reg.listRelayDevices()
+    expect(endpoints).toEqual([{ deviceId: device.deviceId, relaySecret }])
+  })
+
+  it('a revoked device vanishes from the relay list — its room simply stops existing', () => {
+    const { device } = pairOne()
+    reg.revokeDevice(device.deviceId)
+    expect(reg.listRelayDevices()).toEqual([])
+  })
+
+  it('an install that paired devices before relays existed migrates cleanly and offers no room', () => {
+    // Build the OLD schema directly on a file, the way a pre-relay release left it.
+    const dir = mkdtempSync(join(tmpdir(), 'longleash-auth-'))
+    const path = join(dir, 'devices.db')
+    try {
+      const legacy = new SqliteDatabase(path)
+      legacy.exec(`
+        CREATE TABLE devices (
+          device_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          token_hash TEXT NOT NULL,
+          public_key TEXT,
+          created_at INTEGER NOT NULL,
+          last_seen_at INTEGER,
+          revoked_at INTEGER
+        )
+      `)
+      legacy
+        .prepare("INSERT INTO devices VALUES ('dev_old', 'old phone', 'hash', NULL, 1, NULL, NULL)")
+        .run()
+      legacy.close()
+
+      // Today's daemon opens the same file: migrate, keep the device, invent no secret.
+      const upgraded = new DeviceRegistry(path)
+      expect(upgraded.listDevices().map((d) => d.deviceId)).toEqual(['dev_old'])
+      expect(upgraded.listRelayDevices()).toEqual([])
+      // And pairing a NEW device on the migrated schema works with a secret.
+      const challenge = upgraded.createPairingChallenge()
+      const paired = upgraded.completePairing({
+        challengeId: challenge.challengeId,
+        secret: challenge.secret,
+        deviceName: 'new phone',
+      })
+      expect(upgraded.listRelayDevices()).toEqual([
+        { deviceId: paired.device.deviceId, relaySecret: paired.relaySecret },
+      ])
+      upgraded.close()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

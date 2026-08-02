@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { z } from 'zod'
+import { ensureColumns } from './migrate.js'
 
 const PAIRING_QR_VERSION = 1
 const DEFAULT_CHALLENGE_TTL_MS = 5 * 60_000
@@ -49,6 +50,7 @@ interface DeviceRow {
   created_at: number
   last_seen_at: number | null
   revoked_at: number | null
+  relay_secret: string | null
 }
 
 const id = (prefix: string) => `${prefix}_${randomBytes(12).toString('base64url')}`
@@ -62,6 +64,7 @@ export class DeviceRegistry {
   // Ephemeral by design: a daemon restart voids pending pairing QR codes.
   private readonly challenges = new Map<string, { secretHash: string; expiresAt: number }>()
   private readonly revokedListeners = new Set<(deviceId: string) => void>()
+  private readonly pairedListeners = new Set<(device: Device, relaySecret: string) => void>()
 
   constructor(path: string, opts: { now?: () => number; challengeTtlMs?: number } = {}) {
     this.rawDb = new Database(path)
@@ -75,9 +78,12 @@ export class DeviceRegistry {
         public_key TEXT,
         created_at INTEGER NOT NULL,
         last_seen_at INTEGER,
-        revoked_at INTEGER
+        revoked_at INTEGER,
+        relay_secret TEXT
       )
     `)
+    // Installs that paired devices before the relay existed lack the column.
+    ensureColumns(this.rawDb, 'devices', [{ name: 'relay_secret', definition: 'TEXT' }])
     this.now = opts.now ?? Date.now
     this.challengeTtlMs = opts.challengeTtlMs ?? DEFAULT_CHALLENGE_TTL_MS
   }
@@ -96,7 +102,7 @@ export class DeviceRegistry {
     }
   }
 
-  completePairing(raw: CompletePairingInput): { device: Device; token: string } {
+  completePairing(raw: CompletePairingInput): { device: Device; token: string; relaySecret: string } {
     const parsed = completePairingInput.safeParse(raw)
     if (!parsed.success) {
       throw new PairingError('invalid-input', parsed.error.message)
@@ -119,6 +125,11 @@ export class DeviceRegistry {
     this.challenges.delete(input.challengeId)
 
     const token = `llt_${randomBytes(32).toString('base64url')}`
+    // The E2E root for this device: both sides derive the relay room and frame key from it.
+    // It is exchanged here — over the LAN pairing channel — and never travels via the relay.
+    // Stored as-is: unlike the token (which we only ever need to VERIFY, so a hash suffices),
+    // the daemon must re-derive keys from this secret on every restart.
+    const relaySecret = randomBytes(32).toString('base64url')
     const device: Device = {
       deviceId: id('dev'),
       name: input.deviceName,
@@ -129,10 +140,36 @@ export class DeviceRegistry {
     }
     this.rawDb
       .prepare(
-        'INSERT INTO devices (device_id, name, token_hash, public_key, created_at, last_seen_at, revoked_at) VALUES (?, ?, ?, ?, ?, NULL, NULL)',
+        'INSERT INTO devices (device_id, name, token_hash, public_key, created_at, last_seen_at, revoked_at, relay_secret) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)',
       )
-      .run(device.deviceId, device.name, sha256Hex(token), device.publicKey, device.createdAt)
-    return { device, token }
+      .run(device.deviceId, device.name, sha256Hex(token), device.publicKey, device.createdAt, relaySecret)
+    for (const listener of this.pairedListeners) {
+      try {
+        listener(device, relaySecret)
+      } catch {
+        // A buggy listener must not fail the pairing that already committed.
+      }
+    }
+    return { device, token, relaySecret }
+  }
+
+  /** Fired after a pairing commits — how the relay bridge learns to hold a new room. */
+  onPaired(listener: (device: Device, relaySecret: string) => void): () => void {
+    this.pairedListeners.add(listener)
+    return () => this.pairedListeners.delete(listener)
+  }
+
+  /**
+   * One relay room per paired device. Revoked devices are simply absent: the daemon stops
+   * joining their room, and nothing the phone still holds can reach the laptop again.
+   */
+  listRelayDevices(): { deviceId: string; relaySecret: string }[] {
+    const rows = this.rawDb
+      .prepare(
+        'SELECT device_id, relay_secret FROM devices WHERE revoked_at IS NULL AND relay_secret IS NOT NULL ORDER BY created_at ASC',
+      )
+      .all() as { device_id: string; relay_secret: string }[]
+    return rows.map((row) => ({ deviceId: row.device_id, relaySecret: row.relay_secret }))
   }
 
   verifyToken(token: string): Device | null {

@@ -4,6 +4,8 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import qrcode from 'qrcode-terminal'
 import { startDaemon } from '../src/daemon.js'
+import { normalizeRelayUrl } from '../src/relay-bridge.js'
+import { hostPairing } from '../src/pairing-host.js'
 import { findCandidates, vpnWarning } from '../demo/lan.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -23,6 +25,10 @@ if (!best) {
   process.exit(1)
 }
 
+const relayUrl = process.env.LONGLEASH_RELAY_URL
+  ? normalizeRelayUrl(process.env.LONGLEASH_RELAY_URL)
+  : undefined
+
 const daemon = await startDaemon({
   allowedRoots: roots,
   host: best.address,
@@ -34,10 +40,32 @@ const daemon = await startDaemon({
   // Separate instances (or a clean test run) can keep their own storage.
   ...(process.env.LONGLEASH_DATA ? { dataDir: process.env.LONGLEASH_DATA } : {}),
   log: (line) => console.log(line),
+  ...(relayUrl === undefined ? {} : { relayUrl }),
 })
 
-const challenge = daemon.registry.createPairingChallenge()
-const url = `http://${best.address}:${daemon.port}/?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
+/** The relay's app origin: where a phone can live even when this laptop is unreachable. */
+function relayAppOrigin(wsUrl: string): string {
+  const parsed = new URL(wsUrl)
+  parsed.protocol = parsed.protocol === 'wss:' ? 'https:' : 'http:'
+  parsed.pathname = '/'
+  return parsed.toString()
+}
+
+/**
+ * One QR, one flow: with a relay configured it points at the relay-served app — pairing
+ * completes through a sealed room, and the same address then works from anywhere in the
+ * world. Without a relay it points at this laptop's LAN address, as always.
+ */
+function freshPairingUrl(): string {
+  const challenge = daemon.registry.createPairingChallenge()
+  if (relayUrl) {
+    hostPairing({ registry: daemon.registry, relayUrl, challenge, log: (line) => console.log(`[pair] ${line}`) })
+    return `${relayAppOrigin(relayUrl)}?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
+  }
+  return `http://${best.address}:${daemon.port}/?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
+}
+
+const url = freshPairingUrl()
 
 console.log('\n=== LongLeash ===\n')
 const warn = vpnWarning()
@@ -70,14 +98,28 @@ if (preApproved.length > 0) {
 console.log('Agents may work only in:')
 for (const root of roots) console.log(`  ${resolve(root)}`)
 console.log(`\nListening on ${best.address}:${daemon.port} (${best.iface}, ${best.label})`)
+console.log(
+  relayUrl
+    ? `Relay: ${relayUrl} — your phone can reach this laptop from anywhere.`
+    : 'Relay: not configured (LAN only). Set LONGLEASH_RELAY_URL to enable remote access.',
+)
 console.log('\nScan this with your phone, then add it to your home screen:\n')
 qrcode.generate(url, { small: true })
 console.log(`\n  ${url}\n`)
-console.log('Press r + Enter to revoke every paired device, q + Enter to quit.\n')
+if (relayUrl) {
+  console.log(`(LAN fallback for pairing at home: http://${best.address}:${daemon.port}/?c=…&s=… — same code)`)
+}
+console.log('Press n + Enter for a fresh pairing QR, r + Enter to revoke every device, q + Enter to quit.\n')
 
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk: string) => {
   const key = chunk.trim().toLowerCase()
+  if (key === 'n') {
+    const next = freshPairingUrl()
+    console.log('\nScan this with your phone:\n')
+    qrcode.generate(next, { small: true })
+    console.log(`\n  ${next}\n`)
+  }
   if (key === 'r') {
     const active = daemon.registry.listDevices().filter((d) => d.revokedAt === null)
     for (const device of active) daemon.registry.revokeDevice(device.deviceId)
