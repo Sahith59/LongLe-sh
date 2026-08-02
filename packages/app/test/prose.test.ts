@@ -23,7 +23,7 @@ describe('paragraphs', () => {
         { t: 'text', text: 'State lives in a ' },
         { t: 'code', text: 'useState' },
         { t: 'text', text: ' array — ' },
-        { t: 'strong', text: 'no' },
+        { t: 'strong', inline: [{ t: 'text', text: 'no' }] },
         { t: 'text', text: ' persistence layer.' },
       ],
     })
@@ -114,5 +114,34 @@ describe('resilience', () => {
       '2. Add a note',
     ].join('\n')
     expect(kinds(parseProse(real))).toEqual(['p', 'p', 'bullets', 'p', 'fence', 'numbered'])
+  })
+})
+
+describe('bold wrapping code — the exact leak from the phone screenshot', () => {
+  it('parses **`path`** as bold containing a code chip, never literal backticks', () => {
+    const [p] = parseProse('Found it: **`/Users/sahith/Sticknotes-app`**')
+    expect(p).toMatchObject({
+      t: 'p',
+      inline: [
+        { t: 'text', text: 'Found it: ' },
+        { t: 'strong', inline: [{ t: 'code', text: '/Users/sahith/Sticknotes-app' }] },
+      ],
+    })
+  })
+
+  it('mixed bold: text and code together', () => {
+    const [p] = parseProse('**run `npm start` now**')
+    expect(p).toMatchObject({
+      inline: [
+        {
+          t: 'strong',
+          inline: [
+            { t: 'text', text: 'run ' },
+            { t: 'code', text: 'npm start' },
+            { t: 'text', text: ' now' },
+          ],
+        },
+      ],
+    })
   })
 })

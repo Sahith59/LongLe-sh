@@ -349,3 +349,18 @@ describe('activity', () => {
     expect(output.endsWith('0123456789')).toBe(true)
   })
 })
+
+  it('never merges user messages — two reopened markers must not become one bubble', () => {
+    const say = (seq: number, text: string) =>
+      ev({ v: 1, seq, sessionId: 'ses_1', ts: 1, type: 'stream.delta', payload: { kind: 'user', text } })
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(say(2, '\n\n— reopened —\n'))
+    store.apply(say(3, '\n\n— reopened —\n'))
+    store.apply(say(4, '\n\n› carry on\n'))
+    const blocks = stateOf(store).sessions.ses_1?.blocks ?? []
+    const users = blocks.filter((b) => b.kind === 'user')
+    expect(users).toHaveLength(3)
+    expect(users[0]?.text.trim()).toBe('— reopened —')
+    expect(users[1]?.text.trim()).toBe('— reopened —')
+  })

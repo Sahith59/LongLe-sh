@@ -443,7 +443,7 @@ export function DetailScreen({
             <span className="dot" aria-hidden="true">·</span>
             <span>{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
             <span className="dot" aria-hidden="true">·</span>
-            <PathChip text={shortPath(session.cwd)} kind="folder" max={30} />
+            <PathChip text={session.cwd} kind="folder" max={30} expandable />
           </p>
         </div>
 

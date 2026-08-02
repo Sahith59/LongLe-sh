@@ -65,7 +65,7 @@ function ActionGroup({ items }: { items: string[] }) {
             </span>
             <span className="verb">{name}</span>
             {detail ? (
-              <PathChip text={detail} kind={isCommand ? 'command' : 'file'} max={38} />
+              <PathChip text={detail} kind={isCommand ? 'command' : 'file'} max={38} expandable />
             ) : null}
           </div>
         )

@@ -136,8 +136,11 @@ export function createStore(options: StoreOptions = {}) {
         const payload = event.payload as { text: string; kind?: BlockKind }
         const kind: BlockKind = payload.kind ?? 'text'
         const last = session.blocks[session.blocks.length - 1]
-        // Streaming splits a sentence across many deltas; merge prose, never merge a tool call.
-        if (last && last.kind === kind && kind !== 'tool') {
+        // Streaming splits a sentence across many deltas; merge prose and thinking. Never
+        // merge tool calls — and never merge user messages: each one is a discrete thing a
+        // person said (or a reopened marker), and gluing two together renders them as one
+        // garbled bubble.
+        if (last && last.kind === kind && (kind === 'text' || kind === 'thinking')) {
           session.blocks = [
             ...session.blocks.slice(0, -1),
             { kind, text: last.text + payload.text },

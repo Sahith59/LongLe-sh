@@ -16,18 +16,20 @@
    putting it on scrolling content is how glass designs melt phone batteries.
    ========================================================================== */
 
-/* --- Geist: drawn for developer interfaces, and 52KB for both faces against
-       the 250KB of serif it replaces. Self-hosted so the app renders on a
-       laptop hotspot with no internet, and no third party sees who opens it. */
+/* --- Bricolage Grotesque: a grotesque with a personality — flared joins, open
+       counters, an optical-size axis — chosen precisely because it is NOT the
+       interchangeable startup sans. Spline Sans Mono for code and paths.
+       Self-hosted so the app renders on a laptop hotspot with no internet,
+       and no third party sees who opens it. --- */
 @font-face {
-  font-family: 'Geist';
-  src: url('/fonts/geist-latin.woff2') format('woff2');
-  font-weight: 300 700;
+  font-family: 'Bricolage Grotesque';
+  src: url('/fonts/bricolage-latin.woff2') format('woff2');
+  font-weight: 200 800;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Geist Mono';
-  src: url('/fonts/geistmono-latin.woff2') format('woff2');
+  font-family: 'Spline Sans Mono';
+  src: url('/fonts/splinemono-latin.woff2') format('woff2');
   font-weight: 400 600;
   font-display: swap;
 }
@@ -36,16 +38,17 @@
   color-scheme: light;
 
   /* Materials */
-  --field: #f2f4f7;
-  --card: #ffffff;
-  --well: #eceff3;
-  --glass: rgba(250, 251, 253, 0.72);
-  --glass-line: rgba(255, 255, 255, 0.75);
+  --field: #eef1f6;
+  --card: rgba(255, 255, 255, 0.82);
+  --card-solid: #ffffff;
+  --well: rgba(228, 232, 239, 0.75);
+  --glass: rgba(248, 250, 253, 0.66);
+  --glass-line: rgba(255, 255, 255, 0.8);
 
   /* Ink — every tone measured against the surface it actually sits on. */
   --ink: #0b1220;
   --ink-2: #48515f;
-  --ink-3: #666f7d;
+  --ink-3: #5e6775;
   --hint: #99a1ad;
   --hair: rgba(11, 18, 32, 0.09);
   --hair-soft: rgba(11, 18, 32, 0.055);
@@ -64,9 +67,12 @@
   --stop-wash: rgba(173, 40, 32, 0.09);
   --idle-led: #aeb6c2;
 
-  /* Elevation. Directional and restrained — light comes from above. */
-  --lift-1: 0 1px 2px rgba(11, 18, 32, 0.05), 0 2px 8px rgba(11, 18, 32, 0.045);
-  --lift-2: 0 2px 4px rgba(11, 18, 32, 0.06), 0 8px 24px rgba(11, 18, 32, 0.08);
+  /* Elevation: neumorphic pairs — shade below, light above — so surfaces read
+     as physically raised out of the field rather than floating over it. */
+  --lift-1: 0 2px 6px rgba(24, 34, 56, 0.07), 0 8px 20px rgba(24, 34, 56, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --lift-2: 0 3px 8px rgba(24, 34, 56, 0.08), 0 14px 34px rgba(24, 34, 56, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
   --lift-3: 0 -2px 32px rgba(11, 18, 32, 0.1);
   --press: inset 0 1px 3px rgba(11, 18, 32, 0.11);
   --sink: inset 0 1px 2px rgba(11, 18, 32, 0.07), inset 0 0 0 1px var(--hair-soft);
@@ -96,27 +102,52 @@ body {
   margin: 0;
   min-height: 100dvh;
   color: var(--ink);
-  font: 400 16px/1.5 'Geist', ui-sans-serif, system-ui, sans-serif;
+  font: 400 16px/1.5 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.011em;
   background: var(--field);
   -webkit-font-smoothing: antialiased;
 }
 
-/* The field. Two low-saturation washes and a fine grain give the glass
-   something to actually refract; flat grey makes frosted chrome invisible.
-   Fixed and pointer-transparent, so it never enters a scroll repaint. */
+/* The aurora. Oversized 60% and drifted with transform ONLY, so the browser
+   composites one prepainted layer and never repaints a pixel of it — an
+   animated background whose per-frame cost is a matrix multiply. Cobalt, teal
+   and amber: our signal colours, deliberately not the template purple. */
 body::before {
+  content: '';
+  position: fixed;
+  inset: -30%;
+  z-index: -2;
+  pointer-events: none;
+  background-image:
+    radial-gradient(42% 34% at 22% 18%, rgba(34, 71, 216, 0.13), transparent 68%),
+    radial-gradient(36% 30% at 82% 12%, rgba(13, 148, 136, 0.11), transparent 70%),
+    radial-gradient(44% 36% at 78% 86%, rgba(217, 146, 60, 0.13), transparent 70%),
+    radial-gradient(30% 26% at 12% 88%, rgba(34, 71, 216, 0.09), transparent 70%);
+  animation: aurora 70s var(--ease) infinite alternate;
+  will-change: transform;
+}
+@keyframes aurora {
+  from {
+    transform: translate3d(-2.5%, -1.5%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(2.5%, 2%, 0) scale(1.07);
+  }
+}
+
+/* Grain + grid, static, above the aurora and below everything else: texture
+   is what separates a designed surface from a flat fill. */
+body::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   background-image:
-    radial-gradient(70% 55% at 8% 0%, rgba(34, 71, 216, 0.07), transparent 70%),
-    radial-gradient(60% 50% at 100% 100%, rgba(214, 158, 92, 0.09), transparent 72%),
-    linear-gradient(rgba(11, 18, 32, 0.022) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(11, 18, 32, 0.022) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 30px 30px, 30px 30px;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E"),
+    linear-gradient(rgba(11, 18, 32, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(11, 18, 32, 0.025) 1px, transparent 1px);
+  background-size: 140px 140px, 30px 30px, 30px 30px;
 }
 
 ::selection {
@@ -162,12 +193,11 @@ body::before {
 .wordmark {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
   color: var(--ink);
 }
 .wordmark svg {
@@ -281,7 +311,7 @@ body::before {
   line-height: 1.45;
 }
 .mono {
-  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.88em;
   letter-spacing: -0.02em;
 }
@@ -329,10 +359,10 @@ button {
   padding: 0 18px;
   border-radius: var(--r-md);
   font-size: 15px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-weight: 550;
+  letter-spacing: -0.012em;
   color: var(--ink);
-  background: var(--card);
+  background: linear-gradient(180deg, #ffffff, #f3f5f9);
   box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair);
   transition: box-shadow 160ms var(--ease), background 160ms var(--ease);
 }
@@ -570,7 +600,7 @@ textarea.field {
   border-radius: var(--r-xs);
   background: rgba(11, 18, 32, 0.05);
   box-shadow: inset 0 0 0 1px var(--hair-soft);
-  font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+  font-family: 'Spline Sans Mono', ui-monospace, Menlo, monospace;
   font-size: 12px;
   letter-spacing: -0.02em;
   color: var(--ink-2);
@@ -586,6 +616,29 @@ textarea.field {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pathchip.tappable {
+  cursor: pointer;
+  /* The visual chip stays petite; the touch target does not. Padding grows the hit
+     rect to the 44pt floor and the negative margin hands the space back to layout. */
+  padding-top: 13px;
+  padding-bottom: 13px;
+  margin-top: -11px;
+  margin-bottom: -11px;
+}
+.pathchip.tappable:active {
+  background: rgba(11, 18, 32, 0.09);
+}
+.pathchip.open {
+  align-items: flex-start;
+}
+.pathchip.open .txt {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.pathchip.open svg {
+  margin-top: 3px;
+}
 .pathchip.accent {
   background: var(--act-wash);
   color: var(--act-ink);
@@ -600,8 +653,20 @@ textarea.field {
 .approval {
   border-radius: var(--r-lg);
   padding: 15px;
-  background: var(--card);
+  background: var(--card-solid);
   box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(245, 165, 36, 0.55);
+  animation: attention 3.2s var(--ease) infinite;
+}
+@keyframes attention {
+  0%,
+  100% {
+    box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(245, 165, 36, 0.55),
+      0 0 0 0 rgba(245, 165, 36, 0);
+  }
+  50% {
+    box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(245, 165, 36, 0.8),
+      0 0 22px 2px rgba(245, 165, 36, 0.22);
+  }
 }
 .approval.outside {
   box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(173, 40, 32, 0.6);
@@ -653,7 +718,7 @@ textarea.field {
   border-radius: var(--r-sm);
   background: var(--well);
   box-shadow: var(--sink);
-  font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+  font-family: 'Spline Sans Mono', ui-monospace, Menlo, monospace;
   font-size: 12.5px;
   line-height: 1.5;
   letter-spacing: -0.02em;
@@ -714,7 +779,7 @@ textarea.field {
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   scrollbar-width: thin;
   scrollbar-color: rgba(11, 18, 32, 0.16) transparent;
   -webkit-mask-image: linear-gradient(
@@ -752,7 +817,7 @@ textarea.field {
   font-weight: 650;
 }
 .blk.say .para {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   white-space: pre-wrap;
 }
 .blk.say .h {
@@ -779,7 +844,7 @@ textarea.field {
   margin-bottom: 0;
 }
 .blk.say code {
-  font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+  font-family: 'Spline Sans Mono', ui-monospace, Menlo, monospace;
   font-size: 12.5px;
   letter-spacing: -0.02em;
   padding: 1.5px 5px;
@@ -795,7 +860,7 @@ textarea.field {
   margin: 4px 0 12px;
   padding: 11px 13px;
   border-radius: var(--r-sm);
-  background: var(--card);
+  background: var(--card-solid);
   box-shadow: inset 0 0 0 1px var(--hair);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -811,7 +876,7 @@ textarea.field {
 .blk.say .fence .lang {
   float: right;
   margin: -2px -3px 4px 10px;
-  font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+  font-family: 'Spline Sans Mono', ui-monospace, Menlo, monospace;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.1em;
@@ -835,7 +900,7 @@ textarea.field {
   align-items: center;
   gap: 9px;
   padding: 8px 11px;
-  background: var(--card);
+  background: var(--card-solid);
   min-width: 0;
 }
 .action .ico {
@@ -929,9 +994,9 @@ textarea.field {
 }
 .detailhead h2 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.026em;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.032em;
   line-height: 1.25;
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -1040,9 +1105,9 @@ textarea.field {
 }
 .sheet h2 {
   margin: 0 0 4px;
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: -0.024em;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
 }
 .sheet .sub {
   margin: 0 0 16px;
@@ -1133,7 +1198,7 @@ textarea.field {
 }
 .chosen .v {
   display: block;
-  font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+  font-family: 'Spline Sans Mono', ui-monospace, Menlo, monospace;
   font-size: 13px;
   letter-spacing: -0.02em;
   color: var(--ink);
@@ -1291,6 +1356,9 @@ textarea.field {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+  body::before {
+    animation: none;
   }
 }
 

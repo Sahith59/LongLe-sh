@@ -11,7 +11,9 @@ import { Fragment, type ReactNode } from 'react'
 export type Inline =
   | { t: 'text'; text: string }
   | { t: 'code'; text: string }
-  | { t: 'strong'; text: string }
+  /** Bold carries children, because agents write **`/a/path`** and the backticks must
+      still become a code chip instead of leaking into the reader's face. */
+  | { t: 'strong'; inline: Inline[] }
 
 export type ProseBlock =
   | { t: 'p'; inline: Inline[] }
@@ -25,17 +27,27 @@ const NUMBERED = /^\s{0,6}(\d{1,3})[.)]\s+(.*)$/
 const HEADING = /^#{1,4}\s+(.*)$/
 const FENCE = /^\s{0,3}```([\w+-]*)\s*$/
 
-export function parseInline(text: string): Inline[] {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g)
+function splitCode(text: string): Inline[] {
   const out: Inline[] = []
-  for (const part of parts) {
+  for (const part of text.split(/(`[^`]+`)/g)) {
     if (part.length === 0) continue
     if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
       out.push({ t: 'code', text: part.slice(1, -1) })
-    } else if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
-      out.push({ t: 'strong', text: part.slice(2, -2) })
     } else {
       out.push({ t: 'text', text: part })
+    }
+  }
+  return out
+}
+
+export function parseInline(text: string): Inline[] {
+  const out: Inline[] = []
+  for (const part of text.split(/(\*\*[^*]+\*\*)/g)) {
+    if (part.length === 0) continue
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      out.push({ t: 'strong', inline: splitCode(part.slice(2, -2)) })
+    } else {
+      out.push(...splitCode(part))
     }
   }
   return out
@@ -117,7 +129,9 @@ function InlineRun({ inline }: { inline: Inline[] }) {
         piece.t === 'code' ? (
           <code key={i}>{piece.text}</code>
         ) : piece.t === 'strong' ? (
-          <strong key={i}>{piece.text}</strong>
+          <strong key={i}>
+            <InlineRun inline={piece.inline} />
+          </strong>
         ) : (
           <Fragment key={i}>{piece.text}</Fragment>
         ),
