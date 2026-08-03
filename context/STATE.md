@@ -72,6 +72,31 @@ Bar for public v1: **one command on the laptop, one app on the phone, working in
 
 - **A3 pairing + auth — VERIFIED BY SAHITH 2026-07-31**, iPhone → MacBook over Wi-Fi (phone 192.168.1.207 → laptop 192.168.1.71), running the real `DeviceRegistry`: QR scan paired a real device, token auth succeeded repeatedly with lastSeen updates, and pressing `r` revoked it — revocation listener fired and the phone's token was rejected on the next request. Single-use-challenge replay rejection was not eyeballed in that run but is covered by automated tests and was verified via simulated requests.
 
+## Design round 3 (2026-08-02) — "the UI is AI slop" + three real bugs in one screenshot
+
+Sahith's screenshot carried three genuine bugs dressed as bad design:
+1. **Store merged user messages** — two "— reopened —" markers became one giant blue bubble.
+   User messages are discrete; only text/thinking merge now. Test added.
+2. **Bold-wrapping-code leaked backticks** — `**\`/path\`**` rendered literal backticks in
+   bold. Inline parser now nests: strong carries children. Tests added (incl. the exact
+   screenshot string).
+3. **Paths could not be expanded** — PathChip is now tappable where legal (detail header,
+   action rows; NOT inside session-card buttons — nested buttons are invalid), unfolds in
+   place with aria-expanded, hit area grown to 44pt via padding+negative-margin. Verified by
+   driving the tap in Playwright.
+
+Skin: **Bricolage Grotesque** (deliberately characterful, not the startup sans) + Spline Sans
+Mono. Animated **aurora field** in cobalt/teal/amber — transform-only drift on an oversized
+fixed layer (compositor-only), static SVG-turbulence grain, translucent neumorphic cards (no
+blur — plain compositing), amber attention pulse on approvals. Accounts/OAuth question
+answered: NO — pairing is already cryptographic identity; a user DB would be the honeypot the
+architecture exists to avoid; the real gap is onboarding (installer), revisit only for a
+hosted relay/teams/billing.
+
+Measured: 0 frames >20ms on all screens with aurora running; 2 blurred surfaces (rail+dock,
+7-8% viewport) outside sheets; audit caught ink at 4.49:1 on the new field → darkened.
+327 tests green. Worker redeployed with the new shell.
+
 ## Oracle ARM had no capacity anywhere → the relay now runs free on Cloudflare (2026-08-02)
 
 Sahith hit "Out of capacity for VM.Standard.A1.Flex" in every availability domain and has no

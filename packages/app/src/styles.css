@@ -1335,6 +1335,14 @@ textarea.field {
   box-shadow: inset 0 0 0 1px var(--hair-soft);
 }
 
+.buildtag {
+  display: block;
+  margin-top: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
 /* --------------------------------------------------------------- a11y */
 
 .sr {

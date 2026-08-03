@@ -115,6 +115,7 @@ export default function App() {
         <Mark />
         <h1>LongLeash</h1>
         <p>Scan the QR code on your laptop to pair this device. The link works once.</p>
+        <p className="buildtag mono">build {__BUILD__}</p>
         {pairError ? <p className="err">Pairing failed: {pairError}</p> : null}
       </main>
     )
@@ -359,6 +360,7 @@ export function ConsoleScreen({
           terminal or in the VS Code chat panel are not visible yet — that is coming in a later
           phase. Conversations survive daemon restarts: reply to any of them and the same agent
           picks up where it left off.
+          <span className="buildtag mono">build {__BUILD__}</span>
         </p>
       </main>
 
