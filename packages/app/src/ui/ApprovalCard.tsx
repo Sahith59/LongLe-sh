@@ -72,7 +72,7 @@ export function ApprovalCard({
           <Ban size={17} strokeWidth={2.2} aria-hidden="true" />
           Deny
         </Key>
-        <Key className="primary" onClick={() => onDecide(approval, 'allow')}>
+        <Key className="allow" onClick={() => onDecide(approval, 'allow')}>
           <Check size={18} strokeWidth={2.6} aria-hidden="true" />
           Approve
         </Key>

@@ -1,92 +1,136 @@
+@import 'tailwindcss';
+
 /* ==========================================================================
-   LongLeash — "Daylight Instrument"
+   LongLeash — "Matte Graphite", machined.
 
-   A precision control surface seen through frosted glass. Four materials,
-   each with exactly one job, because hierarchy has to come from MATERIAL —
-   piling more shadow onto everything is what made the last pass feel mushy:
+   One physical logic, three materials, and every element is exactly one:
 
-     field  the world behind everything. Fixed, never scrolls, never repaints.
-     glass  chrome that floats above content: rail, dock, sheet. Blurred.
-     card   content that sits on the field: sessions, approvals. Opaque.
-     well   recessed readouts: transcript, code, inputs. Inset.
+     RAISED    you can press it.       keys: gradient bulge + contact shadow
+     ENGRAVED  the machine tells you.  stamps: pressed into the surface
+     RECESSED  you read out of it.     wells: sunken, inner shade
 
-   PERFORMANCE RULE, non-negotiable: backdrop-filter appears on exactly three
-   fixed, small surfaces. Never on a scrolling list, never on a transcript
-   block, never animated. Blur is per-pixel work every frame it composites;
-   putting it on scrolling content is how glass designs melt phone batteries.
+   Colour discipline: the interface speaks in LUMINANCE. Brighter means
+   closer to you, and the brightest key on screen is the thing that needs
+   you. Two dim tints exist — sage and clay — and they are TEXT INK ONLY:
+   never a fill, never a border. A uniformly grey screen means nothing
+   wants your attention, and that reads from across a room.
+
+   The bulge is four matte layers (no gloss, ever):
+     1  a near-vertical gradient, lighter at the top edge
+     2  a 1px matte top light          inset, white @ ~5%
+     3  a 1px bottom inner shade       inset — the convex turn; this is
+                                       what makes solid read solid
+     4  a contact shadow + ambient drop
+
+   PERFORMANCE RULE, unchanged and non-negotiable: backdrop-filter exists
+   on exactly two fixed surfaces (rail, dock) plus the sheet scrim. Never
+   on scrolling content, never animated. Transitions touch transform,
+   opacity and filter only.
    ========================================================================== */
 
-/* --- Bricolage Grotesque: a grotesque with a personality — flared joins, open
-       counters, an optical-size axis — chosen precisely because it is NOT the
-       interchangeable startup sans. Spline Sans Mono for code and paths.
+/* --- Instrument Sans for the interface, Instrument Serif for the voice
+       (wordmark, empty states — the editorial counterpoint), Geist Mono for
+       everything the machine says: paths, commands, states, counts.
        Self-hosted so the app renders on a laptop hotspot with no internet,
        and no third party sees who opens it. --- */
 @font-face {
-  font-family: 'Bricolage Grotesque';
-  src: url('/fonts/bricolage-latin.woff2') format('woff2');
-  font-weight: 200 800;
+  font-family: 'Instrument Sans';
+  src: url('/fonts/instrument-sans-latin.woff2') format('woff2');
+  font-weight: 400 700;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Spline Sans Mono';
-  src: url('/fonts/splinemono-latin.woff2') format('woff2');
+  font-family: 'Instrument Serif';
+  src: url('/fonts/instrument-serif-latin.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/geist-mono-latin.woff2') format('woff2');
   font-weight: 400 600;
   font-display: swap;
 }
 
+/* Tokens exposed through Tailwind's theme so future components — shadcn,
+   21st.dev — inherit this system instead of bringing their own. */
+@theme {
+  --color-ground: #0d0e10;
+  --color-ground-2: #121316;
+  --color-recess: #08090b;
+  --color-ink: #e7e8ea;
+  --color-ink-2: #a2a4a9;
+  --color-ink-3: #65686e;
+  --color-sage: #a5c2af;
+  --color-clay: #c99b93;
+  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
+}
+
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
-  /* Materials */
-  --field: #eef1f6;
-  --card: rgba(255, 255, 255, 0.82);
-  --card-solid: #ffffff;
-  --well: rgba(228, 232, 239, 0.75);
-  --glass: rgba(248, 250, 253, 0.66);
-  --glass-line: rgba(255, 255, 255, 0.8);
+  /* ground */
+  --ground: #0d0e10;
+  --ground-2: #121316;
+  --recess: #08090b;
 
-  /* Ink — every tone measured against the surface it actually sits on. */
-  --ink: #0b1220;
-  --ink-2: #48515f;
-  --ink-3: #5e6775;
-  --hint: #99a1ad;
-  --hair: rgba(11, 18, 32, 0.09);
-  --hair-soft: rgba(11, 18, 32, 0.055);
+  /* the key material — pressable */
+  --key-hi: #25272c;
+  --key-mid: #1b1d21;
+  --key-lo: #17181c;
+  /* the lit key — "this needs you" */
+  --key-hot-hi: #2d3036;
+  --key-hot-mid: #22242a;
+  --key-hot-lo: #1c1e23;
+  /* panels — raised containers */
+  --panel-hi: #1b1c20;
+  --panel-lo: #141518;
 
-  /* Signals */
-  --act: #2247d8;
-  --act-ink: #1c3bb5;
-  --act-wash: rgba(34, 71, 216, 0.08);
-  --live: #12734a;
-  --live-led: #21c46d;
-  --hold: #8a5000;
-  --hold-led: #f5a524;
-  --hold-wash: rgba(245, 165, 36, 0.13);
-  --stop: #ad2820;
-  --stop-led: #ef4d43;
-  --stop-wash: rgba(173, 40, 32, 0.09);
-  --idle-led: #aeb6c2;
+  --ink: #e7e8ea;
+  --ink-2: #a2a4a9;
+  --ink-3: #65686e;
+  --hair: rgba(255, 255, 255, 0.075);
+  --hair-soft: rgba(255, 255, 255, 0.05);
 
-  /* Elevation: neumorphic pairs — shade below, light above — so surfaces read
-     as physically raised out of the field rather than floating over it. */
-  --lift-1: 0 2px 6px rgba(24, 34, 56, 0.07), 0 8px 20px rgba(24, 34, 56, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
-  --lift-2: 0 3px 8px rgba(24, 34, 56, 0.08), 0 14px 34px rgba(24, 34, 56, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  --lift-3: 0 -2px 32px rgba(11, 18, 32, 0.1);
-  --press: inset 0 1px 3px rgba(11, 18, 32, 0.11);
-  --sink: inset 0 1px 2px rgba(11, 18, 32, 0.07), inset 0 0 0 1px var(--hair-soft);
-  --socket: inset 0 0 0 1px rgba(11, 18, 32, 0.16);
+  /* the only two tints — text ink only, never a fill */
+  --sage: #a5c2af;
+  --clay: #c99b93;
 
-  --r-xs: 7px;
+  /* elevation */
+  --raise:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055), inset 0 -1px 0 rgba(0, 0, 0, 0.32),
+    0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 14px rgba(0, 0, 0, 0.32);
+  --raise-lg:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    0 2px 3px rgba(0, 0, 0, 0.38), 0 14px 30px rgba(0, 0, 0, 0.36);
+  --pressed:
+    inset 0 2px 4px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(0, 0, 0, 0.35),
+    0 1px 1px rgba(0, 0, 0, 0.2);
+  --engrave: inset 0 1px 2px rgba(0, 0, 0, 0.5), inset 0 -1px 0 rgba(255, 255, 255, 0.035);
+  --sink: inset 0 2px 5px rgba(0, 0, 0, 0.5), inset 0 -1px 0 rgba(255, 255, 255, 0.03);
+
+  --grad-key: linear-gradient(172deg, var(--key-hi) 0%, var(--key-mid) 52%, var(--key-lo) 100%);
+  --grad-key-hot: linear-gradient(
+    172deg,
+    var(--key-hot-hi) 0%,
+    var(--key-hot-mid) 52%,
+    var(--key-hot-lo) 100%
+  );
+  --grad-panel: linear-gradient(174deg, var(--panel-hi) 0%, var(--panel-lo) 100%);
+
+  --r: 16px;
   --r-sm: 10px;
-  --r-md: 14px;
-  --r-lg: 18px;
-  --r-xl: 24px;
   --r-pill: 999px;
 
   --gut: 16px;
-  --ease: cubic-bezier(0.22, 0.61, 0.24, 1);
+
+  /* buttery = boring numbers: one curve, three durations, exits ~65% */
+  --step: cubic-bezier(0.32, 0.72, 0.24, 1);
+  --fast: 0.16s;
+  --mid: 0.26s;
+  --slow: 0.4s;
 }
 
 * {
@@ -95,162 +139,111 @@
 }
 
 html {
-  background: var(--field);
+  background: var(--ground);
 }
 
 body {
   margin: 0;
   min-height: 100dvh;
+  background: radial-gradient(120% 60% at 50% 0%, var(--ground-2) 0%, var(--ground) 58%) fixed;
   color: var(--ink);
-  font: 400 16px/1.5 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  font: 400 16px/1.5 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.011em;
-  /* Deliberately transparent: an opaque background here paints OVER this element's own
-     ::before/::after backdrop layers, which is exactly how the aurora stayed invisible
-     through three "new design" deploys. The field colour lives on html. */
-  background: transparent;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* The aurora. Oversized 60% and drifted with transform ONLY, so the browser
-   composites one prepainted layer and never repaints a pixel of it — an
-   animated background whose per-frame cost is a matrix multiply. Cobalt, teal
-   and amber: our signal colours, deliberately not the template purple. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: -30%;
-  z-index: -2;
-  pointer-events: none;
-  background-image:
-    radial-gradient(42% 34% at 22% 18%, rgba(34, 71, 216, 0.3), transparent 68%),
-    radial-gradient(36% 30% at 82% 12%, rgba(13, 148, 136, 0.26), transparent 70%),
-    radial-gradient(44% 36% at 78% 86%, rgba(217, 146, 60, 0.3), transparent 70%),
-    radial-gradient(30% 26% at 12% 88%, rgba(124, 58, 216, 0.18), transparent 70%);
-  animation: aurora 70s var(--ease) infinite alternate;
-  will-change: transform;
-}
-@keyframes aurora {
-  from {
-    transform: translate3d(-2.5%, -1.5%, 0) scale(1);
-  }
-  to {
-    transform: translate3d(2.5%, 2%, 0) scale(1.07);
-  }
-}
-
-/* Grain + grid, static, above the aurora and below everything else: texture
-   is what separates a designed surface from a flat fill. */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E"),
-    linear-gradient(rgba(11, 18, 32, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(11, 18, 32, 0.025) 1px, transparent 1px);
-  background-size: 140px 140px, 30px 30px, 30px 30px;
-}
-
-::selection {
-  background: var(--act-wash);
-}
-
-/* --------------------------------------------------------------- structure */
+/* ------------------------------------------------------------------ layout */
 
 .shell {
   max-width: 640px;
   margin: 0 auto;
-  padding: 0 var(--gut) calc(28px + env(safe-area-inset-bottom));
+  padding: calc(64px + env(safe-area-inset-top)) var(--gut) 40px;
 }
 .shell.hasdock {
-  padding-bottom: calc(112px + env(safe-area-inset-bottom));
+  padding-bottom: calc(118px + env(safe-area-inset-bottom));
 }
 .shell > * + section {
-  margin-top: 24px;
+  margin-top: 10px;
 }
 
-/* --------------------------------------------------------------- glass 1/3 */
+/* ------------------------------------------------------------------ rail */
 
 .rail {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 40;
-  padding: 8px var(--gut);
-  padding-top: calc(8px + env(safe-area-inset-top));
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
+  padding-top: env(safe-area-inset-top);
+  background: rgba(13, 14, 16, 0.72);
+  -webkit-backdrop-filter: blur(18px) saturate(0.9);
+  backdrop-filter: blur(18px) saturate(0.9);
   border-bottom: 1px solid var(--hair-soft);
 }
 .rail-in {
+  max-width: 640px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
-  max-width: 640px;
-  margin: 0 auto;
-  min-height: 44px;
+  padding: 12px var(--gut);
 }
 .wordmark {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.035em;
+  font: 400 21px/1 'Instrument Serif', Georgia, serif;
+  letter-spacing: -0.02em;
   color: var(--ink);
 }
 .wordmark svg {
-  flex: none;
-  color: var(--act);
+  color: var(--ink-2);
 }
 .rail .spacer {
   flex: 1;
 }
-
 .link-state {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 12px 6px 9px;
-  border-radius: var(--r-pill);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  color: var(--ink-2);
-  background: rgba(255, 255, 255, 0.55);
-  box-shadow: inset 0 0 0 1px var(--hair-soft);
+  gap: 6px;
+  font: 500 10px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
 }
 .link-state.on {
-  color: var(--live);
+  color: var(--ink-2);
 }
 
-/* --------------------------------------------------------------- LED */
+/* ----------------------------------------------------------------- LEDs
+   Tiny domed beads — a spherical highlight seats them in the machined
+   world. Colour alone never carries meaning; the state is always written
+   in words beside the bead. */
 
 .led {
-  position: relative;
-  flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--idle-led);
-  box-shadow: var(--socket);
+  flex: none;
+  background: radial-gradient(circle at 35% 30%, #7c8087, #4d5057 70%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), inset 0 -1px 1px rgba(0, 0, 0, 0.3);
 }
 .led.running {
-  background: var(--live-led);
-  box-shadow: var(--socket), 0 0 8px rgba(33, 196, 109, 0.55);
+  background: radial-gradient(circle at 35% 30%, #8fb59c, #5d8069 72%);
 }
+/* Waiting = needs a human. The brightest thing on the screen, breathing. */
 .led.waiting {
-  background: var(--hold-led);
-  box-shadow: var(--socket), 0 0 8px rgba(245, 165, 36, 0.6);
-  animation: breathe 2s var(--ease) infinite;
+  background: radial-gradient(circle at 35% 30%, #f2f3f5, #b9bcc2 75%);
+  animation: breathe 2.8s var(--step) infinite;
 }
 .led.errored {
-  background: var(--stop-led);
-  box-shadow: var(--socket), 0 0 8px rgba(239, 77, 67, 0.5);
+  background: radial-gradient(circle at 35% 30%, #c99b93, #96655e 72%);
+}
+.led.ended {
+  background: radial-gradient(circle at 35% 30%, #3a3c41, #26282c 70%);
 }
 .led.lg {
   width: 10px;
@@ -259,420 +252,433 @@ body::after {
 @keyframes breathe {
   0%,
   100% {
-    box-shadow: var(--socket), 0 0 5px rgba(245, 165, 36, 0.4);
+    opacity: 1;
   }
   50% {
-    box-shadow: var(--socket), 0 0 14px 2px rgba(245, 165, 36, 0.85);
+    opacity: 0.35;
   }
 }
 
-/* --------------------------------------------------------------- labels */
+/* ---------------------------------------------------------------- labels */
 
 .label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 2px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
+  gap: 10px;
+  padding: 22px 2px 10px;
+  font: 500 10px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 .label .count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: var(--r-pill);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
   color: var(--ink-2);
-  background: rgba(11, 18, 32, 0.06);
 }
 .label .count.urgent {
-  color: #fff;
-  background: var(--hold);
+  color: var(--ink);
 }
 .label .rule {
   flex: 1;
   height: 1px;
-  min-width: 0;
   background: var(--hair-soft);
 }
 
-.muted {
-  color: var(--ink-2);
-}
+.muted,
 .dim {
   color: var(--ink-3);
 }
 .small {
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 .mono {
-  font-family: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.88em;
-  letter-spacing: -0.02em;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 0.92em;
 }
 .empty {
-  margin: 0 2px;
+  margin: 6px 2px;
+  font: 400 19px/1.4 'Instrument Serif', Georgia, serif;
   color: var(--ink-3);
-  font-size: 14px;
+  letter-spacing: -0.01em;
 }
 
-/* --------------------------------------------------------------- cards */
-
-.card {
-  border-radius: var(--r-lg);
-  background: var(--card);
-  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair-soft);
-  padding: 15px;
-}
 .stack {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-/* --------------------------------------------------------------- controls */
-
-button {
-  font: inherit;
-  color: inherit;
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-:focus-visible {
-  outline: 2px solid var(--act);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
+/* ------------------------------------------------------------------ keys
+   The raised material. Extrudes at rest, physically sinks 1px under the
+   thumb. Grey, always — meaning may tint the LABEL, never the key. */
 
 .key {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   min-height: 46px;
   padding: 0 18px;
-  border-radius: var(--r-md);
-  font-size: 15px;
-  font-weight: 550;
-  letter-spacing: -0.012em;
+  border-radius: var(--r-sm);
+  background: var(--grad-key);
+  box-shadow: var(--raise);
   color: var(--ink);
-  background: linear-gradient(180deg, #ffffff, #f3f5f9);
-  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair);
-  transition: box-shadow 160ms var(--ease), background 160ms var(--ease);
+  font: 600 15px/1 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.01em;
+  transition:
+    box-shadow var(--fast) var(--step),
+    transform var(--fast) var(--step),
+    filter var(--fast) var(--step);
+}
+@media (hover: hover) {
+  .key:hover:not(:disabled) {
+    filter: brightness(1.09);
+  }
 }
 .key:active:not(:disabled) {
-  background: #f7f8fa;
-  box-shadow: var(--press), inset 0 0 0 1px var(--hair);
+  transform: translateY(1px) scale(0.988);
+  box-shadow: var(--pressed);
+  background: linear-gradient(172deg, var(--key-lo) 0%, var(--key-mid) 100%);
+  filter: none;
+}
+.key:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
 }
 .key:disabled {
-  color: var(--hint);
-  box-shadow: inset 0 0 0 1px var(--hair-soft);
-  background: transparent;
   cursor: default;
+  color: var(--ink-3);
+  box-shadow: var(--engrave);
+  background: rgba(0, 0, 0, 0.25);
 }
 .key.wide {
   width: 100%;
 }
 .key.sm {
-  min-height: 44px;
+  min-height: 36px;
   padding: 0 13px;
-  font-size: 13.5px;
+  font-size: 13px;
   gap: 6px;
-  border-radius: var(--r-sm);
 }
 .key.icon {
-  padding: 0;
   width: 46px;
-  min-height: 46px;
-  border-radius: var(--r-md);
+  padding: 0;
+  border-radius: 50%;
+  flex: none;
 }
-
+/* primary = the lit key: brighter, not bluer. */
 .key.primary {
-  color: #fff;
-  background: linear-gradient(180deg, #2f56e8, var(--act));
-  box-shadow: 0 1px 2px rgba(19, 40, 122, 0.28), 0 6px 18px rgba(19, 40, 122, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  background: var(--grad-key-hot);
 }
 .key.primary:active:not(:disabled) {
-  background: linear-gradient(180deg, #2247d8, #1c3bb5);
-  box-shadow: inset 0 2px 5px rgba(9, 22, 74, 0.4);
+  background: linear-gradient(172deg, var(--key-hot-lo) 0%, var(--key-hot-mid) 100%);
 }
-.key.primary:disabled {
-  color: rgba(255, 255, 255, 0.75);
-  background: #aab2c0;
-  box-shadow: none;
-}
+/* verdicts: identical grey keys; only the word carries the tint */
 .key.allow {
-  color: var(--live);
+  color: var(--sage);
 }
 .key.deny {
-  color: var(--stop);
+  color: var(--clay);
+}
+.key.stopkey {
+  color: var(--clay);
 }
 .key.quiet {
+  background: none;
+  box-shadow: none;
   color: var(--ink-2);
 }
 
-/* The brake: filled and red, because stopping an agent must never need hunting. */
-.key.stopkey {
-  color: #fff;
-  background: linear-gradient(180deg, #c8453b, var(--stop));
-  box-shadow: 0 1px 2px rgba(122, 27, 21, 0.28), 0 6px 16px rgba(122, 27, 21, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
-.key.stopkey:active:not(:disabled) {
-  box-shadow: inset 0 2px 5px rgba(74, 14, 10, 0.45);
-}
-
+/* flat text taps: back button, "Change", "Add a note" */
 .tap {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-height: 44px;
-  padding: 11px 4px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--act-ink);
+  min-height: 40px;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  font: 500 14px/1 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.01em;
+  transition: color var(--fast) var(--step), background var(--fast) var(--step);
 }
 .tap:active {
-  opacity: 0.55;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.05);
 }
 .tap.quiet {
   color: var(--ink-3);
 }
+.tap:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
+}
 
-/* --------------------------------------------------------------- inputs */
+/* ----------------------------------------------------------------- wells
+   Recessed inputs: content is read (and typed) below the surface. */
 
 .field {
-  display: block;
+  appearance: none;
   width: 100%;
-  padding: 13px 15px;
+  min-height: 46px;
+  padding: 12px 14px;
   border: 0;
-  border-radius: var(--r-md);
-  background: var(--well);
+  border-radius: var(--r-sm);
+  background: var(--recess);
   box-shadow: var(--sink);
   color: var(--ink);
-  font: inherit;
-  font-size: 16px; /* below 16px iOS zooms the page on focus */
-  line-height: 1.45;
+  font: 400 16px/1.45 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.011em;
+  resize: none;
+  transition: box-shadow var(--mid) var(--step);
 }
 .field::placeholder {
   color: var(--ink-3);
 }
 .field:focus {
   outline: none;
-  background: var(--card);
-  box-shadow: inset 0 0 0 1.5px var(--act), 0 0 0 4px var(--act-wash);
-}
-textarea.field {
-  min-height: 84px;
-  resize: none;
+  box-shadow: var(--sink), inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .searchwrap {
   position: relative;
 }
 .searchwrap .field {
-  padding-left: 42px;
+  padding-left: 40px;
 }
 .searchwrap .glyph {
   position: absolute;
-  left: 14px;
+  left: 13px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--ink-3);
   pointer-events: none;
 }
 
-/* --------------------------------------------------------------- session card */
+/* --------------------------------------------------------------- sessions
+   A machined key the width of the screen. The card is a div; the opener
+   button stretches across it (::after) so the path chip can be a REAL
+   second button — tap the name to open, tap the path to unfold it. */
 
 .session {
-  display: block;
-  width: 100%;
+  position: relative;
+  border-radius: var(--r);
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+  padding: 13px 14px;
   text-align: left;
-  padding: 14px 15px;
-  border-radius: var(--r-lg);
-  background: var(--card);
-  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair-soft);
-  transition: box-shadow 160ms var(--ease);
-  /* Paint containment: a long list stays cheap to scroll. */
-  contain: content;
+  transition: box-shadow var(--fast) var(--step), transform var(--fast) var(--step);
 }
-.session:active {
-  box-shadow: var(--press), inset 0 0 0 1px var(--hair-soft);
+.session:has(.opener:active) {
+  transform: translateY(1px) scale(0.992);
+  box-shadow: var(--pressed);
 }
+.session:has(.opener:focus-visible) {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
+}
+/* needs you: the same key, simply LIT — no stripe, no colour */
 .session.needs {
-  box-shadow: var(--lift-1), inset 0 0 0 1.5px rgba(245, 165, 36, 0.6);
+  background: var(--grad-key-hot);
 }
+/* finished work recedes: flatter, dimmer, no ambient drop */
 .session.past {
-  background: rgba(255, 255, 255, 0.55);
-  box-shadow: inset 0 0 0 1px var(--hair-soft);
+  background: linear-gradient(174deg, #17181c 0%, #131418 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 1px 2px rgba(0, 0, 0, 0.3);
 }
-
-.session .top {
+.session .opener {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
   display: flex;
   align-items: center;
   gap: 9px;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.session .opener:focus {
+  outline: none;
+}
+/* the stretch: the opener's hit area is the whole card */
+.session .opener::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 .session .name {
+  margin: 0;
+  font-weight: 600;
+  font-size: 15.5px;
+  letter-spacing: -0.014em;
   flex: 1;
   min-width: 0;
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.017em;
-  color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.session.past .name {
+  color: var(--ink-2);
+  font-weight: 500;
+}
 .session .chev {
+  color: var(--ink-3);
   flex: none;
-  color: var(--hint);
 }
 .session .meta {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  gap: 7px;
   margin: 7px 0 0;
-  font-size: 12.5px;
-  color: var(--ink-2);
+  font: 400 11.5px/1.4 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-3);
+  flex-wrap: wrap;
 }
 .session .meta .dot {
-  color: var(--hint);
+  opacity: 0.45;
 }
 .session .preview {
-  margin: 9px 0 0;
+  margin: 8px 0 0;
   font-size: 13.5px;
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--ink-2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
-  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  word-break: break-word;
 }
+/* status stamped into the key — you cannot press a fact */
 .session .flag {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: 10px 0 0;
-  padding: 5px 10px 5px 8px;
+  margin-top: 10px;
+  padding: 6px 10px;
   border-radius: var(--r-pill);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--hold);
-  background: var(--hold-wash);
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: var(--engrave);
+  font: 600 10.5px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
 }
 
+/* states, written in words; the tint lives in the text alone */
 .state {
   font-weight: 500;
 }
 .state.running {
-  color: var(--live);
+  color: var(--sage);
 }
 .state.waiting {
-  color: var(--hold);
+  color: var(--ink);
 }
 .state.errored {
-  color: var(--stop);
+  color: var(--clay);
 }
 .state.ended {
   color: var(--ink-3);
 }
 
-/* --------------------------------------------------------------- path chip
-   A path is a thing, not a sentence. Giving it an icon, a surface and a
-   monospace face is what lets a reader pick it out of a wall of text. */
+/* -------------------------------------------------------------- path chips
+   A path is a thing, not a sentence: engraved into the surface, monospace.
+   Tappable ones unfold in place to the full path — the machined answer to
+   "what is Claude actually touching right now?" */
 
 .pathchip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   max-width: 100%;
-  padding: 2px 8px 2px 6px;
-  border-radius: var(--r-xs);
-  background: rgba(11, 18, 32, 0.05);
-  box-shadow: inset 0 0 0 1px var(--hair-soft);
-  font-family: 'Spline Sans Mono', ui-monospace, Menlo, monospace;
-  font-size: 12px;
-  letter-spacing: -0.02em;
+  padding: 4px 9px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: var(--engrave);
+  font: 400 11.5px/1.4 'Geist Mono', ui-monospace, monospace;
   color: var(--ink-2);
-  vertical-align: baseline;
+  vertical-align: middle;
 }
 .pathchip svg {
   flex: none;
-  color: var(--hint);
+  color: var(--ink-3);
 }
 .pathchip .txt {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .pathchip.tappable {
+  appearance: none;
+  border: 0;
   cursor: pointer;
-  /* The visual chip stays petite; the touch target does not. Padding grows the hit
-     rect to the 44pt floor and the negative margin hands the space back to layout. */
-  padding-top: 13px;
-  padding-bottom: 13px;
-  margin-top: -11px;
-  margin-bottom: -11px;
+  font: inherit;
+  font: 400 11.5px/1.4 'Geist Mono', ui-monospace, monospace;
+  /* grow the touch target without growing the chip */
+  position: relative;
+  z-index: 1;
+  transition: box-shadow var(--fast) var(--step), color var(--fast) var(--step);
+}
+.pathchip.tappable::before {
+  content: '';
+  position: absolute;
+  inset: -8px 0;
 }
 .pathchip.tappable:active {
-  background: rgba(11, 18, 32, 0.09);
+  box-shadow: var(--sink);
 }
+.pathchip.tappable:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
+}
+/* unfolded: the chip opens and the full path wraps — nothing is cut */
 .pathchip.open {
-  align-items: flex-start;
+  border-radius: var(--r-sm);
 }
 .pathchip.open .txt {
   white-space: normal;
-  overflow-wrap: anywhere;
+  word-break: break-all;
   text-align: left;
 }
-.pathchip.open svg {
-  margin-top: 3px;
+.pathchip.open,
+.pathchip.tappable.open {
+  color: var(--ink);
 }
 .pathchip.accent {
-  background: var(--act-wash);
-  color: var(--act-ink);
-  box-shadow: inset 0 0 0 1px rgba(34, 71, 216, 0.14);
+  color: var(--ink);
 }
 .pathchip.accent svg {
-  color: var(--act);
+  color: var(--ink-2);
 }
 
-/* --------------------------------------------------------------- approval */
+/* -------------------------------------------------------------- approvals
+   The decision surface — the reason this product exists. A raised panel,
+   lit brighter than everything around it. The verdict keys are identical
+   grey; only the words "Approve" and "Deny" carry the tints. */
 
 .approval {
-  border-radius: var(--r-lg);
-  padding: 15px;
-  background: var(--card-solid);
-  box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(245, 165, 36, 0.55);
-  animation: attention 3.2s var(--ease) infinite;
-}
-@keyframes attention {
-  0%,
-  100% {
-    box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(245, 165, 36, 0.55),
-      0 0 0 0 rgba(245, 165, 36, 0);
-  }
-  50% {
-    box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(245, 165, 36, 0.8),
-      0 0 22px 2px rgba(245, 165, 36, 0.22);
-  }
-}
-.approval.outside {
-  box-shadow: var(--lift-2), inset 0 0 0 1.5px rgba(173, 40, 32, 0.6);
+  background: var(--grad-key-hot);
+  border-radius: var(--r);
+  box-shadow: var(--raise-lg);
+  padding: 15px 15px 14px;
 }
 .approval .head {
   display: flex;
@@ -680,35 +686,38 @@ textarea.field {
   gap: 11px;
 }
 .approval .sigil {
+  width: 36px;
+  height: 36px;
   flex: none;
+  border-radius: var(--r-sm);
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--r-sm);
-  color: var(--hold);
-  background: var(--hold-wash);
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+  color: var(--ink-2);
 }
 .approval.outside .sigil {
-  color: var(--stop);
-  background: var(--stop-wash);
+  color: var(--clay);
 }
 .approval .headtext {
+  flex: 1;
   min-width: 0;
 }
 .approval h3 {
-  margin: 0;
+  margin: 1px 0 0;
   font-size: 15px;
   font-weight: 500;
-  line-height: 1.35;
-  letter-spacing: -0.012em;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  color: var(--ink-2);
 }
 .approval h3 strong {
-  font-weight: 650;
+  font-weight: 600;
+  color: var(--ink);
 }
 .approval .who {
-  margin: 2px 0 0;
-  font-size: 12.5px;
+  margin: 3px 0 0;
+  font: 400 11px/1.5 'Geist Mono', ui-monospace, monospace;
   color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -719,255 +728,214 @@ textarea.field {
   margin: 12px 0 0;
   padding: 10px 12px;
   border-radius: var(--r-sm);
-  background: var(--well);
+  background: var(--recess);
   box-shadow: var(--sink);
-  font-family: 'Spline Sans Mono', ui-monospace, Menlo, monospace;
-  font-size: 12.5px;
-  line-height: 1.5;
-  letter-spacing: -0.02em;
+  font: 400 12.5px/1.55 'Geist Mono', ui-monospace, monospace;
   color: var(--ink-2);
-  word-break: normal;
-  overflow-wrap: break-word;
-  max-height: calc(5 * 1.5em + 20px);
+  max-height: 128px;
   overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+  overflow-wrap: break-word;
 }
 .approval .breach {
   display: flex;
+  align-items: flex-start;
   gap: 8px;
-  margin: 10px 0 0;
-  padding: 10px 12px;
-  border-radius: var(--r-sm);
-  background: var(--stop-wash);
-  color: var(--stop);
-  font-size: 12.5px;
+  margin: 11px 0 0;
+  font-size: 13px;
   line-height: 1.5;
-  overflow-wrap: break-word;
+  color: var(--clay);
 }
 .approval .breach svg {
   flex: none;
-  margin-top: 1px;
+  margin-top: 2px;
+}
+.approval .breach .mono {
+  color: var(--clay);
+  word-break: break-all;
 }
 .approval .verdict {
-  display: grid;
-  grid-template-columns: 1fr 1.3fr;
+  display: flex;
   gap: 9px;
-  margin-top: 13px;
+  margin: 13px 0 0;
+}
+.approval .verdict .key {
+  flex: 1;
+}
+.approval .verdict .key.deny {
+  flex: 0 0 36%;
 }
 .approval .approvalfoot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 2px 2px -8px;
+  margin: 11px 0 -4px;
 }
 .approval .field.note {
-  margin-top: 10px;
-  font-size: 15px;
+  margin-top: 11px;
+  min-height: 44px;
 }
 
-/* --------------------------------------------------------------- transcript
-   A readout well. NO blur here — this scrolls, and blurred scrolling content
-   is what turns a glass design into a battery complaint. */
+/* --------------------------------------------------------------- readout
+   The transcript well: the one large recessed surface. The conversation is
+   read out of the machine, not printed on top of it. */
 
 .readout {
-  position: relative;
-  padding: 16px 14px;
-  border-radius: var(--r-lg);
-  background: var(--well);
+  background: var(--recess);
+  border-radius: var(--r);
   box-shadow: var(--sink);
-  max-height: 62dvh;
+  padding: 16px 14px;
+  max-height: 56dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 12px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(11, 18, 32, 0.16) transparent;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 11px,
-    #000 calc(100% - 11px),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 11px,
-    #000 calc(100% - 11px),
-    transparent 100%
-  );
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
 }
 .readout::-webkit-scrollbar {
   width: 4px;
 }
 .readout::-webkit-scrollbar-thumb {
-  background: rgba(11, 18, 32, 0.16);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 2px;
 }
 
-/* Agent prose */
+/* speech: what Claude says, plain ink on the well floor */
 .blk.say {
-  font-size: 15.5px;
+  font-size: 15px;
   line-height: 1.62;
-  color: var(--ink);
-  overflow-wrap: anywhere;
-  min-width: 0;
+  letter-spacing: -0.006em;
+  overflow-wrap: break-word;
 }
 .blk.say strong {
-  font-weight: 650;
+  font-weight: 600;
 }
 .blk.say .para {
-  margin: 0 0 8px;
-  white-space: pre-wrap;
+  margin: 0 0 10px;
 }
 .blk.say .h {
-  margin: 6px 0 8px;
-  font-size: 12px;
+  margin: 14px 0 8px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--ink-2);
+  letter-spacing: 0.01em;
+  color: var(--ink);
 }
 .blk.say ul,
 .blk.say ol {
   margin: 0 0 10px;
-  padding-left: 18px;
+  padding-left: 22px;
 }
 .blk.say li {
-  margin: 0 0 6px;
-  padding-left: 3px;
+  margin: 3px 0;
 }
 .blk.say li::marker {
-  color: var(--hint);
+  color: var(--ink-3);
 }
 .blk.say > :last-child {
   margin-bottom: 0;
 }
 .blk.say code {
-  font-family: 'Spline Sans Mono', ui-monospace, Menlo, monospace;
-  font-size: 12.5px;
-  letter-spacing: -0.02em;
+  font: 400 0.88em/1.4 'Geist Mono', ui-monospace, monospace;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
   padding: 1.5px 5px;
-  border-radius: var(--r-xs);
-  background: rgba(11, 18, 32, 0.055);
-  color: var(--ink);
-  overflow-wrap: anywhere;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
+  border-radius: 5px;
+  color: var(--ink-2);
+  overflow-wrap: break-word;
 }
 .blk.say .fence {
-  position: relative;
-  margin: 4px 0 12px;
-  padding: 11px 13px;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
   border-radius: var(--r-sm);
-  background: var(--card-solid);
-  box-shadow: inset 0 0 0 1px var(--hair);
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: var(--engrave);
   overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
 }
 .blk.say .fence code {
-  display: block;
-  padding: 0;
   background: none;
+  box-shadow: none;
+  padding: 0;
   font-size: 12.5px;
-  line-height: 1.6;
+  line-height: 1.55;
   white-space: pre;
+  color: var(--ink-2);
 }
 .blk.say .fence .lang {
-  float: right;
-  margin: -2px -3px 4px 10px;
-  font-family: 'Spline Sans Mono', ui-monospace, Menlo, monospace;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
+  display: block;
+  margin-bottom: 6px;
+  font: 500 9.5px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
-/* Action group — consecutive tool calls read as one scannable block of work
-   with a spine, rather than N identical grey lines. */
+/* actions: consecutive tool calls share one spine; each tool is a small
+   machined tile — the direct descendant of a lock screen's app grid */
 .actions {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  border-radius: var(--r-sm);
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px var(--hair-soft);
-  background: var(--hair-soft);
+  gap: 7px;
+  padding: 2px 0;
 }
 .action {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 11px;
-  background: var(--card-solid);
   min-width: 0;
 }
 .action .ico {
+  width: 28px;
+  height: 28px;
   flex: none;
+  border-radius: 8px;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
+  background: var(--grad-key);
+  box-shadow: var(--raise);
   color: var(--ink-2);
-  background: rgba(11, 18, 32, 0.05);
 }
 .action .verb {
+  font: 600 12px/1 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-2);
   flex: none;
-  font-size: 12px;
-  font-weight: 550;
-  letter-spacing: -0.005em;
-  color: var(--ink);
 }
 .action .pathchip {
-  flex: 1;
   min-width: 0;
-  background: none;
-  box-shadow: none;
-  padding: 0;
-  justify-content: flex-end;
-  color: var(--ink-3);
-}
-.action .pathchip svg {
-  display: none;
+  background: rgba(0, 0, 0, 0.4);
 }
 
+/* thinking: the machine muttering — quiet, mono, beside a hairline */
 .blk.thinking {
-  padding-left: 11px;
-  border-left: 2px solid var(--hair);
-  font-size: 14px;
-  line-height: 1.55;
+  font: 400 12.5px/1.6 'Geist Mono', ui-monospace, monospace;
   color: var(--ink-3);
-  white-space: pre-wrap;
+  padding-left: 11px;
+  border-left: 1px solid var(--hair);
+  overflow-wrap: break-word;
 }
 
+/* what you said: a raised key floating right — your words have mass here */
 .blk.mine {
   align-self: flex-end;
-  max-width: 86%;
-  padding: 10px 14px;
-  border-radius: var(--r-md) var(--r-md) 5px var(--r-md);
-  background: linear-gradient(180deg, #2f56e8, var(--act));
-  color: #fff;
-  font-size: 15px;
+  max-width: 84%;
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+  border-radius: var(--r) var(--r) var(--r-sm) var(--r);
+  padding: 10px 13px;
+  font-size: 14.5px;
   line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  box-shadow: 0 2px 10px rgba(19, 40, 122, 0.22);
+  overflow-wrap: break-word;
 }
 
 .blk.divider {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.11em;
+  margin: 4px 0;
+  font: 500 10px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--ink-2);
+  color: var(--ink-3);
 }
 .blk.divider::before,
 .blk.divider::after {
@@ -977,10 +945,10 @@ textarea.field {
   background: var(--hair-soft);
 }
 
-/* --------------------------------------------------------------- detail head */
+/* -------------------------------------------------------------- detail head */
 
 .detailhead {
-  padding: 2px 2px 0;
+  margin-top: 6px;
 }
 .detailhead .toprow {
   display: flex;
@@ -993,50 +961,44 @@ textarea.field {
 }
 .detailhead .toprow .key {
   flex: none;
-  margin-top: 1px;
+  margin-top: 2px;
 }
 .detailhead h2 {
   margin: 0;
   font-size: 21px;
-  font-weight: 650;
-  letter-spacing: -0.032em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   line-height: 1.25;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  overflow-wrap: break-word;
 }
 .detailhead .meta {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 9px 0 0;
-  font-size: 13px;
-  color: var(--ink-2);
-  white-space: nowrap;
+  font: 400 12px/1.5 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-3);
+  flex-wrap: wrap;
 }
 .detailhead .meta .dot {
-  color: var(--hint);
+  opacity: 0.45;
 }
 .detailhead .meta .pathchip {
-  flex: 0 1 auto;
-  min-width: 0;
+  max-width: 100%;
 }
 
-/* --------------------------------------------------------------- glass 2/3 */
+/* ------------------------------------------------------------------ dock */
 
 .dock {
   position: fixed;
+  bottom: 0;
   left: 0;
   right: 0;
-  bottom: 0;
-  z-index: 30;
-  padding: 10px var(--gut) calc(10px + env(safe-area-inset-bottom));
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
+  z-index: 40;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: rgba(13, 14, 16, 0.72);
+  -webkit-backdrop-filter: blur(18px) saturate(0.9);
+  backdrop-filter: blur(18px) saturate(0.9);
   border-top: 1px solid var(--hair-soft);
 }
 .dock-in {
@@ -1044,40 +1006,29 @@ textarea.field {
   margin: 0 auto;
   display: flex;
   align-items: flex-end;
-  gap: 9px;
+  gap: 10px;
+  padding: 12px var(--gut) 14px;
 }
 .dock-in .field {
-  flex: 1;
-  min-height: 46px;
+  border-radius: 23px;
   max-height: 132px;
-  overflow-y: auto;
-  background: rgba(255, 255, 255, 0.75);
-  box-shadow: inset 0 0 0 1px var(--hair);
-}
-.dock-in .field:focus {
-  background: var(--card);
 }
 .dock .note {
   max-width: 640px;
   margin: 0 auto;
-  padding: 12px 14px;
-  border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow: inset 0 0 0 1px var(--hair-soft);
-  font-size: 13.5px;
+  padding: 14px var(--gut) 16px;
+  font-size: 13px;
   line-height: 1.5;
-  color: var(--ink-2);
+  color: var(--ink-3);
 }
 
-/* --------------------------------------------------------------- glass 3/3 */
+/* ------------------------------------------------------------------ sheet */
 
 .scrim {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(16, 22, 34, 0.28);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0.6);
 }
 .sheet {
   position: fixed;
@@ -1085,84 +1036,92 @@ textarea.field {
   right: 0;
   bottom: 0;
   z-index: 51;
-  max-height: 90dvh;
+  background: var(--grad-panel);
+  border-radius: 24px 24px 0 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 -18px 50px rgba(0, 0, 0, 0.5);
+  max-height: 86dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 10px var(--gut) calc(22px + env(safe-area-inset-bottom));
-  border-radius: var(--r-xl) var(--r-xl) 0 0;
-  background: rgba(248, 249, 251, 0.92);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: var(--lift-3), inset 0 1px 0 var(--glass-line);
 }
 .sheet-in {
   max-width: 640px;
   margin: 0 auto;
+  padding: 10px var(--gut) calc(24px + env(safe-area-inset-bottom));
 }
 .grab {
-  width: 38px;
+  width: 40px;
   height: 4px;
-  margin: 0 auto 16px;
+  margin: 4px auto 16px;
   border-radius: 2px;
-  background: rgba(11, 18, 32, 0.16);
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: var(--engrave);
 }
 .sheet h2 {
-  margin: 0 0 4px;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  margin: 0;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 .sheet .sub {
-  margin: 0 0 16px;
-  font-size: 13.5px;
+  margin: 6px 0 16px;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--ink-2);
 }
-
-/* --------------------------------------------------------------- folders */
+.sheet .key.wide {
+  margin-top: 14px;
+}
 
 .folders {
   list-style: none;
   margin: 12px 0 0;
   padding: 0;
-  max-height: 40dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 7px;
 }
 .folderbtn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   width: 100%;
-  min-height: 50px;
-  padding: 9px 13px;
+  min-height: 46px;
+  padding: 8px 11px;
+  border-radius: var(--r-sm);
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+  color: var(--ink);
+  font: 500 14px/1.35 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
   text-align: left;
-  border-radius: var(--r-md);
-  background: var(--card);
-  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair-soft);
-  transition: box-shadow 150ms var(--ease);
+  transition: box-shadow var(--fast) var(--step), transform var(--fast) var(--step);
 }
 .folderbtn:active {
-  box-shadow: var(--press);
+  transform: translateY(1px) scale(0.99);
+  box-shadow: var(--pressed);
+}
+.folderbtn:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
 }
 .folderbtn .fico {
-  flex: none;
-  display: grid;
-  place-items: center;
   width: 30px;
   height: 30px;
+  flex: none;
   border-radius: 8px;
-  color: var(--act);
-  background: var(--act-wash);
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: var(--engrave);
+  color: var(--ink-2);
 }
 .folderbtn .fl {
   flex: 1;
   min-width: 0;
-  font-size: 14.5px;
-  font-weight: 450;
-  color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1172,155 +1131,155 @@ textarea.field {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 12px 13px;
-  border-radius: var(--r-md);
-  background: var(--card);
-  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair-soft);
+  padding: 11px 12px;
+  border-radius: var(--r-sm);
+  background: var(--recess);
+  box-shadow: var(--sink);
 }
 .chosen .fico {
-  flex: none;
-  display: grid;
-  place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: 9px;
-  color: var(--act);
-  background: var(--act-wash);
+  flex: none;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+  color: var(--ink-2);
 }
 .chosen .body {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .chosen .k {
-  display: block;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  font: 500 9.5px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 .chosen .v {
-  display: block;
-  font-family: 'Spline Sans Mono', ui-monospace, Menlo, monospace;
-  font-size: 13px;
-  letter-spacing: -0.02em;
-  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* --------------------------------------------------------------- notices */
+/* ---------------------------------------------------------------- notices */
 
 .notice {
   display: flex;
-  gap: 11px;
   align-items: flex-start;
+  gap: 10px;
   margin-bottom: 12px;
-  padding: 12px 14px;
-  border-radius: var(--r-md);
+  padding: 12px 13px;
+  border-radius: var(--r-sm);
+  background: var(--grad-panel);
+  box-shadow: var(--raise);
   font-size: 13.5px;
   line-height: 1.5;
-  background: var(--card);
-  box-shadow: var(--lift-1), inset 0 0 0 1.5px rgba(245, 165, 36, 0.45);
   color: var(--ink-2);
-}
-.notice.bad {
-  box-shadow: var(--lift-1), inset 0 0 0 1.5px rgba(173, 40, 32, 0.45);
 }
 .notice svg {
   flex: none;
   margin-top: 1px;
-  color: var(--hold);
+  color: var(--ink-2);
 }
+.notice.bad,
 .notice.bad svg {
-  color: var(--stop);
+  color: var(--clay);
 }
 .notice .body {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 .notice button {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  margin: -12px -12px -12px 0;
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 2px;
+  margin: -2px;
   color: var(--ink-3);
   display: grid;
   place-items: center;
 }
+.notice button:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
+}
 
-/* --------------------------------------------------------------- gate */
+/* ------------------------------------------------------------------ gates */
 
 .gate {
   min-height: 100dvh;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 0 24px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  gap: 18px;
-  padding: 40px var(--gut) calc(40px + env(safe-area-inset-bottom));
+  justify-content: center;
   text-align: center;
 }
 .mark {
   display: grid;
   place-items: center;
-  width: 72px;
-  height: 72px;
+  width: 76px;
+  height: 76px;
   border-radius: 22px;
-  background: var(--card);
-  box-shadow: var(--lift-2), inset 0 0 0 1px var(--hair-soft);
-  color: var(--act);
+  background: var(--grad-key);
+  box-shadow: var(--raise-lg);
+  color: var(--ink);
+  margin-bottom: 20px;
 }
 .gate h1 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  margin: 0 0 10px;
+  font: 400 40px/1.05 'Instrument Serif', Georgia, serif;
+  letter-spacing: -0.02em;
 }
 .gate p {
-  margin: 0;
-  max-width: 32ch;
+  margin: 0 0 22px;
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.55;
   color: var(--ink-2);
+  text-wrap: pretty;
 }
 .gate .err {
-  color: var(--stop);
-  font-weight: 500;
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  color: var(--clay);
 }
 
 .firstrun {
+  padding: 44px 16px 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  margin-top: 40px;
-  padding: 32px 24px;
   text-align: center;
-  border-radius: var(--r-xl);
-  background: var(--card);
-  box-shadow: var(--lift-1), inset 0 0 0 1px var(--hair-soft);
 }
 .firstrun .mark {
-  width: 56px;
-  height: 56px;
-  border-radius: 17px;
-  background: var(--act-wash);
-  box-shadow: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 19px;
+  margin-bottom: 16px;
 }
 .firstrun h2 {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+  font: 400 27px/1.15 'Instrument Serif', Georgia, serif;
+  letter-spacing: -0.015em;
 }
 .firstrun p {
   margin: 0;
-  max-width: 34ch;
+  max-width: 34em;
   font-size: 14.5px;
   line-height: 1.6;
   color: var(--ink-2);
+  text-wrap: pretty;
 }
 .firstrun strong {
   color: var(--ink);
@@ -1328,45 +1287,39 @@ textarea.field {
 }
 
 .foot {
-  margin: 28px 2px 0;
-  padding: 14px 15px;
-  border-radius: var(--r-md);
-  font-size: 12.5px;
+  margin: 26px 2px 0;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--ink-3);
-  background: rgba(255, 255, 255, 0.45);
-  box-shadow: inset 0 0 0 1px var(--hair-soft);
 }
-
 .pairbox {
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: 100%;
-  max-width: 340px;
 }
-
 .buildtag {
   display: block;
-  margin-top: 8px;
+  margin-top: 10px;
   font-size: 10.5px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   color: var(--ink-3);
+  opacity: 0.8;
 }
-
-/* --------------------------------------------------------------- a11y */
 
 .sr {
   position: absolute;
   width: 1px;
   height: 1px;
-  padding: 0;
   margin: -1px;
+  padding: 0;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
 }
+
+/* ---------------------------------------------------------- accessibility */
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -1376,20 +1329,14 @@ textarea.field {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
-  body::before {
+  .led.waiting {
     animation: none;
   }
 }
 
-/* Frosted chrome is a nicety; legibility is not. Where the platform cannot
-   blur, the same surfaces go opaque rather than turning into milky glass. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .rail,
-  .dock,
-  .sheet {
-    background: #f7f8fa;
-  }
-  .scrim {
-    background: rgba(16, 22, 34, 0.45);
+  .dock {
+    background: var(--ground);
   }
 }

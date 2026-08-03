@@ -679,7 +679,7 @@ function LeashGlyph({ size }: { size: number }) {
         strokeWidth="3.6"
         strokeLinecap="round"
       />
-      <circle cx="31" cy="11" r="4.2" fill="#16794a" />
+      <circle cx="31" cy="11" r="4.2" fill="var(--sage)" />
     </svg>
   )
 }

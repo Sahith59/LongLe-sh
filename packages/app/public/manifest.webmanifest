@@ -4,8 +4,8 @@
   "description": "Approve, steer and read your laptop agents from your phone.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f2f4f7",
-  "theme_color": "#f2f4f7",
+  "background_color": "#0d0e10",
+  "theme_color": "#0d0e10",
   "icons": [
     {
       "src": "/icon.svg",
