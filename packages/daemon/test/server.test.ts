@@ -9,6 +9,7 @@ import { ApprovalStore } from '../src/approvals.js'
 import { SessionManager } from '../src/sessions.js'
 import type { AgentFactory, AgentRunRequest, PermissionDecision } from '../src/agent.js'
 import { LongLeashServer, CLOSE_UNAUTHORIZED, CLOSE_REVOKED } from '../src/server.js'
+import { PushNotifier } from '../src/push.js'
 
 /** Minimal controllable agent so server tests stay deterministic. */
 class DemoAgent {
@@ -650,4 +651,56 @@ describe('resilience', () => {
     expect(received[1999]?.seq).toBe(2000)
     ws.close()
   }, 15000)
+})
+
+describe('push over the wire — the whole laptop side of Phase C', () => {
+  it('advertises the key in hello, registers a phone, and taps it when an approval lands', async () => {
+    const h = await startHarness()
+    const dir = mkdtempSync(join(tmpdir(), 'll-push-wire-'))
+    const sent: string[] = []
+    const notifier = new PushNotifier({
+      dbPath: ':memory:',
+      keysPath: join(dir, 'vapid.json'),
+      subject: 'https://relay.example.dev',
+      send: async (_subscription, payload) => {
+        sent.push(payload)
+      },
+    })
+    h.server.attachPush(notifier)
+
+    // 1. The phone learns the VAPID key from hello — no key, no Alerts offer in the UI.
+    const ws = connect(h.port, h.token)
+    const hello = await helloOf(ws)
+    expect((hello.push as { publicKey?: string }).publicKey).toBe(notifier.publicKey)
+
+    // 2. Subscribing over the socket lands in the notifier, attributed to this device.
+    ws.send(
+      JSON.stringify({
+        v: 1,
+        type: 'pushSubscribe',
+        subscription: {
+          endpoint: 'https://web.push.apple.com/wire-test',
+          keys: { p256dh: 'pk', auth: 'au' },
+        },
+      }),
+    )
+    const [ack] = await nextMessages(ws, 1)
+    expect(ack).toMatchObject({ type: 'ack', of: 'pushSubscribe', outcome: 'registered' })
+    expect(notifier.count()).toBe(1)
+
+    // 3. An approval triggers the tap, and the payload is IDs only.
+    notifier.notifyApproval('ses_wire', 'apr_wire')
+    await new Promise((r) => setTimeout(r, 30))
+    expect(sent).toHaveLength(1)
+    expect(JSON.parse(sent[0]!)).toEqual({ t: 'approval', sessionId: 'ses_wire', approvalId: 'apr_wire' })
+
+    // 4. Revoking the device silences it — no orphaned endpoints for an unpaired phone.
+    h.registry.revokeDevice(h.deviceId)
+    expect(notifier.count()).toBe(0)
+
+    ws.close()
+    notifier.close()
+    await h.server.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
 })
