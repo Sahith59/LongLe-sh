@@ -158,6 +158,31 @@ const stopSessionMessage = z
   })
   .passthrough()
 
+/** The browser's PushSubscription, exactly as `subscription.toJSON()` emits it. */
+export const PushSubscriptionSchema = z
+  .object({
+    endpoint: z.string().url(),
+    keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }).passthrough(),
+  })
+  .passthrough()
+export type PushSubscriptionJson = z.infer<typeof PushSubscriptionSchema>
+
+const pushSubscribeMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('pushSubscribe'),
+    subscription: PushSubscriptionSchema,
+  })
+  .passthrough()
+
+const pushUnsubscribeMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('pushUnsubscribe'),
+    endpoint: z.string().url(),
+  })
+  .passthrough()
+
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   subscribeMessage,
   decisionMessage,
@@ -166,6 +191,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   stopSessionMessage,
   resumeSessionMessage,
   findFoldersMessage,
+  pushSubscribeMessage,
+  pushUnsubscribeMessage,
 ])
 export type ClientMessage = z.infer<typeof ClientMessageSchema>
 

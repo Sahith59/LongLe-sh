@@ -199,6 +199,8 @@ export interface Hello {
   sessions: SessionSeed[]
   capabilities: { startSession: boolean; stopSession: boolean }
   relay?: { url: string } | null
+  /** VAPID public key for lock-screen alerts; null when the daemon has push disabled. */
+  push?: { publicKey: string } | null
 }
 
 export interface FolderHit {
@@ -538,6 +540,8 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       if (!sent) callbacks.onError('Not connected to your laptop — the message was not sent.')
       return sent
     },
+    pushSubscribe: (subscription: unknown) =>
+      send({ v: PROTOCOL_VERSION, type: 'pushSubscribe', subscription }),
     decide: (approvalId: string, verdict: 'allow' | 'deny', reply?: string) =>
       send({
         v: PROTOCOL_VERSION,

@@ -1196,6 +1196,25 @@ body {
   white-space: nowrap;
 }
 
+/* ------------------------------------------------------------- push offer */
+
+.pushoffer {
+  padding: 15px;
+  border-radius: var(--r);
+  background: var(--grad-panel);
+  box-shadow: var(--raise-lg);
+}
+.pushoffer p {
+  margin: 0 0 12px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.pushoffer .key {
+  width: 100%;
+}
+
 /* ---------------------------------------------------------------- notices */
 
 .notice {

@@ -6,6 +6,7 @@ import websocket from '@fastify/websocket'
 import type { WebSocket } from 'ws'
 import { parseClientMessage, PROTOCOL_VERSION, type SessionEvent } from '@longleash/protocol'
 import type { EventLog, AppendInput } from './eventlog.js'
+import type { PushNotifier } from './push.js'
 import type { DeviceRegistry } from './auth.js'
 import { PairingError } from './auth.js'
 import { SessionError, type SessionManager } from './sessions.js'
@@ -89,6 +90,7 @@ export class LongLeashServer {
   private peakBufferedBytes = 0
   private sessions: SessionManager | null = null
   private folders: FolderIndex | null = null
+  private push: PushNotifier | null = null
   private readonly staticRoot: string | undefined
   private readonly relayUrl: string | undefined
   private readonly log: (line: string) => void
@@ -154,11 +156,13 @@ export class LongLeashServer {
       this.registerConnection(socket, device.deviceId)
     })
 
-    // Revocation must sever access immediately, not at the next reconnect.
+    // Revocation must sever access immediately, not at the next reconnect —
+    // including the content-free tap on the shoulder.
     this.unsubscribeRevoked = this.registry.onRevoked((deviceId) => {
       for (const connection of this.byDevice.get(deviceId) ?? []) {
         connection.transport.close(CLOSE_REVOKED, 'device revoked')
       }
+      this.push?.removeDevice(deviceId)
     })
 
     await this.app.listen({ host: this.host, port: this.requestedPort })
@@ -220,6 +224,11 @@ export class LongLeashServer {
   /** Lets a phone find a project by name instead of typing an absolute path. */
   attachFolders(folders: FolderIndex): void {
     this.folders = folders
+  }
+
+  /** Wire in lock-screen notifications so an approval can tap a pocket, not just a screen. */
+  attachPush(push: PushNotifier): void {
+    this.push = push
   }
 
   /** Persist an event, then fan it out to every subscriber of that session. */
@@ -346,6 +355,8 @@ export class LongLeashServer {
       capabilities: { startSession: this.sessions !== null, stopSession: this.sessions !== null },
       // Where this daemon can be reached when the LAN cannot see it.
       relay: this.relayUrl === undefined ? null : { url: this.relayUrl },
+      // The VAPID public key a phone needs to subscribe for lock-screen alerts.
+      push: this.push === null ? null : { publicKey: this.push.publicKey },
     })
   }
 
@@ -388,6 +399,29 @@ export class LongLeashServer {
         return
       }
       for (const event of replay.events) this.sendTo(connection, event)
+      return
+    }
+
+    if (message.type === 'pushSubscribe') {
+      if (this.push === null) {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          code: 'not-implemented',
+          message: 'Push notifications are not enabled on this daemon',
+        })
+        return
+      }
+      // Subscriptions belong to the device that sent them; revoking it revokes these.
+      this.push.register(connection.deviceId, message.subscription)
+      this.log(`push subscription registered for ${connection.deviceId}`)
+      this.sendTo(connection, { v: PROTOCOL_VERSION, type: 'ack', of: 'pushSubscribe', outcome: 'registered' })
+      return
+    }
+
+    if (message.type === 'pushUnsubscribe') {
+      this.push?.remove(message.endpoint)
+      this.sendTo(connection, { v: PROTOCOL_VERSION, type: 'ack', of: 'pushUnsubscribe', outcome: 'removed' })
       return
     }
 

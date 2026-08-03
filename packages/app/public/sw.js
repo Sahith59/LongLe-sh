@@ -23,6 +23,46 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+/**
+ * Lock-screen alerts. The payload carries IDs only — the daemon enforces it — so the
+ * words shown here are deliberately generic. The in-app inbox is the source of truth;
+ * this is just the tap on the shoulder.
+ */
+self.addEventListener('push', (event) => {
+  let data = {}
+  try {
+    data = event.data ? event.data.json() : {}
+  } catch {
+    // An unreadable payload still means "something needs you".
+  }
+  event.waitUntil(
+    (async () => {
+      // If the app is open and visible the inbox already shows it; don't double-tap.
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      if (windows.some((w) => w.visibilityState === 'visible')) return
+      await self.registration.showNotification('LongLeash', {
+        body: 'A session needs you.',
+        tag: data.approvalId || 'longleash-approval',
+        data,
+        icon: '/icon.svg',
+        badge: '/icon.svg',
+      })
+    })(),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      const existing = windows[0]
+      if (existing) return existing.focus()
+      return self.clients.openWindow('/')
+    })(),
+  )
+})
+
 self.addEventListener('fetch', (event) => {
   const request = event.request
   if (request.method !== 'GET') return

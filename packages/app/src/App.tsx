@@ -36,6 +36,7 @@ import {
 } from './ui/primitives.js'
 import { ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
 import { PathChip } from './ui/PathChip.js'
+import { enablePush, pushPermission, syncPush } from './lib/push.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
@@ -50,6 +51,8 @@ export default function App() {
   const [folders, setFolders] = useState<FolderHit[]>([])
   const [openSessionId, setOpenSessionId] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [pushKey, setPushKey] = useState<string | null>(null)
+  const [alertsOffered, setAlertsOffered] = useState(false)
   const clientRef = useRef<Client | null>(null)
 
   useEffect(() => {
@@ -77,6 +80,16 @@ export default function App() {
       onState: setState,
       onHello: (hello: Hello) => {
         setRoots(hello.roots)
+        const key = hello.push?.publicKey ?? null
+        setPushKey(key)
+        setAlertsOffered(key !== null && pushPermission() === 'default')
+        // Already granted? Heal silently: a daemon that lost its push database
+        // gets the subscription back on the next visit, no taps required.
+        if (key !== null && pushPermission() === 'granted') {
+          void syncPush(key).then((subscription) => {
+            if (subscription) clientRef.current?.pushSubscribe(subscription)
+          })
+        }
       },
       onError: setError,
       onFolders: (_query, results) => setFolders(results),
@@ -118,6 +131,15 @@ export default function App() {
   )
 
   const search = useCallback((query: string) => clientRef.current?.findFolders(query), [])
+
+  const enableAlerts = useCallback(() => {
+    if (!pushKey) return
+    void enablePush(pushKey).then((subscription) => {
+      if (subscription) clientRef.current?.pushSubscribe(subscription)
+      // Whatever the answer, the offer is settled — asking twice is nagging.
+      setAlertsOffered(false)
+    })
+  }, [pushKey])
 
   if (!token) {
     return (
@@ -206,6 +228,7 @@ export default function App() {
             onDecide={decide}
             onOpen={setOpenSessionId}
             onNew={() => setSheetOpen(true)}
+            {...(alertsOffered ? { onEnableAlerts: enableAlerts } : {})}
           />
         )}
       </AnimatePresence>
@@ -354,6 +377,7 @@ export function ConsoleScreen({
   onDecide,
   onOpen,
   onNew,
+  onEnableAlerts,
 }: {
   approvals: PendingApproval[]
   active: SessionView[]
@@ -365,6 +389,8 @@ export function ConsoleScreen({
   onDecide: (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => void
   onOpen: (sessionId: string) => void
   onNew: () => void
+  /** Present only while the lock-screen alerts offer is worth showing. */
+  onEnableAlerts?: () => void
 }) {
   const still = useReducedMotion()
   const firstRun = approvals.length === 0 && active.length === 0 && past.length === 0
@@ -437,6 +463,19 @@ export function ConsoleScreen({
                 />
               ))}
             </motion.div>
+          </section>
+        ) : null}
+
+        {onEnableAlerts ? (
+          <section>
+            <SectionLabel>Alerts</SectionLabel>
+            <div className="pushoffer">
+              <p>
+                Get tapped on the shoulder the moment an agent needs you — even with this app
+                closed. The notification carries no content, ever; it only says to look here.
+              </p>
+              <Key onClick={onEnableAlerts}>Enable lock-screen alerts</Key>
+            </div>
           </section>
         ) : null}
 

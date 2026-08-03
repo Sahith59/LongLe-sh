@@ -160,6 +160,38 @@ describe('client messages', () => {
       }),
     ).toThrowError()
   })
+
+  it('parses a push subscription exactly as the browser serialises one', () => {
+    const msg = parseClientMessage({
+      v: PROTOCOL_VERSION,
+      type: 'pushSubscribe',
+      subscription: {
+        endpoint: 'https://web.push.apple.com/QOfNHV7c',
+        expirationTime: null,
+        keys: { p256dh: 'BPk…truncated', auth: 'sVx…truncated' },
+      },
+    })
+    expect(msg.type).toBe('pushSubscribe')
+  })
+
+  it('rejects a push subscription missing its encryption keys — it could never be used', () => {
+    expect(() =>
+      parseClientMessage({
+        v: PROTOCOL_VERSION,
+        type: 'pushSubscribe',
+        subscription: { endpoint: 'https://web.push.apple.com/x' },
+      }),
+    ).toThrowError()
+  })
+
+  it('parses pushUnsubscribe by endpoint', () => {
+    const msg = parseClientMessage({
+      v: PROTOCOL_VERSION,
+      type: 'pushUnsubscribe',
+      endpoint: 'https://fcm.googleapis.com/fcm/send/abc',
+    })
+    expect(msg.type).toBe('pushUnsubscribe')
+  })
 })
 
 describe('type narrowing', () => {

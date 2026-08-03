@@ -10,6 +10,7 @@ import { RelayBridge } from './relay-bridge.js'
 import { createClaudeAgentFactory } from './adapters/claude.js'
 import { readPermissionPosture, type PermissionPosture } from './posture.js'
 import { FolderIndex } from './folders.js'
+import { PushNotifier } from './push.js'
 
 export interface DaemonOptions {
   /** Directories agents may work in. Nothing outside these can be targeted. */
@@ -64,6 +65,18 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   const eventLog = new EventLog(join(dataDir, 'events.db'))
   const registry = new DeviceRegistry(join(dataDir, 'devices.db'))
   const approvals = new ApprovalStore(join(dataDir, 'approvals.db'))
+  const push = new PushNotifier({
+    dbPath: join(dataDir, 'push.db'),
+    keysPath: join(dataDir, 'vapid.json'),
+    // Who a push service may contact about this sender: the relay origin when
+    // one exists, else a placeholder mailto (LAN-only installs never push far).
+    subject:
+      process.env.LONGLEASH_PUSH_SUBJECT ??
+      (options.relayUrl !== undefined
+        ? options.relayUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/ws\/?$/, '')
+        : 'mailto:longleash@localhost.invalid'),
+    log: options.log ?? (() => {}),
+  })
 
   const log = options.log ?? (() => {})
   const stamp = () => new Date().toISOString().slice(11, 19)
@@ -97,6 +110,8 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
         write(`▶ ${event.sessionId} started in ${String(payload.cwd)}`)
       } else if (event.type === 'approval.requested') {
         write(`? ${event.sessionId} needs approval: ${String(payload.inputSummary)}`)
+        // The tap on the pocket. IDs only — the notifier enforces it, this comment remembers it.
+        push.notifyApproval(event.sessionId, String(payload.approvalId))
       } else if (event.type === 'approval.decided') {
         write(`${payload.verdict === 'allow' ? '✓' : '✗'} ${String(payload.verdict)} by ${String(payload.decidedBy)}`)
       } else if (event.type === 'activity.tool') {
@@ -116,6 +131,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   })
   server.attachSessions(sessions)
   server.attachFolders(new FolderIndex(roots))
+  server.attachPush(push)
 
   const { port } = await server.listen()
   const stopMaintenance = sessions.startMaintenance()
@@ -148,6 +164,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       eventLog.close()
       registry.close()
       approvals.close()
+      push.close()
     },
   }
 }
