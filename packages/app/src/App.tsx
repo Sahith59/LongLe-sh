@@ -23,7 +23,7 @@ import { ApprovalCard } from './ui/ApprovalCard.js'
 import { NewSessionSheet } from './ui/NewSessionSheet.js'
 import { SessionCard } from './ui/SessionCard.js'
 import { Transcript } from './ui/Transcript.js'
-import { EASE, EXIT, Key, Led, Notice, SectionLabel, listVariants } from './ui/primitives.js'
+import { EASE, EXIT, Key, Led, Notice, SectionLabel, SPRING, listVariants } from './ui/primitives.js'
 import { ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
 import { PathChip } from './ui/PathChip.js'
 
@@ -163,7 +163,12 @@ export default function App() {
         {...(openSession ? { onBack: () => setOpenSessionId(null) } : {})}
       />
 
-      <AnimatePresence mode="wait" initial={false}>
+      {/* Both screens live in the same grid cell (.screens), so during a transition
+          they overlap instead of stacking — the outgoing one can never push the
+          incoming one down the page. That, plus transform-free screen fades, is what
+          lets the shared title measure an honest flight path between them. */}
+      <div className="screens">
+      <AnimatePresence initial={false}>
         {openSession ? (
           <DetailScreen
             key={openSession.sessionId}
@@ -194,6 +199,7 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+      </div>
 
       <NewSessionSheet
         open={sheetOpen}
@@ -493,7 +499,12 @@ export function DetailScreen({
 
         <div className="detailhead">
           <div className="toprow">
-            <h2>{session.title || session.sessionId}</h2>
+            <motion.h2
+              {...(still ? {} : { layoutId: `title-${session.sessionId}` })}
+              transition={SPRING}
+            >
+              {session.title || session.sessionId}
+            </motion.h2>
             {live ? (
               <Key className="sm stopkey" onClick={onStop} label="Stop this agent">
                 <Square size={13} strokeWidth={2.6} fill="currentColor" aria-hidden="true" />
@@ -605,24 +616,25 @@ export function DetailScreen({
 /* --------------------------------------------------------------- scaffolding */
 
 /**
- * Screens slide along one axis so the hierarchy is legible: a session sits "deeper" than the
- * console and enters from that side, so going back always feels like retreating the way you came.
+ * Screens crossfade; the SPACE is carried by the shared title, which physically flies
+ * between the card and the headline. When motion is reduced (or a title has no partner,
+ * e.g. deep history), the crossfade alone still tells the story.
  */
 function Screen({
   children,
-  depth,
-  still,
 }: {
   children: React.ReactNode
   depth: 1 | -1
   still: boolean | null
 }) {
-  const offset = still ? 0 : depth * 26
+  // Opacity ONLY — never a transform. An animating ancestor transform skews the
+  // measurement of the shared title's flight path, which sent it sailing to the
+  // wrong corner of the screen in testing. The title carries all the motion.
   return (
     <motion.div
-      initial={{ opacity: 0, x: offset }}
-      animate={{ opacity: 1, x: 0, transition: EASE }}
-      exit={{ opacity: 0, x: offset, transition: EXIT }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1, transition: EASE }}
+      exit={{ opacity: 0, transition: EXIT }}
     >
       {children}
     </motion.div>

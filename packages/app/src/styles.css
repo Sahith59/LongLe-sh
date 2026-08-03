@@ -138,6 +138,22 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+#root {
+  position: relative;
+}
+
+/* During a screen transition both the outgoing and incoming screen are mounted.
+   They share one grid cell so they overlap — in-flow stacking would push the
+   incoming screen below the outgoing one for a frame, and the shared title
+   would measure a flight path to a place the header never was. */
+.screens {
+  display: grid;
+}
+.screens > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
 html {
   background: var(--ground);
 }
@@ -339,8 +355,10 @@ body {
     filter: brightness(1.09);
   }
 }
+/* the transform is motion's job (spring-driven, interruptible); CSS supplies
+   the material change — shadow collapses, gradient flips — so the two never
+   fight over the same property */
 .key:active:not(:disabled) {
-  transform: translateY(1px) scale(0.988);
   box-shadow: var(--pressed);
   background: linear-gradient(172deg, var(--key-lo) 0%, var(--key-mid) 100%);
   filter: none;

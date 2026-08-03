@@ -6,7 +6,9 @@
  * Not part of the app bundle: `vite build` only emits index.html.
  *   pnpm --filter @longleash/app dev  →  http://localhost:5173/preview.html?screen=console
  */
+import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { AnimatePresence } from 'motion/react'
 import { ConsoleScreen, DetailScreen, Rail } from './App.js'
 import { NewSessionSheet } from './ui/NewSessionSheet.js'
 import type { PendingApproval, SessionView, StoreState } from './lib/store.js'
@@ -210,7 +212,56 @@ const never = () => false
 
 const screen = new URLSearchParams(location.search).get('screen') ?? 'console'
 
+/**
+ * The one stateful preview: console ⇄ detail with the SAME AnimatePresence
+ * wiring as the real App, so the shared-element title morph can be exercised
+ * and screen-recorded without pairing a phone.
+ */
+function Flow() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Rail connected via="lan" {...(open ? { onBack: () => setOpen(false) } : {})} />
+      <div className="screens">
+      <AnimatePresence initial={false}>
+        {open ? (
+          <DetailScreen
+            key="detail"
+            session={sticknotes}
+            approvals={[]}
+            connected
+            diagnostic={null}
+            error={null}
+            onClearError={noop}
+            onDecide={noop}
+            onStop={noop}
+            onResume={noop}
+            onSend={never}
+          />
+        ) : (
+          <ConsoleScreen
+            key="console"
+            approvals={[]}
+            active={[sticknotes, resume]}
+            past={[scraper]}
+            snapshot={{ sessions: snapshot.sessions, approvals: [] }}
+            diagnostic={null}
+            error={null}
+            onClearError={noop}
+            onDecide={noop}
+            onOpen={() => setOpen(true)}
+            onNew={noop}
+          />
+        )}
+      </AnimatePresence>
+      </div>
+    </>
+  )
+}
+
 function Preview() {
+  if (screen === 'flow') return <Flow />
+
   if (screen === 'detail') {
     return (
       <>

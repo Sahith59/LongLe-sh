@@ -69,7 +69,7 @@ export function Key({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      {...(disabled ? {} : { whileTap: { scale: 0.975 } })}
+      {...(disabled ? {} : { whileTap: { y: 1, scale: 0.985 } })}
       transition={SPRING}
     >
       {children}

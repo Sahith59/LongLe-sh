@@ -1,7 +1,7 @@
-import { motion } from 'motion/react'
+import { motion, useReducedMotion } from 'motion/react'
 import { ChevronRight, Radio } from 'lucide-react'
 import type { SessionView } from '../lib/store.js'
-import { Led, itemVariants } from './primitives.js'
+import { Led, SPRING, itemVariants } from './primitives.js'
 import { ORIGIN_LABEL, STATUS_LABEL } from './format.js'
 import { PathChip } from './PathChip.js'
 
@@ -24,6 +24,7 @@ export function SessionCard({
 }) {
   const preview = session.output.trim().slice(-180)
   const past = session.status === 'ended' || session.status === 'errored'
+  const still = useReducedMotion()
 
   return (
     <motion.article
@@ -32,7 +33,16 @@ export function SessionCard({
     >
       <button type="button" className="opener" onClick={onOpen}>
         <Led status={session.status} />
-        <h3 className="name">{session.title || session.sessionId}</h3>
+        {/* Shared with the detail header: opening a session, its title physically
+            glides from this card into the headline — the card does not vanish and
+            get replaced, it BECOMES the screen you are now on. */}
+        <motion.h3
+          className="name"
+          {...(still ? {} : { layoutId: `title-${session.sessionId}` })}
+          transition={SPRING}
+        >
+          {session.title || session.sessionId}
+        </motion.h3>
         <ChevronRight className="chev" size={18} strokeWidth={2.2} aria-hidden="true" />
       </button>
 
