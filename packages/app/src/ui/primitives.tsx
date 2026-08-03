@@ -1,6 +1,37 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { motion, type Transition, type Variants } from 'motion/react'
 import { TriangleAlert, X } from 'lucide-react'
+
+/**
+ * How much of the layout viewport the on-screen keyboard is covering, in px.
+ *
+ * On iOS the keyboard does not resize the page — it slides OVER it, and any
+ * fixed bottom-anchored surface (the new-session sheet, the reply dock) ends
+ * up behind the keys, forcing a manual scroll to reach what you were typing
+ * toward. The visual viewport is the only API that knows the keyboard's true
+ * size, so those surfaces are lifted by exactly that.
+ */
+export function useKeyboardInset(active: boolean): number {
+  const [inset, setInset] = useState(0)
+  useEffect(() => {
+    if (!active) {
+      setInset(0)
+      return
+    }
+    const vv = window.visualViewport
+    if (!vv) return
+    const update = () =>
+      setInset(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)))
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    update()
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [active])
+  return inset
+}
 
 /** One motion vocabulary for the whole app, so nothing feels borrowed from elsewhere. */
 export const SPRING: Transition = { type: 'spring', stiffness: 380, damping: 34, mass: 0.9 }

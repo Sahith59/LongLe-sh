@@ -939,11 +939,11 @@ body {
 .blk.mine {
   align-self: flex-end;
   max-width: 84%;
-  background: linear-gradient(172deg, #dcdee2 0%, #cdcfd4 52%, #c4c6cb 100%);
-  color: #17181c;
+  background: linear-gradient(172deg, #c0c2c8 0%, #b1b4ba 52%, #a7aab1 100%);
+  color: #141519;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.16),
     0 1px 2px rgba(0, 0, 0, 0.45),
     0 6px 14px rgba(0, 0, 0, 0.3);
   border-radius: var(--r) var(--r) var(--r-sm) var(--r);

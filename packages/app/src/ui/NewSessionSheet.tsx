@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { File, Folder, Search } from 'lucide-react'
 import type { FolderHit } from '../lib/client.js'
-import { EXIT, Key, SPRING } from './primitives.js'
+import { EXIT, Key, SPRING, useKeyboardInset } from './primitives.js'
 import { fileName, parentPath } from './format.js'
 
 const DISMISS_DISTANCE = 110
@@ -25,6 +25,7 @@ export function NewSessionSheet({
   onStart: (dir: string, prompt: string) => boolean
   onClose: () => void
 }) {
+  const keyboard = useKeyboardInset(open)
   return (
     <AnimatePresence>
       {open ? (
@@ -38,6 +39,9 @@ export function NewSessionSheet({
           />
           <motion.div
             className="sheet"
+            {...(keyboard > 0
+              ? { style: { bottom: keyboard, maxHeight: `calc(100dvh - ${keyboard + 10}px)` } }
+              : {})}
             role="dialog"
             aria-modal="true"
             aria-label="Start a new session"

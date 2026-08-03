@@ -23,7 +23,17 @@ import { ApprovalCard } from './ui/ApprovalCard.js'
 import { NewSessionSheet } from './ui/NewSessionSheet.js'
 import { SessionCard } from './ui/SessionCard.js'
 import { Transcript } from './ui/Transcript.js'
-import { EASE, EXIT, Key, Led, Notice, SectionLabel, SPRING, listVariants } from './ui/primitives.js'
+import {
+  EASE,
+  EXIT,
+  Key,
+  Led,
+  Notice,
+  SectionLabel,
+  SPRING,
+  listVariants,
+  useKeyboardInset,
+} from './ui/primitives.js'
 import { ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
 import { PathChip } from './ui/PathChip.js'
 
@@ -476,6 +486,7 @@ export function DetailScreen({
 }) {
   const [message, setMessage] = useState('')
   const still = useReducedMotion()
+  const keyboard = useKeyboardInset(true)
   // Typing wakes a dormant conversation, so the composer belongs to anything continuable —
   // not only to what happens to be running right now.
   const live = session.status === 'running' || session.status === 'waiting'
@@ -576,7 +587,7 @@ export function DetailScreen({
         </section>
       </main>
 
-      <div className="dock">
+      <div className="dock" {...(keyboard > 0 ? { style: { bottom: keyboard } } : {})}>
         {canType ? (
           <div className="dock-in">
             <textarea
