@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import qrcode from 'qrcode-terminal'
 import { startDaemon } from '../src/daemon.js'
-import { normalizeRelayUrl } from '../src/relay-bridge.js'
+import { resolveRelayUrl } from '../src/config.js'
 import { hostPairing } from '../src/pairing-host.js'
 import { findCandidates, vpnWarning } from '../demo/lan.js'
 
@@ -25,9 +26,12 @@ if (!best) {
   process.exit(1)
 }
 
-const relayUrl = process.env.LONGLEASH_RELAY_URL
-  ? normalizeRelayUrl(process.env.LONGLEASH_RELAY_URL)
-  : undefined
+// Set LONGLEASH_RELAY_URL once and it is remembered; `off` forgets it.
+const dataDir = process.env.LONGLEASH_DATA ?? join(homedir(), '.longleash')
+const relay = resolveRelayUrl(process.env.LONGLEASH_RELAY_URL, dataDir)
+if (relay?.source === 'remembered') {
+  console.log(`Relay: ${relay.url} (remembered — LONGLEASH_RELAY_URL=off forgets it)`)
+}
 
 const daemon = await startDaemon({
   allowedRoots: roots,
@@ -37,10 +41,9 @@ const daemon = await startDaemon({
   denyOutsideRoot: process.env.LONGLEASH_STRICT !== '0',
   // LONGLEASH_ASK_EVERYTHING=1 pre-approves nothing, so even reading a file comes to your phone.
   ...(process.env.LONGLEASH_ASK_EVERYTHING === '1' ? { allowedTools: [] } : {}),
-  // Separate instances (or a clean test run) can keep their own storage.
-  ...(process.env.LONGLEASH_DATA ? { dataDir: process.env.LONGLEASH_DATA } : {}),
+  dataDir,
   log: (line) => console.log(line),
-  ...(relayUrl === undefined ? {} : { relayUrl }),
+  ...(relay === null ? {} : { relayUrl: relay.url }),
 })
 
 /** The relay's app origin: where a phone can live even when this laptop is unreachable. */
@@ -58,9 +61,9 @@ function relayAppOrigin(wsUrl: string): string {
  */
 function freshPairingUrl(): string {
   const challenge = daemon.registry.createPairingChallenge()
-  if (relayUrl) {
-    hostPairing({ registry: daemon.registry, relayUrl, challenge, log: (line) => console.log(`[pair] ${line}`) })
-    return `${relayAppOrigin(relayUrl)}?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
+  if (relay !== null) {
+    hostPairing({ registry: daemon.registry, relayUrl: relay.url, challenge, log: (line) => console.log(`[pair] ${line}`) })
+    return `${relayAppOrigin(relay.url)}?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
   }
   return `http://${best.address}:${daemon.port}/?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
 }
@@ -99,14 +102,14 @@ console.log('Agents may work only in:')
 for (const root of roots) console.log(`  ${resolve(root)}`)
 console.log(`\nListening on ${best.address}:${daemon.port} (${best.iface}, ${best.label})`)
 console.log(
-  relayUrl
-    ? `Relay: ${relayUrl} — your phone can reach this laptop from anywhere.`
-    : 'Relay: not configured (LAN only). Set LONGLEASH_RELAY_URL to enable remote access.',
+  relay !== null
+    ? `Relay: ${relay.url} — your phone can reach this laptop from anywhere.`
+    : 'Relay: not configured (LAN only). Set LONGLEASH_RELAY_URL once to enable remote access — it is remembered.',
 )
 console.log('\nScan this with your phone, then add it to your home screen:\n')
 qrcode.generate(url, { small: true })
 console.log(`\n  ${url}\n`)
-if (relayUrl) {
+if (relay !== null) {
   console.log(`(LAN fallback for pairing at home: http://${best.address}:${daemon.port}/?c=…&s=… — same code)`)
 }
 console.log('Press n + Enter for a fresh pairing QR, r + Enter to revoke every device, q + Enter to quit.\n')
