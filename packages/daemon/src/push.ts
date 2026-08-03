@@ -139,6 +139,35 @@ export class PushNotifier {
     }
   }
 
+  /**
+   * A test tap for ONE device — the button that turns "is it working?" from a
+   * mystery into a fact. Same IDs-only discipline: the payload names its kind
+   * and nothing else.
+   */
+  notifyTest(deviceId: string): number {
+    const rows = this.db
+      .prepare('SELECT endpoint, device_id, json FROM push_subscriptions WHERE device_id = ?')
+      .all(deviceId) as SubscriptionRow[]
+    const payload = JSON.stringify({ t: 'test' })
+    for (const row of rows) {
+      let subscription: PushSubscriptionJson
+      try {
+        subscription = JSON.parse(row.json) as PushSubscriptionJson
+      } catch {
+        this.remove(row.endpoint)
+        continue
+      }
+      void this.send(subscription, payload, { TTL: 60, urgency: 'high' })
+        .then(() => this.log(`push: test delivered to ${deviceId}`))
+        .catch((err: unknown) => {
+          const status = (err as { statusCode?: number }).statusCode
+          if (status === 404 || status === 410) this.remove(row.endpoint)
+          this.log(`push: test failed for ${deviceId} (${String(status ?? err)})`)
+        })
+    }
+    return rows.length
+  }
+
   close(): void {
     this.db.close()
   }

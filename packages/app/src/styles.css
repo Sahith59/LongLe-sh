@@ -1214,6 +1214,18 @@ body {
 .pushoffer .key {
   width: 100%;
 }
+.pushoffer .aftertest {
+  margin: 10px 0 0;
+  font: 400 11.5px/1.5 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-3);
+}
+.pushoffer .mono {
+  color: var(--ink);
+  background: var(--recess);
+  box-shadow: var(--engrave);
+  padding: 1.5px 6px;
+  border-radius: 5px;
+}
 
 /* ---------------------------------------------------------------- notices */
 

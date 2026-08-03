@@ -148,6 +148,21 @@ describe('lock-screen notifications', () => {
     notifier.close()
   })
 
+  it('a test tap goes only to the device that asked for it', async () => {
+    const sent: Sent[] = []
+    const notifier = makeNotifier({ sent })
+    notifier.register('dev_A', APPLE)
+    notifier.register('dev_B', GOOGLE)
+
+    expect(notifier.notifyTest('dev_A')).toBe(1)
+    await settled()
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.subscription.endpoint).toBe(APPLE.endpoint)
+    expect(JSON.parse(sent[0]!.payload)).toEqual({ t: 'test' })
+    notifier.close()
+  })
+
   it('subscriptions survive a daemon restart', () => {
     const first = makeNotifier({})
     first.register('dev_A', APPLE)

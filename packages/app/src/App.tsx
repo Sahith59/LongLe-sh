@@ -52,7 +52,7 @@ export default function App() {
   const [openSessionId, setOpenSessionId] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [pushKey, setPushKey] = useState<string | null>(null)
-  const [alertsOffered, setAlertsOffered] = useState(false)
+  const [alerts, setAlerts] = useState<AlertsState | null>(null)
   const clientRef = useRef<Client | null>(null)
 
   useEffect(() => {
@@ -82,14 +82,22 @@ export default function App() {
         setRoots(hello.roots)
         const key = hello.push?.publicKey ?? null
         setPushKey(key)
-        setAlertsOffered(key !== null && pushPermission() === 'default')
-        // Already granted? Heal silently: a daemon that lost its push database
-        // gets the subscription back on the next visit, no taps required.
-        if (key !== null && pushPermission() === 'granted') {
+        const permission = pushPermission()
+        if (permission === 'unsupported') setAlerts('unsupported')
+        else if (key === null) setAlerts('stale-daemon')
+        else if (permission === 'denied') setAlerts('denied')
+        else if (permission === 'granted') {
+          // Heal silently: a daemon that lost its push database gets the
+          // subscription back on the next visit, no taps required.
           void syncPush(key).then((subscription) => {
-            if (subscription) clientRef.current?.pushSubscribe(subscription)
+            if (subscription) {
+              clientRef.current?.pushSubscribe(subscription)
+              setAlerts('on')
+            } else {
+              setAlerts('ready')
+            }
           })
-        }
+        } else setAlerts('ready')
       },
       onError: setError,
       onFolders: (_query, results) => setFolders(results),
@@ -135,11 +143,16 @@ export default function App() {
   const enableAlerts = useCallback(() => {
     if (!pushKey) return
     void enablePush(pushKey).then((subscription) => {
-      if (subscription) clientRef.current?.pushSubscribe(subscription)
-      // Whatever the answer, the offer is settled — asking twice is nagging.
-      setAlertsOffered(false)
+      if (subscription) {
+        clientRef.current?.pushSubscribe(subscription)
+        setAlerts('on')
+      } else {
+        setAlerts(pushPermission() === 'denied' ? 'denied' : 'ready')
+      }
     })
   }, [pushKey])
+
+  const testAlert = useCallback(() => clientRef.current?.pushTest() ?? false, [])
 
   if (!token) {
     return (
@@ -228,7 +241,9 @@ export default function App() {
             onDecide={decide}
             onOpen={setOpenSessionId}
             onNew={() => setSheetOpen(true)}
-            {...(alertsOffered ? { onEnableAlerts: enableAlerts } : {})}
+            alerts={alerts}
+            onEnableAlerts={enableAlerts}
+            onTestAlert={testAlert}
           />
         )}
       </AnimatePresence>
@@ -377,7 +392,9 @@ export function ConsoleScreen({
   onDecide,
   onOpen,
   onNew,
+  alerts,
   onEnableAlerts,
+  onTestAlert,
 }: {
   approvals: PendingApproval[]
   active: SessionView[]
@@ -389,8 +406,9 @@ export function ConsoleScreen({
   onDecide: (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => void
   onOpen: (sessionId: string) => void
   onNew: () => void
-  /** Present only while the lock-screen alerts offer is worth showing. */
+  alerts?: AlertsState | null
   onEnableAlerts?: () => void
+  onTestAlert?: () => boolean
 }) {
   const still = useReducedMotion()
   const firstRun = approvals.length === 0 && active.length === 0 && past.length === 0
@@ -466,16 +484,14 @@ export function ConsoleScreen({
           </section>
         ) : null}
 
-        {onEnableAlerts ? (
+        {alerts ? (
           <section>
             <SectionLabel>Alerts</SectionLabel>
-            <div className="pushoffer">
-              <p>
-                Get tapped on the shoulder the moment an agent needs you — even with this app
-                closed. The notification carries no content, ever; it only says to look here.
-              </p>
-              <Key onClick={onEnableAlerts}>Enable lock-screen alerts</Key>
-            </div>
+            <AlertsPanel
+              state={alerts}
+              {...(onEnableAlerts ? { onEnable: onEnableAlerts } : {})}
+              {...(onTestAlert ? { onTest: onTestAlert } : {})}
+            />
           </section>
         ) : null}
 
@@ -660,6 +676,87 @@ export function DetailScreen({
         )}
       </div>
     </Screen>
+  )
+}
+
+/* ------------------------------------------------------------------- alerts */
+
+/**
+ * Every reason lock-screen alerts might not be working, as a state with a name —
+ * because "the section just isn't there" cost a real evening of guessing.
+ */
+export type AlertsState = 'unsupported' | 'stale-daemon' | 'ready' | 'on' | 'denied'
+
+function AlertsPanel({
+  state,
+  onEnable,
+  onTest,
+}: {
+  state: AlertsState
+  onEnable?: () => void
+  onTest?: () => boolean
+}) {
+  const [tested, setTested] = useState(false)
+
+  if (state === 'unsupported') {
+    return (
+      <div className="pushoffer">
+        <p>
+          This browser cannot show lock-screen alerts. On iPhone, open LongLeash from its{' '}
+          <strong>home-screen icon</strong> — Safari tabs are not allowed to send notifications.
+        </p>
+      </div>
+    )
+  }
+  if (state === 'stale-daemon') {
+    return (
+      <div className="pushoffer">
+        <p>
+          Your laptop is running an older daemon that cannot send alerts yet. In its terminal
+          press <span className="mono">q</span>, then start it again with{' '}
+          <span className="mono">pnpm start ~</span>.
+        </p>
+      </div>
+    )
+  }
+  if (state === 'denied') {
+    return (
+      <div className="pushoffer">
+        <p>
+          Notifications are switched off for LongLeash. Turn them on in iPhone{' '}
+          <strong>Settings → Notifications → LongLeash → Allow</strong>, then reopen this app.
+        </p>
+      </div>
+    )
+  }
+  if (state === 'on') {
+    return (
+      <div className="pushoffer">
+        <p>
+          Lock-screen alerts are <strong>on</strong>. When an agent needs you, your phone gets a
+          content-free tap — the words stay in here.
+        </p>
+        <Key
+          onClick={() => {
+            if (onTest?.()) setTested(true)
+          }}
+        >
+          {tested ? 'Sent — lock your phone now' : 'Send a test alert'}
+        </Key>
+        {tested ? (
+          <p className="aftertest">The test arrives a few seconds after you lock the screen.</p>
+        ) : null}
+      </div>
+    )
+  }
+  return (
+    <div className="pushoffer">
+      <p>
+        Get tapped on the shoulder the moment an agent needs you — even with this app closed. The
+        notification carries no content, ever; it only says to look here.
+      </p>
+      <Key {...(onEnable ? { onClick: onEnable } : {})}>Enable lock-screen alerts</Key>
+    </div>
   )
 }
 

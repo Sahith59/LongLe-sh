@@ -425,6 +425,21 @@ export class LongLeashServer {
       return
     }
 
+    if (message.type === 'pushTest') {
+      const targets = this.push?.count() ?? 0
+      if (this.push === null || targets === 0) {
+        this.sendTo(connection, { v: PROTOCOL_VERSION, type: 'ack', of: 'pushTest', outcome: 'no-subscription' })
+        return
+      }
+      // Delayed on purpose: the notification is suppressed while the app is on screen,
+      // so the person needs a moment to lock the phone and actually see it land.
+      const deviceId = connection.deviceId
+      setTimeout(() => this.push?.notifyTest(deviceId), 4000)
+      this.log(`push test scheduled for ${deviceId}`)
+      this.sendTo(connection, { v: PROTOCOL_VERSION, type: 'ack', of: 'pushTest', outcome: 'scheduled' })
+      return
+    }
+
     if (message.type === 'findFolders') {
       this.sendTo(connection, {
         v: PROTOCOL_VERSION,

@@ -542,6 +542,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     },
     pushSubscribe: (subscription: unknown) =>
       send({ v: PROTOCOL_VERSION, type: 'pushSubscribe', subscription }),
+    pushTest: () => send({ v: PROTOCOL_VERSION, type: 'pushTest' }),
     decide: (approvalId: string, verdict: 'allow' | 'deny', reply?: string) =>
       send({
         v: PROTOCOL_VERSION,

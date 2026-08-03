@@ -37,6 +37,17 @@ self.addEventListener('push', (event) => {
   }
   event.waitUntil(
     (async () => {
+      // A test alert always shows — its entire purpose is to be seen.
+      if (data.t === 'test') {
+        await self.registration.showNotification('LongLeash', {
+          body: 'Test alert — lock-screen alerts are working.',
+          tag: 'longleash-test',
+          data,
+          icon: '/icon.svg',
+          badge: '/icon.svg',
+        })
+        return
+      }
       // If the app is open and visible the inbox already shows it; don't double-tap.
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       if (windows.some((w) => w.visibilityState === 'visible')) return

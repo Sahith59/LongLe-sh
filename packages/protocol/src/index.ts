@@ -183,6 +183,14 @@ const pushUnsubscribeMessage = z
   })
   .passthrough()
 
+/** Ask the daemon to send this device a test notification, so "is it working?" has a button. */
+const pushTestMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('pushTest'),
+  })
+  .passthrough()
+
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   subscribeMessage,
   decisionMessage,
@@ -193,6 +201,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   findFoldersMessage,
   pushSubscribeMessage,
   pushUnsubscribeMessage,
+  pushTestMessage,
 ])
 export type ClientMessage = z.infer<typeof ClientMessageSchema>
 

@@ -184,6 +184,11 @@ describe('client messages', () => {
     ).toThrowError()
   })
 
+  it('parses the test-alert request — it carries nothing but its type', () => {
+    const msg = parseClientMessage({ v: PROTOCOL_VERSION, type: 'pushTest' })
+    expect(msg.type).toBe('pushTest')
+  })
+
   it('parses pushUnsubscribe by endpoint', () => {
     const msg = parseClientMessage({
       v: PROTOCOL_VERSION,
