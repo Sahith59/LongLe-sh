@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FileText, SquareTerminal, Wrench } from 'lucide-react'
 import { fileName, parentPath, shortPath, splitTool, toolIcon } from '../src/ui/format.js'
+import { parsePairingLink } from '../src/App.js'
 
 describe('shortening a path for a phone', () => {
   it('keeps the last two segments, which is what identifies the project', () => {
@@ -80,5 +81,34 @@ describe('tool glyphs', () => {
   it('falls back to a generic glyph for a tool it has never seen, rather than rendering nothing', () => {
     expect(toolIcon('SomeFutureMcpTool')).toBe(Wrench)
     expect(toolIcon('')).toBe(Wrench)
+  })
+})
+
+describe('reading a pairing link', () => {
+  it('accepts the full URL the laptop prints', () => {
+    expect(parsePairingLink('https://relay.example.dev/?c=chl_abc&s=SEC-ret_1')).toEqual({
+      challengeId: 'chl_abc',
+      secret: 'SEC-ret_1',
+    })
+  })
+
+  it('accepts just the query part, because that is what half-selecting a URL gives you', () => {
+    expect(parsePairingLink('?c=chl_abc&s=xyz')).toEqual({ challengeId: 'chl_abc', secret: 'xyz' })
+    expect(parsePairingLink('c=chl_abc&s=xyz')).toEqual({ challengeId: 'chl_abc', secret: 'xyz' })
+  })
+
+  it('tolerates stray whitespace from a paste', () => {
+    expect(parsePairingLink('  https://r.dev/?c=a&s=b \n')).toEqual({ challengeId: 'a', secret: 'b' })
+  })
+
+  it('decodes a percent-encoded secret rather than pairing with the wrong one', () => {
+    expect(parsePairingLink('?c=a&s=x%2Fy%2Bz')?.secret).toBe('x/y+z')
+  })
+
+  it('refuses anything that is not a pairing link', () => {
+    expect(parsePairingLink('')).toBeNull()
+    expect(parsePairingLink('https://relay.example.dev/')).toBeNull()
+    expect(parsePairingLink('?c=only-the-challenge')).toBeNull()
+    expect(parsePairingLink('hello world')).toBeNull()
   })
 })

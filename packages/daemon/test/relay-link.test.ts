@@ -22,12 +22,15 @@ afterEach(async () => {
   await relay.close()
 })
 
-function makeLink(opts: { onMessage?: (text: string) => void; url?: string } = {}): RelayLink {
+function makeLink(
+  opts: { onMessage?: (text: string) => void; url?: string; keepaliveMs?: number } = {},
+): RelayLink {
   const link = new RelayLink({
     url: opts.url ?? `ws://${HOST}:${port}/ws`,
     secret: SECRET,
     onMessage: opts.onMessage ?? (() => {}),
     backoffMs: { min: 40, max: 120 },
+    ...(opts.keepaliveMs === undefined ? {} : { keepaliveMs: opts.keepaliveMs }),
   })
   links.push(link)
   return link
@@ -134,6 +137,39 @@ describe('the daemon side of the relay', () => {
     await relay.listen()
     await new Promise((r) => setTimeout(r, 300))
     expect(link.status).toBe('stopped')
+  })
+
+  it('keeps the room alive with periodic pings — idle sockets get culled in transit', async () => {
+    // Cloudflare (and most proxies) close a WebSocket that has carried nothing for ~100s.
+    // Without this the link died and rebuilt every minute forever, which is exactly what a
+    // daemon terminal full of repeating "relay room joined" lines was telling us.
+    const seen: string[] = []
+    const spy = new WebSocketServer({ host: HOST, port: 0 })
+    spy.on('connection', (socket) => {
+      socket.on('message', (raw) => {
+        const type = (JSON.parse(String(raw)) as { type?: string }).type
+        if (type) seen.push(type)
+        if (type === 'join') socket.send(JSON.stringify({ type: 'joined', host: true, guests: 0 }))
+      })
+    })
+    const port = await new Promise<number>((resolve) => {
+      spy.once('listening', () => {
+        const address = spy.address()
+        resolve(typeof address === 'object' && address !== null ? address.port : 0)
+      })
+    })
+
+    const link = makeLink({ url: `ws://${HOST}:${port}/ws`, keepaliveMs: 60 })
+    link.start()
+    await until(() => seen.filter((t) => t === 'ping').length >= 2, 4000)
+    expect(seen[0]).toBe('join')
+    link.stop()
+
+    // Stopping must also stop the pings; a zombie timer would outlive the link.
+    const after = seen.filter((t) => t === 'ping').length
+    await new Promise((r) => setTimeout(r, 250))
+    expect(seen.filter((t) => t === 'ping').length).toBe(after)
+    await new Promise<void>((resolve) => spy.close(() => resolve()))
   })
 
   it('survives a malicious relay speaking garbage', async () => {

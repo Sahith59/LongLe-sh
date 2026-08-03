@@ -22,6 +22,12 @@ export interface RelayLinkOptions {
   onPeer?: (event: 'joined' | 'left') => void
   log?: (line: string) => void
   backoffMs?: { min: number; max: number }
+  /**
+   * How often to send an application-level ping. Cloudflare and most proxies cull a
+   * WebSocket that has carried nothing for roughly 100 seconds, so a quiet room must
+   * still say something or it is torn down and rebuilt every minute, forever.
+   */
+  keepaliveMs?: number
 }
 
 /**
@@ -42,11 +48,14 @@ export class RelayLink {
   private currentStatus: RelayLinkStatus = 'stopped'
   private attempt = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null
+  private readonly keepaliveMs: number
 
   constructor(opts: RelayLinkOptions) {
     this.opts = opts
     this.log = opts.log ?? (() => {})
     this.backoff = opts.backoffMs ?? { min: 500, max: 15_000 }
+    this.keepaliveMs = opts.keepaliveMs ?? 30_000
   }
 
   get status(): RelayLinkStatus {
@@ -68,8 +77,14 @@ export class RelayLink {
     this.setStatus('stopped')
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.reconnectTimer = null
+    this.stopKeepalive()
     this.socket?.close()
     this.socket = null
+  }
+
+  private stopKeepalive(): void {
+    if (this.keepaliveTimer !== null) clearInterval(this.keepaliveTimer)
+    this.keepaliveTimer = null
   }
 
   /** Seal and send. Quietly drops when the room is unreachable — replay covers the gap. */
@@ -117,6 +132,13 @@ export class RelayLink {
         this.attempt = 0
         this.setStatus('connected')
         this.log('relay room joined')
+        this.stopKeepalive()
+        this.keepaliveTimer = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ v: 1, type: 'ping' }))
+          }
+        }, this.keepaliveMs)
+        this.keepaliveTimer.unref?.()
         return
       }
       if (message.type === 'frame' && typeof message.payload === 'string') {
@@ -139,7 +161,10 @@ export class RelayLink {
       // 'pong' and anything unknown: nothing to do, nothing to trust.
     })
 
-    socket.on('close', () => this.scheduleReconnect())
+    socket.on('close', () => {
+      this.stopKeepalive()
+      this.scheduleReconnect()
+    })
     socket.on('error', () => socket.close())
   }
 

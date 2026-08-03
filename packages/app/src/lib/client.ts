@@ -28,6 +28,11 @@ const OPEN_TIMEOUT_MS = 4000
 const HOST_WAIT_MS = 8000
 /** While away, how often to check whether home is reachable again. */
 const HOME_PROBE_MS = 15_000
+/**
+ * Proxies cull a WebSocket that has carried nothing for roughly 100 seconds. A room where
+ * nobody happens to be typing is exactly that, so it must still say something.
+ */
+const KEEPALIVE_MS = 30_000
 
 export function storedToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -268,6 +273,19 @@ function relayWire(url: string, identity: RelayIdentity, events: WireEvents): Wi
   // Durable Object before the upgrade completes, and the Node relay simply ignores it.
   const socket = new WebSocket(withRoom(url, identity.roomTag))
   let ready = false
+  let keepalive: ReturnType<typeof setInterval> | null = null
+  const stopKeepalive = () => {
+    if (keepalive !== null) clearInterval(keepalive)
+    keepalive = null
+  }
+  const startKeepalive = () => {
+    stopKeepalive()
+    keepalive = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ v: 1, type: 'ping' }))
+      }
+    }, KEEPALIVE_MS)
+  }
   const openTimer = setTimeout(() => {
     if (!ready) socket.close()
   }, OPEN_TIMEOUT_MS)
@@ -289,6 +307,7 @@ function relayWire(url: string, identity: RelayIdentity, events: WireEvents): Wi
       clearTimeout(openTimer)
       if (message.host === true) {
         ready = true
+        startKeepalive()
         events.onReady()
       } else {
         hostTimer = setTimeout(() => socket.close(), HOST_WAIT_MS)
@@ -299,6 +318,7 @@ function relayWire(url: string, identity: RelayIdentity, events: WireEvents): Wi
       if (message.event === 'joined' && !ready) {
         if (hostTimer) clearTimeout(hostTimer)
         ready = true
+        startKeepalive()
         events.onReady()
       }
       if (message.event === 'left') socket.close()
@@ -314,6 +334,7 @@ function relayWire(url: string, identity: RelayIdentity, events: WireEvents): Wi
   socket.onclose = () => {
     clearTimeout(openTimer)
     if (hostTimer) clearTimeout(hostTimer)
+    stopKeepalive()
     events.onDown('net')
   }
   return {
@@ -328,6 +349,7 @@ function relayWire(url: string, identity: RelayIdentity, events: WireEvents): Wi
     },
     close: () => {
       socket.onclose = null
+      stopKeepalive()
       socket.close()
     },
   }

@@ -111,13 +111,17 @@ export default function App() {
 
   if (!token) {
     return (
-      <main className="gate">
-        <Mark />
-        <h1>LongLeash</h1>
-        <p>Scan the QR code on your laptop to pair this device. The link works once.</p>
-        <p className="buildtag mono">build {__BUILD__}</p>
-        {pairError ? <p className="err">Pairing failed: {pairError}</p> : null}
-      </main>
+      <PairGate
+        error={pairError}
+        onPair={(challengeId, secret) =>
+          pair(challengeId, secret)
+            .then((issued) => {
+              setToken(issued)
+              history.replaceState(null, '', location.pathname)
+            })
+            .catch((err: Error) => setPairError(err.message))
+        }
+      />
     )
   }
 
@@ -254,6 +258,71 @@ export function Rail({
       </div>
     </div>
   )
+}
+
+/**
+ * Pairing, with a paste box as well as the QR.
+ *
+ * On iOS a scanned QR opens the camera's in-app browser, which keeps its own storage. A
+ * pairing done there is invisible to the app on the home screen, so the installed app asks
+ * to pair again — and every scan mints another device on the laptop. Pasting the link into
+ * the app that will actually run pairs it in the right place, once.
+ */
+function PairGate({
+  error,
+  onPair,
+}: {
+  error: string | null
+  onPair: (challengeId: string, secret: string) => void
+}) {
+  const [link, setLink] = useState('')
+  const parsed = parsePairingLink(link)
+
+  return (
+    <main className="gate">
+      <Mark />
+      <h1>LongLeash</h1>
+      <p>
+        Paste the pairing link your laptop printed. Scanning the QR also works, but only from
+        inside this app — a scan from the camera pairs a different browser.
+      </p>
+      <div className="pairbox">
+        <input
+          className="field"
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+          placeholder="https://…/?c=…&s=…"
+          aria-label="Pairing link from your laptop"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+        <Key
+          className="primary wide"
+          disabled={parsed === null}
+          onClick={() => {
+            if (parsed) onPair(parsed.challengeId, parsed.secret)
+          }}
+        >
+          Pair this device
+        </Key>
+      </div>
+      {error ? <p className="err">Pairing failed: {error}</p> : null}
+      <p className="buildtag mono">build {__BUILD__}</p>
+    </main>
+  )
+}
+
+/** Accepts the whole URL or just the query part, so any way of copying it works. */
+export function parsePairingLink(raw: string): { challengeId: string; secret: string } | null {
+  const text = raw.trim()
+  if (text.length === 0) return null
+  const query = text.includes('?') ? text.slice(text.indexOf('?') + 1) : text
+  const params = new URLSearchParams(query)
+  const challengeId = params.get('c')
+  const secret = params.get('s')
+  if (!challengeId || !secret) return null
+  return { challengeId, secret }
 }
 
 /* ------------------------------------------------------------------ screens */
