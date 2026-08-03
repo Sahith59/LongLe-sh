@@ -54,6 +54,13 @@ export default {
       return env.ROOM.get(id).fetch(request)
     }
 
+    // The landing page lives beside the app under a clean URL. Without this
+    // rewrite the SPA fallback would swallow /welcome and serve the app.
+    if (url.pathname === '/welcome' || url.pathname === '/welcome/') {
+      url.pathname = '/welcome.html'
+      return env.ASSETS.fetch(new Request(url, request))
+    }
+
     // Everything else is the app shell: public, open-source, static.
     return env.ASSETS.fetch(request)
   },

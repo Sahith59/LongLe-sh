@@ -16,5 +16,11 @@ function buildStamp(): string {
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: { __BUILD__: JSON.stringify(buildStamp()) },
-  build: { outDir: 'dist', emptyOutDir: true },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      input: { app: 'index.html', welcome: 'welcome.html' },
+    },
+  },
 })

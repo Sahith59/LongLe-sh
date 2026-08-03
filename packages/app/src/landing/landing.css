@@ -1,0 +1,398 @@
+/* ==========================================================================
+   Landing — same machine, brochure form.
+
+   Inherits every token and material from styles.css. Nothing here invents a
+   new colour, shadow or curve; the landing page is the product's own metal,
+   arranged to tell one story.
+   ========================================================================== */
+
+.land {
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 0 22px calc(30px + env(safe-area-inset-bottom));
+}
+
+/* ---------------------------------------------------------------- masthead */
+
+.land-rail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 0 0;
+}
+.land-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font: 400 22px/1 'Instrument Serif', Georgia, serif;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.land-mark svg {
+  color: var(--ink-2);
+}
+.land-mark i {
+  font-style: normal;
+  color: var(--ink-3);
+}
+.land .key {
+  text-decoration: none;
+}
+
+/* -------------------------------------------------------------------- hero */
+
+.hero {
+  display: grid;
+  gap: 44px;
+  align-items: center;
+  padding: 56px 0 30px;
+}
+@media (min-width: 920px) {
+  .hero {
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 56px;
+    padding: 84px 0 60px;
+  }
+}
+
+.eyebrow {
+  margin: 0 0 14px;
+  font: 500 11px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hero h1 {
+  margin: 0;
+  font: 400 clamp(46px, 8.5vw, 76px) / 1.02 'Instrument Serif', Georgia, serif;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.hero h1 em {
+  font-style: italic;
+  color: var(--sage);
+}
+.lede {
+  margin: 18px 0 0;
+  max-width: 33em;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.hero-acts {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 26px;
+}
+
+/* -------------------------------------------------------------- lock phone */
+
+.phone {
+  position: relative;
+  width: min(320px, 88vw);
+  justify-self: center;
+  border-radius: 46px;
+  padding: 9px;
+  background: linear-gradient(174deg, #232529 0%, #17181c 100%);
+  box-shadow: var(--raise-lg), 0 34px 80px rgba(0, 0, 0, 0.5);
+}
+.phone-screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: 38px;
+  background: var(--recess);
+  box-shadow: var(--sink);
+  padding: 14px 14px 22px;
+  min-height: 360px;
+}
+.phone-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 8px 16px;
+}
+.phone-time {
+  font: 500 12px/1 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.phone-lock {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: var(--engrave);
+  transition: color var(--mid) var(--step);
+}
+.phone-lock.open {
+  color: var(--sage);
+}
+
+.notif {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: 14px;
+  background: linear-gradient(172deg, var(--key-hot-hi) 0%, var(--key-hot-lo) 100%);
+  box-shadow: var(--raise);
+  will-change: transform, opacity, filter;
+}
+.notif-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  background: linear-gradient(172deg, var(--key-hi) 0%, var(--key-lo) 100%);
+  box-shadow: var(--raise);
+}
+.notif-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.notif-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.notif-top b {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.notif-ago {
+  font: 400 10px/1 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-3);
+}
+.notif-text {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notif-text b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.notif-tick {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: var(--engrave);
+  transition: color var(--mid) var(--step);
+}
+.notif-tick[data-on='y'] {
+  color: var(--sage);
+}
+
+.phone-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  padding: 26px 6px 0;
+}
+.phone-key {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+}
+.phone-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font: 600 9.5px/1 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink);
+  background: linear-gradient(172deg, var(--key-hot-hi) 0%, var(--key-hot-lo) 100%);
+  box-shadow: var(--raise);
+}
+
+.phone-fade {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 9px;
+  height: 150px;
+  border-radius: 0 0 38px 38px;
+  background: linear-gradient(to top, var(--ground) 18%, transparent 100%);
+  pointer-events: none;
+}
+.phone-caption {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 22px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+.phone-caption b {
+  display: block;
+  color: var(--ink);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* ---------------------------------------------------------------- sections */
+
+.land-label {
+  margin: 0 0 22px;
+  font: 500 11px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.land-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hair-soft);
+}
+
+.how {
+  padding: 44px 0 8px;
+}
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+@media (min-width: 780px) {
+  .steps {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.steps li {
+  display: flex;
+  gap: 14px;
+  padding: 18px 17px;
+  border-radius: var(--r);
+  background: var(--grad-panel);
+  box-shadow: var(--raise-lg);
+}
+.steps .n {
+  font: 600 12px/1.7 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-3);
+}
+.steps h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.steps p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.steps code {
+  font: 400 0.9em/1 'Geist Mono', ui-monospace, monospace;
+  background: var(--recess);
+  box-shadow: var(--engrave);
+  padding: 1.5px 6px;
+  border-radius: 5px;
+  color: var(--ink);
+}
+
+.trust {
+  padding: 44px 0 10px;
+}
+.claims {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+@media (min-width: 780px) {
+  .claims {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.claims li {
+  padding: 17px 17px 15px;
+  border-radius: var(--r);
+  background: var(--recess);
+  box-shadow: var(--sink);
+}
+.claims h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.claims p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.honesty {
+  margin: 18px 2px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  max-width: 52em;
+  text-wrap: pretty;
+}
+
+/* ------------------------------------------------------------------ footer */
+
+.land-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 46px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hair-soft);
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.land-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.land-foot svg {
+  color: var(--ink-3);
+}
