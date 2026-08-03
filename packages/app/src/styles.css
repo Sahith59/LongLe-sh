@@ -914,16 +914,26 @@ body {
   overflow-wrap: break-word;
 }
 
-/* what you said: a raised key floating right — your words have mass here */
+/* what you said: the one LIGHT key in the machine. In an interface that
+   speaks luminance, the human is the light source — your words arrive as a
+   pale matte key with dark ink, so yours and Claude's can never be confused
+   even at a squint. Still grey, still matte, still machined. */
 .blk.mine {
   align-self: flex-end;
   max-width: 84%;
-  background: var(--grad-key);
-  box-shadow: var(--raise);
+  background: linear-gradient(172deg, #dcdee2 0%, #cdcfd4 52%, #c4c6cb 100%);
+  color: #17181c;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.14),
+    0 1px 2px rgba(0, 0, 0, 0.45),
+    0 6px 14px rgba(0, 0, 0, 0.3);
   border-radius: var(--r) var(--r) var(--r-sm) var(--r);
   padding: 10px 13px;
   font-size: 14.5px;
+  font-weight: 500;
   line-height: 1.5;
+  letter-spacing: -0.008em;
   overflow-wrap: break-word;
 }
 
