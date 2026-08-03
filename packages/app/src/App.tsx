@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { ArrowUp, ChevronLeft, Link2, Plus, RotateCcw, Square } from 'lucide-react'
+import { ArrowUp, ChevronLeft, Link2, Plus, RotateCcw, ScanLine, Square } from 'lucide-react'
 import {
   approvalsFor,
   createStore,
@@ -37,6 +37,7 @@ import {
 import { ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
 import { PathChip } from './ui/PathChip.js'
 import { enablePush, pushPermission, syncPush } from './lib/push.js'
+import { QrScanner } from './ui/QrScanner.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
@@ -330,39 +331,63 @@ function PairGate({
   onPair: (challengeId: string, secret: string) => void
 }) {
   const [link, setLink] = useState('')
+  const [scanning, setScanning] = useState(false)
   const parsed = parsePairingLink(link)
+
+  // The scanner hands over anything it sees; only a real pairing link counts.
+  const onScanned = useCallback(
+    (text: string): boolean => {
+      const found = parsePairingLink(text)
+      if (found === null) return false
+      setScanning(false)
+      onPair(found.challengeId, found.secret)
+      return true
+    },
+    [onPair],
+  )
 
   return (
     <main className="gate">
       <Mark />
       <h1>LongLeash</h1>
       <p>
-        Paste the pairing link your laptop printed. Scanning the QR also works, but only from
-        inside this app — a scan from the camera pairs a different browser.
+        Point this at the QR your laptop printed — scanning from inside the app pairs the right
+        browser. Pasting the link works too.
       </p>
       <div className="pairbox">
+        <Key className="primary wide" onClick={() => setScanning(true)}>
+          <ScanLine size={18} strokeWidth={2.2} aria-hidden="true" />
+          Scan the QR
+        </Key>
         <input
           className="field"
           value={link}
           onChange={(e) => setLink(e.target.value)}
-          placeholder="https://…/?c=…&s=…"
+          placeholder="…or paste the link: https://…/?c=…&s=…"
           aria-label="Pairing link from your laptop"
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
         />
-        <Key
-          className="primary wide"
-          disabled={parsed === null}
-          onClick={() => {
-            if (parsed) onPair(parsed.challengeId, parsed.secret)
-          }}
-        >
-          Pair this device
-        </Key>
+        {parsed !== null ? (
+          <Key
+            className="wide"
+            onClick={() => onPair(parsed.challengeId, parsed.secret)}
+          >
+            Pair this device
+          </Key>
+        ) : null}
       </div>
-      {error ? <p className="err">Pairing failed: {error}</p> : null}
+      {error ? (
+        <p className="err">
+          Pairing failed: {error}. Pairing links are single-use — press n in the laptop terminal
+          for a fresh one, then try again.
+        </p>
+      ) : null}
       <p className="buildtag mono">build {__BUILD__}</p>
+      <AnimatePresence>
+        {scanning ? <QrScanner onCode={onScanned} onClose={() => setScanning(false)} /> : null}
+      </AnimatePresence>
     </main>
   )
 }
