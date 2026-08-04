@@ -47,10 +47,57 @@ const READ_ONLY = new Set(['Read', 'Glob', 'Grep'])
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
 /**
+ * The person's own allow rules, from every settings file Claude Code reads.
+ * A tool the terminal auto-runs must not interrogate the phone.
+ */
+function loadAllowRules(cwd) {
+  const rules = []
+  const candidates = [
+    join(homedir(), '.claude', 'settings.json'),
+    join(homedir(), '.claude', 'settings.local.json'),
+  ]
+  if (cwd) {
+    candidates.push(join(cwd, '.claude', 'settings.json'), join(cwd, '.claude', 'settings.local.json'))
+  }
+  for (const path of candidates) {
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8'))
+      const allow = parsed?.permissions?.allow
+      if (Array.isArray(allow)) rules.push(...allow.filter((r) => typeof r === 'string'))
+    } catch {
+      // missing or malformed settings never break the hook
+    }
+  }
+  return rules
+}
+
+/**
+ * Best-effort match of one allow rule. Understood: bare tool names ("Edit") and
+ * Bash prefix/exact rules ("Bash(npm run test:*)", "Bash(git status)"). Rules
+ * this cannot understand simply do not match — which errs toward asking the
+ * phone, never toward silently skipping a question the terminal would raise.
+ * A false match is also safe: the hook stays silent and the terminal's own
+ * permission engine still evaluates the real rule itself.
+ */
+function ruleMatches(rule, tool, input) {
+  const parsed = rule.match(/^([A-Za-z_][A-Za-z0-9_]*)(?:\((.*)\))?$/)
+  if (!parsed || parsed[1] !== tool) return false
+  if (parsed[2] === undefined) return true
+  if (tool === 'Bash') {
+    const command = String(input?.command ?? '').trim()
+    const spec = parsed[2]
+    if (spec.endsWith(':*')) return command.startsWith(spec.slice(0, -2))
+    return command === spec
+  }
+  return false
+}
+
+/**
  * The phone asks ONLY when the terminal itself would have asked. Claude Code
- * tells the hook which permission mode the session runs in; mirroring it is
- * what keeps LongLeash an inbox of real decisions instead of a firehose of
- * questions the terminal never would have raised.
+ * tells the hook which permission mode the session runs in, and the person's
+ * own allowlist auto-runs what it names; mirroring both is what keeps
+ * LongLeash an inbox of real decisions instead of a firehose of questions
+ * the terminal never would have raised.
  */
 function terminalWouldAsk(event) {
   const tool = event.tool_name
@@ -58,6 +105,8 @@ function terminalWouldAsk(event) {
   const mode = event.permission_mode
   if (mode === 'bypassPermissions' || mode === 'plan') return false
   if (mode === 'acceptEdits' && EDIT_TOOLS.has(tool)) return false
+  const rules = loadAllowRules(event.cwd)
+  if (rules.some((rule) => ruleMatches(rule, tool, event.tool_input))) return false
   return true
 }
 

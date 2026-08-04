@@ -324,6 +324,35 @@ export class SessionManager {
     })
   }
 
+  /**
+   * Adopt a finished TERMINAL session so a phone reply can wake it: the
+   * conversation lives in Claude Code's own storage, keyed by its resume id,
+   * and wake() continues it through the SDK exactly like any dormant phone
+   * session. This is the baton pass — terminal to phone — and it only ever
+   * happens for a session that is no longer running anywhere else, because
+   * one conversation gets one driver at a time.
+   */
+  adoptEndedSession(input: {
+    sessionId: string
+    cwd: string
+    title: string
+    origin: SessionOrigin
+    startedAt: number
+    agentSessionId: string
+  }): void {
+    this.approvals.rawDb
+      .prepare(
+        `INSERT INTO sessions (session_id, agent, cwd, origin, title, status, started_at, agent_session_id)
+         VALUES (?, 'claude', ?, ?, ?, 'ended', ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           status = 'ended',
+           cwd = excluded.cwd,
+           title = excluded.title,
+           agent_session_id = excluded.agent_session_id`,
+      )
+      .run(input.sessionId, input.cwd, input.origin, input.title, input.startedAt, input.agentSessionId)
+  }
+
   private persistSession(summary: SessionSummary): void {
     this.approvals.rawDb
       .prepare(

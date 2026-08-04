@@ -23,6 +23,9 @@ class DemoAgent {
     this.request = request
     return { events: this.iterate(), sendMessage: () => {}, interrupt: async () => this.finish() }
   }
+  get lastRequest(): AgentRunRequest {
+    return this.request
+  }
   requestTool(name: string, input: unknown = {}): Promise<PermissionDecision> {
     return this.request.canUseTool(name, input)
   }
@@ -785,5 +788,97 @@ describe('terminal sessions over the wire — hooks in, verdicts out', () => {
     ws.close()
     external.shutdown()
     await h.server.close()
+  })
+})
+
+
+describe('take over: the baton passes from terminal to phone', () => {
+  it('stops the terminal process, adopts the conversation, and wakes it with the reply', async () => {
+    const h = await startHarness()
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'll-takeover-')))
+    const demo = new DemoAgent()
+    const approvals = new ApprovalStore(':memory:')
+    const sessions = new SessionManager({
+      eventLog: h.log,
+      approvals,
+      allowedRoots: [dir],
+      agentFactories: { claude: demo.factory },
+      onEvent: (event) => h.server.broadcastEvent(event),
+    })
+    h.server.attachSessions(sessions)
+
+    const killed: number[] = []
+    const external = new ExternalSessions({
+      eventLog: h.log,
+      approvals: new ApprovalStore(':memory:'),
+      onEvent: (event) => h.server.broadcastEvent(event),
+      hasAudience: () => true,
+      isClaudeProcess: () => true,
+      kill: (pid) => killed.push(pid),
+      onEnded: (info) =>
+        sessions.adoptEndedSession({
+          sessionId: info.sessionId,
+          cwd: info.cwd,
+          title: info.title,
+          origin: 'terminal',
+          startedAt: info.startedAt,
+          agentSessionId: info.claudeSessionId,
+        }),
+    })
+    h.server.attachExternal(external, 'hook-secret')
+
+    // A live terminal session, known to the daemon via its hook.
+    await fetch(`http://${HOST}:${h.port}/hook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-longleash-hook': 'hook-secret' },
+      body: JSON.stringify({
+        hook_event_name: 'SessionStart',
+        session_id: 'tsn-2',
+        cwd: dir,
+        transcript_path: join(dir, 'none.jsonl'),
+        ll_pid: 4242,
+      }),
+    })
+
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ext_tsn-2', fromCursor: 0 }))
+    await new Promise((r) => setTimeout(r, 60))
+
+    ws.send(
+      JSON.stringify({ v: 1, type: 'takeOver', sessionId: 'ext_tsn-2', text: 'carry on from my phone' }),
+    )
+
+    // The verified terminal process was ended…
+    await (async () => {
+      const deadline = Date.now() + 4000
+      while (killed.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 15))
+    })()
+    expect(killed).toEqual([4242])
+
+    // …the phone got a clean ack…
+    await (async () => {
+      const deadline = Date.now() + 4000
+      while (Date.now() < deadline) {
+        const ack = inbox.get(ws)?.find((m) => m.type === 'ack' && m.of === 'takeOver')
+        if (ack) {
+          expect(ack.outcome).toBe('taken-over')
+          return
+        }
+        await new Promise((r) => setTimeout(r, 15))
+      }
+      throw new Error('no takeOver ack')
+    })()
+
+    // …and the SAME conversation woke through the SDK: resume id intact, reply delivered.
+    expect(demo.lastRequest.resume).toBe('tsn-2')
+    expect(demo.lastRequest.prompt).toBe('carry on from my phone')
+    expect(demo.lastRequest.cwd).toBe(dir)
+
+    ws.close()
+    external.shutdown()
+    await sessions.shutdown()
+    await h.server.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 })

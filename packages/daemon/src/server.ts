@@ -599,6 +599,33 @@ export class LongLeashServer {
       return
     }
 
+    if (message.type === 'takeOver') {
+      // The baton pass: if the terminal process still runs, end it (verified pid),
+      // which adopts the conversation; then wake it through the SDK with this text.
+      if (this.external !== null && message.sessionId.startsWith('ext_')) {
+        this.external.stop(message.sessionId, connection.deviceId)
+      }
+      const delivered = this.sessions.sendMessage(message.sessionId, message.text, connection.deviceId)
+      this.log(`takeOver ${message.sessionId} -> ${delivered ? 'taken' : 'refused'}`)
+      this.sendTo(connection, {
+        v: PROTOCOL_VERSION,
+        type: 'ack',
+        of: 'takeOver',
+        sessionId: message.sessionId,
+        outcome: delivered ? 'taken-over' : 'cannot-take-over',
+      })
+      if (!delivered) {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          code: 'cannot-take-over',
+          message:
+            'Could not take this session over — its terminal may still be closing, or its folder is not in the allowed roots. Try again in a moment.',
+        })
+      }
+      return
+    }
+
     if (message.type === 'stopSession') {
       // Terminal sessions are stopped by ending their process, not an agent handle.
       if (message.sessionId.startsWith('ext_') && this.external !== null) {

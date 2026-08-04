@@ -228,6 +228,7 @@ export default function App() {
             onStop={() => clientRef.current?.stopSession(openSession.sessionId)}
             onResume={() => clientRef.current?.resumeSession(openSession.sessionId)}
             onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
+            onTakeOver={(text) => clientRef.current?.takeOver(openSession.sessionId, text) ?? false}
           />
         ) : (
           <ConsoleScreen
@@ -553,6 +554,7 @@ export function DetailScreen({
   onStop,
   onResume,
   onSend,
+  onTakeOver,
 }: {
   session: SessionView
   approvals: PendingApproval[]
@@ -564,18 +566,20 @@ export function DetailScreen({
   onStop: () => void
   onResume: () => void
   onSend: (text: string) => boolean
+  onTakeOver: (text: string) => boolean
 }) {
   const [message, setMessage] = useState('')
   const still = useReducedMotion()
   const keyboard = useKeyboardInset(true)
-  // A terminal session belongs to the keyboard it was started at. The phone shows it,
-  // answers its approvals, and can STOP it (the daemon ends the verified process) —
-  // but pretending it could also type into that terminal would be a lie.
+  // A terminal session belongs to the keyboard it was started at — until you type here.
+  // Sending a message TAKES IT OVER: the daemon ends the terminal process (verified) and
+  // continues the same conversation through the SDK, one driver at a time. What never
+  // happens is faking keystrokes into a terminal.
   const inTerminal = session.origin === 'terminal'
   // Typing wakes a dormant conversation, so the composer belongs to anything continuable —
   // not only to what happens to be running right now.
   const live = session.status === 'running' || session.status === 'waiting'
-  const canType = !inTerminal && (live || session.resumable)
+  const canType = live || session.resumable
   const readoutRef = useRef<HTMLDivElement | null>(null)
   const followTail = useRef(true)
 
@@ -585,7 +589,10 @@ export function DetailScreen({
   }, [session.blocks])
 
   const send = () => {
-    if (onSend(message.trim())) setMessage('')
+    const text = message.trim()
+    if (text === '') return
+    // Terminal sessions are continued by taking them over — never by typing into them.
+    if ((inTerminal ? onTakeOver : onSend)(text)) setMessage('')
   }
 
   return (
@@ -686,7 +693,15 @@ export function DetailScreen({
                   send()
                 }
               }}
-              placeholder={live ? 'Reply to this session…' : 'Type to carry this on…'}
+              placeholder={
+                inTerminal
+                  ? live
+                    ? 'Take over — ends the terminal side, continues here…'
+                    : 'Type to take this conversation over…'
+                  : live
+                    ? 'Reply to this session…'
+                    : 'Type to carry this on…'
+              }
               aria-label="Reply to this session"
             />
             <Key
@@ -700,9 +715,8 @@ export function DetailScreen({
           </div>
         ) : (
           <p className="note">
-            {inTerminal
-              ? 'This session lives in your terminal — approvals arrive here, typing happens there.'
-              : 'This conversation cannot be continued — it has no resume point. Start a new session in the same folder to pick the work back up.'}
+            This conversation cannot be continued — it has no resume point. Start a new session
+            in the same folder to pick the work back up.
           </p>
         )}
       </div>

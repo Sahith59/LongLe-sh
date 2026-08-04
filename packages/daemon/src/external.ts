@@ -46,6 +46,17 @@ export interface ExternalSessionsOptions {
   /** Test seams for the stop path: process verification and the kill itself. */
   isClaudeProcess?: (pid: number) => boolean
   kill?: (pid: number) => void
+  /**
+   * A terminal session finished (or was stopped). Its conversation survives in
+   * Claude Code's storage under this resume id — the hand that receives the baton.
+   */
+  onEnded?: (info: {
+    sessionId: string
+    claudeSessionId: string
+    cwd: string
+    title: string
+    startedAt: number
+  }) => void
 }
 
 interface ExternalSession {
@@ -93,6 +104,7 @@ export class ExternalSessions {
   private readonly waiting = new Map<string, Waiting>()
   private readonly isClaudeProcess: (pid: number) => boolean
   private readonly kill: (pid: number) => void
+  private readonly onEnded: ExternalSessionsOptions['onEnded']
 
   constructor(opts: ExternalSessionsOptions) {
     this.eventLog = opts.eventLog
@@ -104,6 +116,7 @@ export class ExternalSessions {
     this.pollMs = opts.pollMs ?? 800
     this.isClaudeProcess = opts.isClaudeProcess ?? claudeProcessCheck
     this.kill = opts.kill ?? ((pid) => process.kill(pid, 'SIGTERM'))
+    this.onEnded = opts.onEnded
     // A crashed daemon takes its hook waiters with it; those questions were
     // answered at the terminal long ago. Never resurrect them as a phantom inbox.
     this.approvals.closeOrphans('The daemon restarted; this was answered in the terminal.')
@@ -242,6 +255,14 @@ export class ExternalSessions {
     this.emit(session.sessionId, { type: 'session.status', payload: { status: 'ended' } })
     this.emit(session.sessionId, { type: 'session.ended', payload: { reason: 'terminal session ended' } })
     this.sessions.delete(claudeSessionId)
+    // Pass the baton: an ended terminal conversation becomes reopenable from the phone.
+    this.onEnded?.({
+      sessionId: session.sessionId,
+      claudeSessionId,
+      cwd: session.cwd,
+      title: session.title,
+      startedAt: session.startedAt,
+    })
   }
 
   listSessions(): {

@@ -208,6 +208,25 @@ describe('terminal sessions, adopted through hooks', () => {
     external.shutdown()
   })
 
+  it('ending — by exit or by stop — hands the baton onward with the resume id', () => {
+    const batons: string[] = []
+    const external = new ExternalSessions({
+      eventLog,
+      approvals,
+      onEvent: (event) => seen.push(event),
+      hasAudience: () => true,
+      isClaudeProcess: () => true,
+      kill: () => {},
+      onEnded: (info) => batons.push(`${info.sessionId}:${info.claudeSessionId}`),
+    })
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 777)
+    external.stop('ext_abc', 'dev_phone')
+    external.sessionStart('def', '/y', join(dir, 'n2.jsonl'))
+    external.sessionEnd('def')
+    expect(batons).toEqual(['ext_abc:abc', 'ext_def:def'])
+    external.shutdown()
+  })
+
   it('session end closes the story', () => {
     const external = manager()
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl'))

@@ -147,6 +147,17 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     approvals: externalApprovals,
     onEvent: mirror,
     hasAudience: () => server.connectionCount() > 0 || push.count() > 0,
+    // The baton pass: a finished terminal conversation becomes reopenable from the
+    // phone, waking through the SDK under the same resume id.
+    onEnded: (info) =>
+      sessions.adoptEndedSession({
+        sessionId: info.sessionId,
+        cwd: info.cwd,
+        title: info.title,
+        origin: 'terminal',
+        startedAt: info.startedAt,
+        agentSessionId: info.claudeSessionId,
+      }),
   })
   const hookSecret = randomBytes(24).toString('base64url')
   server.attachExternal(external, hookSecret)

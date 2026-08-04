@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { spawn } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,7 +24,7 @@ afterEach(async () => {
 function run(stdin: unknown): Promise<{ stdout: string; code: number | null }> {
   return new Promise((resolvePromise) => {
     const child = spawn(process.execPath, [SCRIPT], {
-      env: { ...process.env, LONGLEASH_DATA: dir },
+      env: { ...process.env, LONGLEASH_DATA: dir, HOME: dir },
     })
     let stdout = ''
     child.stdout.on('data', (chunk: Buffer) => {
@@ -173,6 +173,45 @@ describe('the hook script — the terminal must never notice a problem', () => {
     expect(called).toBe(true)
   })
 
+  it("respects the person's own allowlist — what the terminal auto-runs never asks the phone", async () => {
+    let called = false
+    const port = await listenOn((_body, respond) => {
+      called = true
+      respond(200, { decision: 'ask', reason: 'x' })
+    })
+    writeFileSync(
+      join(dir, 'hook-endpoint.json'),
+      JSON.stringify({ url: `http://127.0.0.1:${port}/hook`, secret: 's' }),
+    )
+    mkdirSync(join(dir, '.claude'), { recursive: true })
+    writeFileSync(
+      join(dir, '.claude', 'settings.json'),
+      JSON.stringify({ permissions: { allow: ['Bash(pnpm test:*)', 'WebFetch'] } }),
+    )
+
+    for (const payload of [
+      { tool_name: 'Bash', tool_input: { command: 'pnpm test --run' } },
+      { tool_name: 'WebFetch', tool_input: { url: 'https://x.dev' } },
+    ]) {
+      const { stdout, code } = await run({
+        hook_event_name: 'PreToolUse',
+        session_id: 'abc',
+        ...payload,
+      })
+      expect(code).toBe(0)
+      expect(stdout).toBe('')
+    }
+    expect(called).toBe(false)
+
+    await run({
+      hook_event_name: 'PreToolUse',
+      session_id: 'abc',
+      tool_name: 'Bash',
+      tool_input: { command: 'rm -rf /' },
+    })
+    expect(called).toBe(true)
+  })
+
   it('with no daemon endpoint at all, it exits clean and silent', async () => {
     const { stdout, code } = await run({
       hook_event_name: 'PreToolUse',
@@ -198,7 +237,7 @@ describe('the hook script — the terminal must never notice a problem', () => {
   })
 
   it('garbage on stdin cannot make it misbehave', async () => {
-    const child = spawn(process.execPath, [SCRIPT], { env: { ...process.env, LONGLEASH_DATA: dir } })
+    const child = spawn(process.execPath, [SCRIPT], { env: { ...process.env, LONGLEASH_DATA: dir, HOME: dir } })
     let stdout = ''
     child.stdout.on('data', (c: Buffer) => (stdout += c.toString()))
     const code = await new Promise<number | null>((r) => {

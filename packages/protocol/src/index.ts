@@ -191,6 +191,19 @@ const pushTestMessage = z
   })
   .passthrough()
 
+/**
+ * Take over a terminal-started session: stop its terminal process if still
+ * running, then continue the same conversation from the phone with this text.
+ */
+const takeOverMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('takeOver'),
+    sessionId: z.string().min(1),
+    text: z.string().min(1),
+  })
+  .passthrough()
+
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   subscribeMessage,
   decisionMessage,
@@ -202,6 +215,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   pushSubscribeMessage,
   pushUnsubscribeMessage,
   pushTestMessage,
+  takeOverMessage,
 ])
 export type ClientMessage = z.infer<typeof ClientMessageSchema>
 

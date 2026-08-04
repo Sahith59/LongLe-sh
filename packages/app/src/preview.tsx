@@ -237,6 +237,7 @@ function Flow() {
             onStop={noop}
             onResume={noop}
             onSend={never}
+          onTakeOver={never}
           />
         ) : (
           <ConsoleScreen
@@ -277,6 +278,7 @@ function Preview() {
           onStop={noop}
           onResume={noop}
           onSend={never}
+          onTakeOver={never}
         />
       </>
     )
@@ -297,6 +299,7 @@ function Preview() {
           onStop={noop}
           onResume={noop}
           onSend={never}
+          onTakeOver={never}
         />
       </>
     )
@@ -346,6 +349,7 @@ function Preview() {
           onStop={noop}
           onResume={noop}
           onSend={never}
+          onTakeOver={never}
         />
       </>
     )
@@ -386,6 +390,7 @@ function Preview() {
           onStop={noop}
           onResume={noop}
           onSend={never}
+          onTakeOver={never}
         />
       </>
     )
