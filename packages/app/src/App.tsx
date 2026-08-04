@@ -521,10 +521,11 @@ export function ConsoleScreen({
         ) : null}
 
         <p className="foot">
-          Only sessions started through LongLeash appear here. Ones you started yourself in a
-          terminal or in the VS Code chat panel are not visible yet — that is coming in a later
-          phase. Conversations survive daemon restarts: reply to any of them and the same agent
-          picks up where it left off.
+          Sessions you start here and `claude` sessions you start in a terminal both appear
+          (terminals need the LongLeash hook installed on the laptop). VS Code chat panels are
+          sealed and cannot be shown — that is a platform limit, not a coming feature.
+          Conversations started here survive daemon restarts: reply to any of them and the same
+          agent picks up where it left off.
           <span className="buildtag mono">build {__BUILD__}</span>
         </p>
       </main>
@@ -567,10 +568,13 @@ export function DetailScreen({
   const [message, setMessage] = useState('')
   const still = useReducedMotion()
   const keyboard = useKeyboardInset(true)
+  // A terminal session belongs to the keyboard it was started at. The phone shows it and
+  // answers its approvals — pretending it could also type into that terminal would be a lie.
+  const inTerminal = session.origin === 'terminal'
   // Typing wakes a dormant conversation, so the composer belongs to anything continuable —
   // not only to what happens to be running right now.
   const live = session.status === 'running' || session.status === 'waiting'
-  const canType = live || session.resumable
+  const canType = !inTerminal && (live || session.resumable)
   const readoutRef = useRef<HTMLDivElement | null>(null)
   const followTail = useRef(true)
 
@@ -596,7 +600,7 @@ export function DetailScreen({
             >
               {session.title || session.sessionId}
             </motion.h2>
-            {live ? (
+            {live && !inTerminal ? (
               <Key className="sm stopkey" onClick={onStop} label="Stop this agent">
                 <Square size={13} strokeWidth={2.6} fill="currentColor" aria-hidden="true" />
                 Stop
@@ -695,8 +699,9 @@ export function DetailScreen({
           </div>
         ) : (
           <p className="note">
-            This conversation cannot be continued — it has no resume point. Start a new session
-            in the same folder to pick the work back up.
+            {inTerminal
+              ? 'This session lives in your terminal — approvals arrive here, typing happens there.'
+              : 'This conversation cannot be continued — it has no resume point. Start a new session in the same folder to pick the work back up.'}
           </p>
         )}
       </div>
