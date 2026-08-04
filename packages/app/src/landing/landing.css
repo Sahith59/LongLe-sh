@@ -31,6 +31,12 @@
 .land-mark svg {
   color: var(--ink-2);
 }
+.land-mark img {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  box-shadow: var(--raise);
+}
 .land-mark i {
   font-style: normal;
   color: var(--ink-3);
@@ -150,11 +156,18 @@
   height: 32px;
   flex: none;
   border-radius: 9px;
+  overflow: hidden;
   display: grid;
   place-items: center;
   color: var(--ink);
   background: linear-gradient(172deg, var(--key-hi) 0%, var(--key-lo) 100%);
   box-shadow: var(--raise);
+}
+.notif-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
 }
 .notif-body {
   flex: 1;

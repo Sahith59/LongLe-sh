@@ -43,8 +43,8 @@ self.addEventListener('push', (event) => {
           body: 'Test alert — lock-screen alerts are working.',
           tag: 'longleash-test',
           data,
-          icon: '/icon.svg',
-          badge: '/icon.svg',
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
         })
         return
       }
@@ -55,8 +55,8 @@ self.addEventListener('push', (event) => {
         body: 'A session needs you.',
         tag: data.approvalId || 'longleash-approval',
         data,
-        icon: '/icon.svg',
-        badge: '/icon.svg',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
       })
     })(),
   )

@@ -294,7 +294,7 @@ export function Rail({
           </button>
         ) : (
           <h1 className="wordmark">
-            <LeashGlyph size={20} />
+            <img src="/icon-192.png" alt="" width={26} height={26} />
             LongLeash
           </h1>
         )}
@@ -852,26 +852,10 @@ function FirstRun() {
   )
 }
 
-/** The leash: anchored at your phone, clipped to an agent far away. */
-function LeashGlyph({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
-      <circle cx="9" cy="26" r="5.5" fill="currentColor" />
-      <path
-        d="M9 26C21 26 19 11 31 11"
-        stroke="currentColor"
-        strokeWidth="3.6"
-        strokeLinecap="round"
-      />
-      <circle cx="31" cy="11" r="4.2" fill="var(--sage)" />
-    </svg>
-  )
-}
-
 function Mark() {
   return (
     <span className="mark" aria-hidden="true">
-      <LeashGlyph size={40} />
+      <img src="/icon-192.png" alt="" width={76} height={76} />
     </span>
   )
 }

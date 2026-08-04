@@ -25,7 +25,7 @@ export function Landing() {
     <div className="land">
       <header className="land-rail">
         <span className="land-mark">
-          <LeashGlyph size={22} />
+          <img src="/icon-192.png" alt="" width={30} height={30} />
           Long<i>Leash</i>
         </span>
         <a className="key sm" href="/">
@@ -217,7 +217,7 @@ function LockPhone() {
           animate={phase}
         >
           <span className="notif-icon">
-            <LeashGlyph size={18} />
+            <img src="/icon-192.png" alt="" width={32} height={32} />
           </span>
           <span className="notif-body">
             <span className="notif-top">

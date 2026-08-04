@@ -217,6 +217,12 @@ body {
 .wordmark svg {
   color: var(--ink-2);
 }
+.wordmark img {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  box-shadow: var(--raise);
+}
 .rail .spacer {
   flex: 1;
 }
@@ -1291,10 +1297,17 @@ body {
   width: 76px;
   height: 76px;
   border-radius: 22px;
+  overflow: hidden;
   background: var(--grad-key);
   box-shadow: var(--raise-lg);
   color: var(--ink);
   margin-bottom: 20px;
+}
+.mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
 }
 .gate h1 {
   margin: 0 0 10px;
