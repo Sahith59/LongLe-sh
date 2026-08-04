@@ -1,4 +1,5 @@
-import { mkdirSync, existsSync } from 'node:fs'
+import { mkdirSync, existsSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { EventLog } from './eventlog.js'
@@ -11,6 +12,7 @@ import { createClaudeAgentFactory } from './adapters/claude.js'
 import { readPermissionPosture, type PermissionPosture } from './posture.js'
 import { FolderIndex } from './folders.js'
 import { PushNotifier } from './push.js'
+import { ExternalSessions } from './external.js'
 
 export interface DaemonOptions {
   /** Directories agents may work in. Nothing outside these can be targeted. */
@@ -92,6 +94,29 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     ...(options.relayUrl === undefined ? {} : { relayUrl: options.relayUrl }),
   })
 
+  // One mirror for every session source — phone-started agents and terminal sessions
+  // alike broadcast, notify, and narrate through the same path.
+  const mirror = (event: import('@longleash/protocol').SessionEvent): void => {
+    server.broadcastEvent(event)
+    // Mirror the important beats to the terminal: a daemon that prints nothing looks dead.
+    const payload = event.payload as Record<string, unknown>
+    if (event.type === 'session.started') {
+      write(`▶ ${event.sessionId} started in ${String(payload.cwd)}`)
+    } else if (event.type === 'approval.requested') {
+      write(`? ${event.sessionId} needs approval: ${String(payload.inputSummary)}`)
+      // The tap on the pocket. IDs only — the notifier enforces it, this comment remembers it.
+      push.notifyApproval(event.sessionId, String(payload.approvalId))
+    } else if (event.type === 'approval.decided') {
+      write(`${payload.verdict === 'allow' ? '✓' : '✗'} ${String(payload.verdict)} by ${String(payload.decidedBy)}`)
+    } else if (event.type === 'activity.tool') {
+      write(`· ${event.sessionId} auto-approved ${String(payload.inputSummary)}`)
+    } else if (event.type === 'session.ended') {
+      write(`■ ${event.sessionId} finished`)
+    } else if (event.type === 'session.errored') {
+      write(`! ${event.sessionId} errored: ${String(payload.message)}`)
+    }
+  }
+
   const sessions = new SessionManager({
     eventLog,
     approvals,
@@ -102,26 +127,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
         isolateFromUserSettings: true,
       }),
     },
-    onEvent: (event) => {
-      server.broadcastEvent(event)
-      // Mirror the important beats to the terminal: a daemon that prints nothing looks dead.
-      const payload = event.payload as Record<string, unknown>
-      if (event.type === 'session.started') {
-        write(`▶ ${event.sessionId} started in ${String(payload.cwd)}`)
-      } else if (event.type === 'approval.requested') {
-        write(`? ${event.sessionId} needs approval: ${String(payload.inputSummary)}`)
-        // The tap on the pocket. IDs only — the notifier enforces it, this comment remembers it.
-        push.notifyApproval(event.sessionId, String(payload.approvalId))
-      } else if (event.type === 'approval.decided') {
-        write(`${payload.verdict === 'allow' ? '✓' : '✗'} ${String(payload.verdict)} by ${String(payload.decidedBy)}`)
-      } else if (event.type === 'activity.tool') {
-        write(`· ${event.sessionId} auto-approved ${String(payload.inputSummary)}`)
-      } else if (event.type === 'session.ended') {
-        write(`■ ${event.sessionId} finished`)
-      } else if (event.type === 'session.errored') {
-        write(`! ${event.sessionId} errored: ${String(payload.message)}`)
-      }
-    },
+    onEvent: mirror,
     ...(options.denyOutsideRoot === undefined ? {} : { denyOutsideRoot: options.denyOutsideRoot }),
     // Broad roots (a whole home directory) are only reasonable with these carved out.
     excludeSensitive: options.excludeSensitive ?? true,
@@ -133,7 +139,26 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   server.attachFolders(new FolderIndex(roots))
   server.attachPush(push)
 
+  // Terminal-started sessions, reported by Claude Code's own hooks. The secret is the
+  // proof of same-machine: it lives in a 0600 file no phone can ever read.
+  const externalApprovals = new ApprovalStore(join(dataDir, 'approvals-external.db'))
+  const external = new ExternalSessions({
+    eventLog,
+    approvals: externalApprovals,
+    onEvent: mirror,
+    hasAudience: () => server.connectionCount() > 0 || push.count() > 0,
+  })
+  const hookSecret = randomBytes(24).toString('base64url')
+  server.attachExternal(external, hookSecret)
+
   const { port } = await server.listen()
+  // Where the hook script finds this daemon — rewritten every boot because the
+  // LAN address and port can change between runs.
+  writeFileSync(
+    join(dataDir, 'hook-endpoint.json'),
+    JSON.stringify({ url: `http://${options.host}:${port}/hook`, secret: hookSecret }, null, 2) + '\n',
+    { mode: 0o600 },
+  )
   const stopMaintenance = sessions.startMaintenance()
 
   // The daemon's presence in the world beyond the LAN: one E2E room per paired device,
@@ -160,10 +185,12 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       // Agents first: a consume loop still writing while the databases close is an
       // unhandled rejection and a corrupted final status.
       await sessions.shutdown()
+      external.shutdown()
       await server.close()
       eventLog.close()
       registry.close()
       approvals.close()
+      externalApprovals.close()
       push.close()
     },
   }

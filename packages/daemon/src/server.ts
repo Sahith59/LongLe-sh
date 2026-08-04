@@ -5,8 +5,10 @@ import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import type { WebSocket } from 'ws'
 import { parseClientMessage, PROTOCOL_VERSION, type SessionEvent } from '@longleash/protocol'
+import { timingSafeEqual } from 'node:crypto'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { PushNotifier } from './push.js'
+import type { ExternalSessions } from './external.js'
 import type { DeviceRegistry } from './auth.js'
 import { PairingError } from './auth.js'
 import { SessionError, type SessionManager } from './sessions.js'
@@ -91,6 +93,8 @@ export class LongLeashServer {
   private sessions: SessionManager | null = null
   private folders: FolderIndex | null = null
   private push: PushNotifier | null = null
+  private external: ExternalSessions | null = null
+  private hookSecret: string | null = null
   private readonly staticRoot: string | undefined
   private readonly relayUrl: string | undefined
   private readonly log: (line: string) => void
@@ -114,6 +118,58 @@ export class LongLeashServer {
     // Unauthenticated on purpose: a phone must be able to tell "cannot reach the laptop"
     // apart from "not authorized", and this reveals nothing but liveness.
     this.app.get('/health', async () => ({ ok: true, name: 'longleash', protocol: PROTOCOL_VERSION }))
+
+    /**
+     * Claude Code's hooks report terminal sessions here. Same-machine callers only,
+     * proven by a secret that lives in a 0600 file the phone can never read — so a
+     * paired (or hostile) device cannot forge terminal activity or answer as a hook.
+     */
+    this.app.post('/hook', async (request, reply) => {
+      const presented = request.headers['x-longleash-hook']
+      if (
+        this.external === null ||
+        this.hookSecret === null ||
+        typeof presented !== 'string' ||
+        presented.length !== this.hookSecret.length ||
+        !timingSafeEqual(Buffer.from(presented), Buffer.from(this.hookSecret))
+      ) {
+        return reply.code(401).send({ reason: 'unauthorized' })
+      }
+      const body = request.body as {
+        hook_event_name?: string
+        session_id?: string
+        cwd?: string
+        transcript_path?: string
+        tool_name?: string
+        tool_input?: unknown
+      }
+      const { session_id: sessionId, cwd, transcript_path: transcript } = body
+      if (typeof sessionId !== 'string' || sessionId === '') {
+        return reply.code(400).send({ reason: 'missing session_id' })
+      }
+
+      if (body.hook_event_name === 'SessionStart') {
+        this.external.sessionStart(sessionId, cwd ?? '', transcript ?? '')
+        this.log(`terminal session ${sessionId.slice(0, 8)} started in ${cwd ?? '?'}`)
+        return {}
+      }
+      if (body.hook_event_name === 'PreToolUse') {
+        if (typeof body.tool_name !== 'string') return reply.code(400).send({ reason: 'missing tool_name' })
+        const decision = await this.external.preToolUse(
+          sessionId,
+          cwd ?? '',
+          transcript ?? '',
+          body.tool_name,
+          body.tool_input,
+        )
+        return decision
+      }
+      if (body.hook_event_name === 'SessionEnd') {
+        this.external.sessionEnd(sessionId)
+        return {}
+      }
+      return {} // unknown events are tolerated: a newer Claude Code must not break the daemon
+    })
 
     // Pairing is POST-only: link previews and crawlers issue GETs, and must never be able
     // to burn a one-time challenge on the user's behalf.
@@ -230,6 +286,13 @@ export class LongLeashServer {
   attachPush(push: PushNotifier): void {
     this.push = push
   }
+
+  /** Wire in terminal-started sessions, reported by Claude Code's own hooks. */
+  attachExternal(external: ExternalSessions, hookSecret: string): void {
+    this.external = external
+    this.hookSecret = hookSecret
+  }
+
 
   /** Persist an event, then fan it out to every subscriber of that session. */
   publish(sessionId: string, input: AppendInput): SessionEvent {
@@ -350,8 +413,9 @@ export class LongLeashServer {
       type: 'hello',
       deviceId: connection.deviceId,
       roots: this.sessions?.listAllowedRoots() ?? [],
-      // Everything the daemon knows about, so a reloaded phone rebuilds instead of showing nothing.
-      sessions: this.sessions?.listSessions() ?? [],
+      // Everything the daemon knows about, so a reloaded phone rebuilds instead of showing
+      // nothing — including sessions the human started in a terminal.
+      sessions: [...(this.sessions?.listSessions() ?? []), ...(this.external?.listSessions() ?? [])],
       capabilities: { startSession: this.sessions !== null, stopSession: this.sessions !== null },
       // Where this daemon can be reached when the LAN cannot see it.
       relay: this.relayUrl === undefined ? null : { url: this.relayUrl },
@@ -450,24 +514,21 @@ export class LongLeashServer {
       return
     }
 
-    if (!this.sessions) {
-      this.sendTo(connection, {
-        v: PROTOCOL_VERSION,
-        type: 'error',
-        code: 'not-implemented',
-        message: `"${message.type}" needs a session manager attached`,
-      })
-      return
-    }
-
     if (message.type === 'decision') {
       // Attribution matters for the audit log: decisions are recorded per device.
-      const outcome = this.sessions.decide(
-        message.approvalId,
-        message.verdict,
-        connection.deviceId,
-        message.reply,
-      )
+      // Each manager recognises exactly its own approval ids, so routing is a fallback
+      // chain — and terminal-only daemons decide external approvals with no SessionManager.
+      let outcome = this.sessions
+        ? this.sessions.decide(message.approvalId, message.verdict, connection.deviceId, message.reply)
+        : ('unknown' as const)
+      if (outcome === 'unknown' && this.external !== null) {
+        outcome = this.external.decide(
+          message.approvalId,
+          message.verdict,
+          connection.deviceId,
+          message.reply,
+        )
+      }
       this.log(`decision ${message.verdict} on ${message.approvalId} -> ${outcome}`)
       this.sendTo(connection, {
         v: PROTOCOL_VERSION,
@@ -475,6 +536,16 @@ export class LongLeashServer {
         of: 'decision',
         approvalId: message.approvalId,
         outcome,
+      })
+      return
+    }
+
+    if (!this.sessions) {
+      this.sendTo(connection, {
+        v: PROTOCOL_VERSION,
+        type: 'error',
+        code: 'not-implemented',
+        message: `"${message.type}" needs a session manager attached`,
       })
       return
     }

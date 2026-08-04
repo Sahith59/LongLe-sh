@@ -10,6 +10,7 @@ import { SessionManager } from '../src/sessions.js'
 import type { AgentFactory, AgentRunRequest, PermissionDecision } from '../src/agent.js'
 import { LongLeashServer, CLOSE_UNAUTHORIZED, CLOSE_REVOKED } from '../src/server.js'
 import { PushNotifier } from '../src/push.js'
+import { ExternalSessions } from '../src/external.js'
 
 /** Minimal controllable agent so server tests stay deterministic. */
 class DemoAgent {
@@ -702,5 +703,87 @@ describe('push over the wire — the whole laptop side of Phase C', () => {
     notifier.close()
     await h.server.close()
     rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('terminal sessions over the wire — hooks in, verdicts out', () => {
+  it('rejects a hook call without the same-machine secret', async () => {
+    const h = await startHarness()
+    const external = new ExternalSessions({
+      eventLog: h.log,
+      approvals: new ApprovalStore(':memory:'),
+      hasAudience: () => true,
+    })
+    h.server.attachExternal(external, 'the-real-secret')
+
+    const forged = await fetch(`http://${HOST}:${h.port}/hook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-longleash-hook': 'wrong' },
+      body: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'abc' }),
+    })
+    expect(forged.status).toBe(401)
+    external.shutdown()
+    await h.server.close()
+  })
+
+  it('a terminal session flows: start → hello, approval → phone → verdict back to the hook', async () => {
+    const h = await startHarness()
+    const external = new ExternalSessions({
+      eventLog: h.log,
+      approvals: new ApprovalStore(':memory:'),
+      onEvent: (event) => h.server.broadcastEvent(event),
+      hasAudience: () => true,
+      waitMs: 5000,
+    })
+    h.server.attachExternal(external, 'hook-secret')
+
+    const hook = (body: unknown) =>
+      fetch(`http://${HOST}:${h.port}/hook`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-longleash-hook': 'hook-secret' },
+        body: JSON.stringify(body),
+      })
+
+    // The terminal starts a session; a phone connecting afterwards sees it in hello.
+    await hook({ hook_event_name: 'SessionStart', session_id: 'tsn-1', cwd: '/Users/x/proj' })
+    const ws = connect(h.port, h.token)
+    const hello = await helloOf(ws)
+    const sessions = hello.sessions as { sessionId: string; origin: string }[]
+    expect(sessions.some((s) => s.sessionId === 'ext_tsn-1' && s.origin === 'terminal')).toBe(true)
+
+    // The phone subscribes and a risky tool arrives as a real approval.
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'ext_tsn-1', fromCursor: 0 }))
+    const pendingVerdict = hook({
+      hook_event_name: 'PreToolUse',
+      session_id: 'tsn-1',
+      cwd: '/Users/x/proj',
+      tool_name: 'Bash',
+      tool_input: { command: 'pnpm build' },
+    })
+    let approvalId = ''
+    await (async () => {
+      const deadline = Date.now() + 4000
+      while (Date.now() < deadline) {
+        const found = inbox
+          .get(ws)
+          ?.find((m) => m.type === 'approval.requested')
+        if (found) {
+          approvalId = ((found as { payload?: { approvalId?: string } }).payload?.approvalId) ?? ''
+          return
+        }
+        await new Promise((r) => setTimeout(r, 15))
+      }
+      throw new Error('approval never reached the phone')
+    })()
+
+    // The phone answers; the hook's HTTP response carries the verdict to the terminal.
+    ws.send(JSON.stringify({ v: 1, type: 'decision', approvalId, verdict: 'allow' }))
+    const verdict = (await (await pendingVerdict).json()) as { decision: string; reason: string }
+    expect(verdict.decision).toBe('allow')
+    expect(verdict.reason).toContain(h.deviceId)
+
+    ws.close()
+    external.shutdown()
+    await h.server.close()
   })
 })
