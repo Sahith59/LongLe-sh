@@ -124,6 +124,55 @@ describe('the hook script — the terminal must never notice a problem', () => {
     expect(called).toBe(false)
   })
 
+  it('mirrors the permission mode: an auto-approving session never reaches the daemon', async () => {
+    let called = false
+    const port = await listenOn((_body, respond) => {
+      called = true
+      respond(200, {})
+    })
+    writeFileSync(
+      join(dir, 'hook-endpoint.json'),
+      JSON.stringify({ url: `http://127.0.0.1:${port}/hook`, secret: 's' }),
+    )
+    for (const [mode, tool] of [
+      ['bypassPermissions', 'Bash'],
+      ['plan', 'Bash'],
+      ['acceptEdits', 'Edit'],
+      ['acceptEdits', 'Write'],
+    ]) {
+      const { stdout, code } = await run({
+        hook_event_name: 'PreToolUse',
+        session_id: 'abc',
+        tool_name: tool,
+        permission_mode: mode,
+      })
+      expect(code).toBe(0)
+      expect(stdout).toBe('')
+    }
+    expect(called).toBe(false)
+  })
+
+  it('acceptEdits still gates a shell command — the terminal would have asked for that', async () => {
+    let called = false
+    const port = await listenOn((_body, respond) => {
+      called = true
+      respond(200, { decision: 'ask', reason: 'x' })
+    })
+    writeFileSync(
+      join(dir, 'hook-endpoint.json'),
+      JSON.stringify({ url: `http://127.0.0.1:${port}/hook`, secret: 's' }),
+    )
+    const { code } = await run({
+      hook_event_name: 'PreToolUse',
+      session_id: 'abc',
+      tool_name: 'Bash',
+      tool_input: { command: 'rm -rf dist' },
+      permission_mode: 'acceptEdits',
+    })
+    expect(code).toBe(0)
+    expect(called).toBe(true)
+  })
+
   it('with no daemon endpoint at all, it exits clean and silent', async () => {
     const { stdout, code } = await run({
       hook_event_name: 'PreToolUse',

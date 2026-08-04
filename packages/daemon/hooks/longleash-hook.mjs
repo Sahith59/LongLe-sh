@@ -43,6 +43,23 @@ function findClaudePid() {
 // These only read; the terminal's own permission flow covers them. Gating reads
 // from a phone would make the leash a choke chain.
 const READ_ONLY = new Set(['Read', 'Glob', 'Grep'])
+// Tools that acceptEdits mode auto-approves — the terminal would not ask, so neither do we.
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+
+/**
+ * The phone asks ONLY when the terminal itself would have asked. Claude Code
+ * tells the hook which permission mode the session runs in; mirroring it is
+ * what keeps LongLeash an inbox of real decisions instead of a firehose of
+ * questions the terminal never would have raised.
+ */
+function terminalWouldAsk(event) {
+  const tool = event.tool_name
+  if (READ_ONLY.has(tool)) return false
+  const mode = event.permission_mode
+  if (mode === 'bypassPermissions' || mode === 'plan') return false
+  if (mode === 'acceptEdits' && EDIT_TOOLS.has(tool)) return false
+  return true
+}
 
 async function main() {
   const raw = await readStdin()
@@ -54,7 +71,7 @@ async function main() {
   }
 
   const name = event.hook_event_name
-  if (name === 'PreToolUse' && READ_ONLY.has(event.tool_name)) return
+  if (name === 'PreToolUse' && !terminalWouldAsk(event)) return
 
   let endpoint
   try {
