@@ -568,8 +568,9 @@ export function DetailScreen({
   const [message, setMessage] = useState('')
   const still = useReducedMotion()
   const keyboard = useKeyboardInset(true)
-  // A terminal session belongs to the keyboard it was started at. The phone shows it and
-  // answers its approvals — pretending it could also type into that terminal would be a lie.
+  // A terminal session belongs to the keyboard it was started at. The phone shows it,
+  // answers its approvals, and can STOP it (the daemon ends the verified process) —
+  // but pretending it could also type into that terminal would be a lie.
   const inTerminal = session.origin === 'terminal'
   // Typing wakes a dormant conversation, so the composer belongs to anything continuable —
   // not only to what happens to be running right now.
@@ -600,7 +601,7 @@ export function DetailScreen({
             >
               {session.title || session.sessionId}
             </motion.h2>
-            {live && !inTerminal ? (
+            {live ? (
               <Key className="sm stopkey" onClick={onStop} label="Stop this agent">
                 <Square size={13} strokeWidth={2.6} fill="currentColor" aria-hidden="true" />
                 Stop

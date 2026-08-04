@@ -1,4 +1,5 @@
 import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { basename } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import type { SessionEvent } from '@longleash/protocol'
@@ -42,6 +43,9 @@ export interface ExternalSessionsOptions {
   waitMs?: number
   /** Transcript poll cadence. */
   pollMs?: number
+  /** Test seams for the stop path: process verification and the kill itself. */
+  isClaudeProcess?: (pid: number) => boolean
+  kill?: (pid: number) => void
 }
 
 interface ExternalSession {
@@ -51,6 +55,8 @@ interface ExternalSession {
   status: SessionStatus
   startedAt: number
   title: string
+  /** The claude process itself, reported by the hook — what Stop actually stops. */
+  pid: number | null
   /** Byte offset already ingested from the transcript. */
   offset: number
   /** Carry-over of a partial trailing line between polls. */
@@ -85,6 +91,8 @@ export class ExternalSessions {
   private readonly pollMs: number
   private readonly sessions = new Map<string, ExternalSession>()
   private readonly waiting = new Map<string, Waiting>()
+  private readonly isClaudeProcess: (pid: number) => boolean
+  private readonly kill: (pid: number) => void
 
   constructor(opts: ExternalSessionsOptions) {
     this.eventLog = opts.eventLog
@@ -94,14 +102,42 @@ export class ExternalSessions {
     this.now = opts.now ?? Date.now
     this.waitMs = opts.waitMs ?? 120_000
     this.pollMs = opts.pollMs ?? 800
+    this.isClaudeProcess = opts.isClaudeProcess ?? claudeProcessCheck
+    this.kill = opts.kill ?? ((pid) => process.kill(pid, 'SIGTERM'))
     // A crashed daemon takes its hook waiters with it; those questions were
     // answered at the terminal long ago. Never resurrect them as a phantom inbox.
     this.approvals.closeOrphans('The daemon restarted; this was answered in the terminal.')
   }
 
   /** Register (or re-adopt after a daemon restart) a terminal session. */
-  sessionStart(claudeSessionId: string, cwd: string, transcriptPath: string): void {
-    this.ensure(claudeSessionId, cwd, transcriptPath)
+  sessionStart(claudeSessionId: string, cwd: string, transcriptPath: string, pid?: number): void {
+    const session = this.ensure(claudeSessionId, cwd, transcriptPath)
+    if (pid !== undefined && Number.isInteger(pid) && pid > 1) session.pid = pid
+  }
+
+  /**
+   * Stop a terminal session from the phone — for real. The recorded pid is only
+   * trusted after re-verifying it still belongs to a claude process, because PIDs
+   * get recycled and killing a stranger's process is unforgivable.
+   */
+  stop(externalSessionId: string, decidedBy: string): boolean {
+    const entry = [...this.sessions.entries()].find(([, s]) => s.sessionId === externalSessionId)
+    if (!entry) return false
+    const [claudeSessionId, session] = entry
+    if (session.pid === null || !this.isClaudeProcess(session.pid)) return false
+    try {
+      this.kill(session.pid)
+    } catch {
+      return false
+    }
+    this.emit(session.sessionId, {
+      type: 'stream.delta',
+      payload: { kind: 'text', text: `— stopped from your phone by ${decidedBy} —` },
+    })
+    // SessionEnd normally arrives from the dying process's own hook; ending it
+    // here as well is idempotent and keeps the phone honest if that hook never runs.
+    this.sessionEnd(claudeSessionId)
+    return true
   }
 
   /**
@@ -260,6 +296,7 @@ export class ExternalSessions {
       status: 'running',
       startedAt: this.now(),
       title: `${basename(cwd)} — terminal`,
+      pid: null,
       offset: hasHistory && existsSync(transcriptPath) ? statSync(transcriptPath).size : 0,
       remainder: '',
       timer: null,
@@ -325,6 +362,19 @@ export class ExternalSessions {
   private emit(sessionId: string, input: AppendInput): void {
     const event = this.eventLog.append(sessionId, input)
     this.onEvent?.(event)
+  }
+}
+
+/** Is this pid still a claude process? PIDs recycle; never kill on faith. */
+function claudeProcessCheck(pid: number): boolean {
+  try {
+    const command = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], {
+      encoding: 'utf8',
+      timeout: 1500,
+    }).trim()
+    return /\bclaude\b/.test(command)
+  } catch {
+    return false
   }
 }
 

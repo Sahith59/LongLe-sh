@@ -142,6 +142,7 @@ export class LongLeashServer {
         transcript_path?: string
         tool_name?: string
         tool_input?: unknown
+        ll_pid?: number
       }
       const { session_id: sessionId, cwd, transcript_path: transcript } = body
       if (typeof sessionId !== 'string' || sessionId === '') {
@@ -149,7 +150,12 @@ export class LongLeashServer {
       }
 
       if (body.hook_event_name === 'SessionStart') {
-        this.external.sessionStart(sessionId, cwd ?? '', transcript ?? '')
+        this.external.sessionStart(
+          sessionId,
+          cwd ?? '',
+          transcript ?? '',
+          typeof body.ll_pid === 'number' ? body.ll_pid : undefined,
+        )
         this.log(`terminal session ${sessionId.slice(0, 8)} started in ${cwd ?? '?'}`)
         return {}
       }
@@ -594,6 +600,19 @@ export class LongLeashServer {
     }
 
     if (message.type === 'stopSession') {
+      // Terminal sessions are stopped by ending their process, not an agent handle.
+      if (message.sessionId.startsWith('ext_') && this.external !== null) {
+        const stopped = this.external.stop(message.sessionId, connection.deviceId)
+        this.log(`stop terminal ${message.sessionId} -> ${stopped ? 'stopped' : 'refused'}`)
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'ack',
+          of: 'stopSession',
+          sessionId: message.sessionId,
+          outcome: stopped ? 'stopped' : 'not-running',
+        })
+        return
+      }
       void this.sessions.stopSession(message.sessionId, connection.deviceId).then((stopped) => {
         this.sendTo(connection, {
           v: PROTOCOL_VERSION,

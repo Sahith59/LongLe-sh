@@ -24,7 +24,14 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function manager(opts: { audience?: boolean; waitMs?: number } = {}): ExternalSessions {
+function manager(
+  opts: {
+    audience?: boolean
+    waitMs?: number
+    isClaude?: (pid: number) => boolean
+    kill?: (pid: number) => void
+  } = {},
+): ExternalSessions {
   return new ExternalSessions({
     eventLog,
     approvals,
@@ -32,6 +39,8 @@ function manager(opts: { audience?: boolean; waitMs?: number } = {}): ExternalSe
     hasAudience: () => opts.audience ?? true,
     waitMs: opts.waitMs ?? 100,
     pollMs: 25,
+    isClaudeProcess: opts.isClaude ?? (() => true),
+    kill: opts.kill ?? (() => {}),
   })
 }
 
@@ -166,6 +175,37 @@ describe('terminal sessions, adopted through hooks', () => {
     second.sessionStart('abc', '/x', transcript)
     expect(seen.filter((e) => e.type === 'session.started')).toHaveLength(startsBefore)
     second.shutdown()
+  })
+
+  it('stop kills the verified process and closes the story', () => {
+    const killed: number[] = []
+    const external = manager({ kill: (pid) => killed.push(pid) })
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 4242)
+    expect(external.stop('ext_abc', 'dev_phone')).toBe(true)
+    expect(killed).toEqual([4242])
+    expect(seen.some((e) => e.type === 'session.ended')).toBe(true)
+    const note = seen.find(
+      (e) => e.type === 'stream.delta' && String((e.payload as { text: string }).text).includes('stopped from your phone'),
+    )
+    expect(note).toBeTruthy()
+    external.shutdown()
+  })
+
+  it('refuses to kill a recycled pid — the process is no longer claude', () => {
+    const killed: number[] = []
+    const external = manager({ isClaude: () => false, kill: (pid) => killed.push(pid) })
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 4242)
+    expect(external.stop('ext_abc', 'dev_phone')).toBe(false)
+    expect(killed).toEqual([])
+    external.shutdown()
+  })
+
+  it('refuses to stop a session it never knew, or one without a pid', () => {
+    const external = manager()
+    expect(external.stop('ext_nope', 'dev_phone')).toBe(false)
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl')) // hook could not find the pid
+    expect(external.stop('ext_abc', 'dev_phone')).toBe(false)
+    external.shutdown()
   })
 
   it('session end closes the story', () => {
