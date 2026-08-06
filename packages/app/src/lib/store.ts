@@ -194,6 +194,11 @@ export function createStore(options: StoreOptions = {}) {
       }
       case 'session.ended': {
         session.status = 'ended'
+        // Whether this can be carried on flips exactly as it ends — a terminal session
+        // adopted on stop, an agent that only just announced its resume id. Taking it
+        // from the live event is what keeps Reopen honest without a reconnect.
+        const payload = event.payload as { resumable?: boolean }
+        if (typeof payload.resumable === 'boolean') session.resumable = payload.resumable
         break
       }
       case 'session.errored': {

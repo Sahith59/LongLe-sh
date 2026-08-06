@@ -65,7 +65,16 @@ const activityToolPayload = z
 
 const sessionErroredPayload = z.object({ message: z.string().min(1) }).passthrough()
 
-const sessionEndedPayload = z.object({ reason: z.string().optional() }).passthrough()
+/**
+ * `resumable` rides in this payload — not just in `hello` — because whether a session
+ * can be reopened is exactly the fact that changes AT the moment a session ends (a
+ * terminal session adopted on stop, an SDK session that only just announced its resume
+ * id). A phone already connected and watching must learn this from the live event, or
+ * its Reopen button stays wrong until the next reconnect.
+ */
+const sessionEndedPayload = z
+  .object({ reason: z.string().optional(), resumable: z.boolean().optional() })
+  .passthrough()
 
 const envelope = {
   v: z.number().int().positive(),

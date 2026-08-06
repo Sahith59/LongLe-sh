@@ -252,16 +252,26 @@ export class ExternalSessions {
     this.drain(session)
     if (session.timer !== null) clearInterval(session.timer)
     session.status = 'ended'
-    this.emit(session.sessionId, { type: 'session.status', payload: { status: 'ended' } })
-    this.emit(session.sessionId, { type: 'session.ended', payload: { reason: 'terminal session ended' } })
     this.sessions.delete(claudeSessionId)
-    // Pass the baton: an ended terminal conversation becomes reopenable from the phone.
+
+    // Pass the baton BEFORE announcing the end: the adoption is what makes this
+    // conversation reopenable, and the event that reports the ending must be able
+    // to tell the phone so in the same breath. Announcing first would leave every
+    // already-connected phone believing "no resume point" until it reconnected —
+    // which is exactly the bug this ordering exists to prevent.
+    const adopted = this.onEnded !== undefined
     this.onEnded?.({
       sessionId: session.sessionId,
       claudeSessionId,
       cwd: session.cwd,
       title: session.title,
       startedAt: session.startedAt,
+    })
+
+    this.emit(session.sessionId, { type: 'session.status', payload: { status: 'ended' } })
+    this.emit(session.sessionId, {
+      type: 'session.ended',
+      payload: { reason: 'terminal session ended', resumable: adopted },
     })
   }
 

@@ -175,7 +175,10 @@ export class SessionManager {
         this.markStatus(row.session_id, 'ended')
         this.emit(row.session_id, {
           type: 'session.ended',
-          payload: { reason: 'daemon restarted before the agent announced a resume id' },
+          payload: {
+            reason: 'daemon restarted before the agent announced a resume id',
+            resumable: false,
+          },
         })
       }
     }
@@ -377,6 +380,19 @@ export class SessionManager {
       .run(status, sessionId)
   }
 
+  /**
+   * Can typing carry this conversation on? True once the agent has announced a resume id,
+   * which is the moment its transcript becomes reachable again. Read at the instant a
+   * session ends so the live event can carry the truth — `hello` alone is not enough,
+   * because this is precisely the fact that flips AS a session ends.
+   */
+  private resumableOf(sessionId: string): boolean {
+    const row = this.approvals.rawDb
+      .prepare('SELECT agent_session_id FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { agent_session_id: string | null } | undefined
+    return row?.agent_session_id != null
+  }
+
   private spawn(
     factory: AgentFactory,
     sessionId: string,
@@ -546,7 +562,10 @@ export class SessionManager {
     session.status = 'ended'
     this.markStatus(sessionId, 'ended')
     this.releasePending(session, 'Session stopped from your device')
-    this.emit(sessionId, { type: 'session.ended', payload: { reason: `stopped by ${actor}` } })
+    this.emit(sessionId, {
+      type: 'session.ended',
+      payload: { reason: `stopped by ${actor}`, resumable: this.resumableOf(sessionId) },
+    })
     return true
   }
 
@@ -585,7 +604,10 @@ export class SessionManager {
     if (!row || (row.status !== 'running' && row.status !== 'waiting')) return false
     this.audit(actor, 'session.stop', sessionId)
     this.markStatus(sessionId, 'ended')
-    this.emit(sessionId, { type: 'session.ended', payload: { reason: `stopped by ${actor}` } })
+    this.emit(sessionId, {
+      type: 'session.ended',
+      payload: { reason: `stopped by ${actor}`, resumable: this.resumableOf(sessionId) },
+    })
     return true
   }
 
@@ -735,7 +757,10 @@ export class SessionManager {
       session.status = 'ended'
       if (!session.superseded) {
         this.markStatus(session.sessionId, 'ended')
-        this.emit(session.sessionId, { type: 'session.ended', payload: {} })
+        this.emit(session.sessionId, {
+          type: 'session.ended',
+          payload: { resumable: this.resumableOf(session.sessionId) },
+        })
       }
     } catch (err) {
       session.status = 'errored'

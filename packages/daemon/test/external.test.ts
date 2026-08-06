@@ -227,6 +227,34 @@ describe('terminal sessions, adopted through hooks', () => {
     external.shutdown()
   })
 
+  it('the ending event itself says the conversation can be carried on', () => {
+    // The regression: a phone already watching learned "ended" but never learned that
+    // the stop had just made it resumable, so Reopen stayed hidden until a reconnect.
+    const external = new ExternalSessions({
+      eventLog,
+      approvals,
+      onEvent: (event) => seen.push(event),
+      hasAudience: () => true,
+      isClaudeProcess: () => true,
+      kill: () => {},
+      onEnded: () => {},
+    })
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 999)
+    external.stop('ext_abc', 'dev_phone')
+    const ended = seen.find((e) => e.type === 'session.ended')
+    expect((ended?.payload as { resumable?: boolean }).resumable).toBe(true)
+    external.shutdown()
+  })
+
+  it('with nobody to adopt it, the ending event says so honestly', () => {
+    const external = manager() // no onEnded wired
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 999)
+    external.stop('ext_abc', 'dev_phone')
+    const ended = seen.find((e) => e.type === 'session.ended')
+    expect((ended?.payload as { resumable?: boolean }).resumable).toBe(false)
+    external.shutdown()
+  })
+
   it('session end closes the story', () => {
     const external = manager()
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl'))

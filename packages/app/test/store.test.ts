@@ -57,6 +57,60 @@ describe('session list', () => {
     expect(stateOf(store).sessions.ses_1?.origin).toBe('unknown')
   })
 
+  it('learns from the ending event whether this can be carried on', () => {
+    // The regression: `resumable` used to arrive ONLY in hello, so a phone already
+    // watching a session kept "no resume point" forever after a stop — even though
+    // the daemon had just adopted the conversation and made it continuable.
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.seedSessions([
+      {
+        sessionId: 'ses_1',
+        agent: 'claude',
+        cwd: '/x',
+        title: 't',
+        origin: 'terminal',
+        status: 'running',
+        resumable: false,
+      },
+    ])
+    expect(stateOf(store).sessions.ses_1?.resumable).toBe(false)
+
+    store.apply(
+      ev({
+        v: 1,
+        seq: 5,
+        sessionId: 'ses_1',
+        ts: 1,
+        type: 'session.ended',
+        payload: { reason: 'stopped by dev_phone', resumable: true },
+      }),
+    )
+    expect(stateOf(store).sessions.ses_1?.resumable).toBe(true)
+    expect(stateOf(store).sessions.ses_1?.status).toBe('ended')
+  })
+
+  it('leaves resumable alone when the ending event does not mention it', () => {
+    // An older daemon omits the field; the phone must not silently downgrade to false.
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.seedSessions([
+      {
+        sessionId: 'ses_1',
+        agent: 'claude',
+        cwd: '/x',
+        title: 't',
+        origin: 'phone',
+        status: 'running',
+        resumable: true,
+      },
+    ])
+    store.apply(
+      ev({ v: 1, seq: 5, sessionId: 'ses_1', ts: 1, type: 'session.ended', payload: {} }),
+    )
+    expect(stateOf(store).sessions.ses_1?.resumable).toBe(true)
+  })
+
   it('tracks status through ended and errored', () => {
     const store = createStore()
     store.apply(started('ses_1'))
