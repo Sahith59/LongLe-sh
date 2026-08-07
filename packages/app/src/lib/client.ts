@@ -545,13 +545,19 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     pushTest: () => send({ v: PROTOCOL_VERSION, type: 'pushTest' }),
     takeOver: (sessionId: string, text: string) =>
       send({ v: PROTOCOL_VERSION, type: 'takeOver', sessionId, text }),
-    decide: (approvalId: string, verdict: 'allow' | 'deny', reply?: string) =>
+    decide: (
+      approvalId: string,
+      verdict: 'allow' | 'deny',
+      reply?: string,
+      answers?: Record<string, string>,
+    ) =>
       send({
         v: PROTOCOL_VERSION,
         type: 'decision',
         approvalId,
         verdict,
         ...(reply ? { reply } : {}),
+        ...(answers ? { answers } : {}),
       }),
     close: () => {
       closed = true

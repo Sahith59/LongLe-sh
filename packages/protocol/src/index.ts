@@ -41,6 +41,31 @@ const streamDeltaPayload = z
   })
   .passthrough()
 
+/**
+ * A multiple-choice question Claude is asking — the AskUserQuestion tool, mirrored.
+ * Shapes follow Claude Code's own tool schema so nothing is lost in translation.
+ */
+export const QuestionOption = z
+  .object({
+    label: z.string().min(1),
+    description: z.string().default(''),
+    /** Mockups, code snippets, or comparisons rendered when an option is focused. */
+    preview: z.string().optional(),
+  })
+  .passthrough()
+export type QuestionOption = z.infer<typeof QuestionOption>
+
+export const AskedQuestion = z
+  .object({
+    question: z.string().min(1),
+    /** Short chip label, e.g. "Auth method". */
+    header: z.string().default(''),
+    options: z.array(QuestionOption).min(1).max(8),
+    multiSelect: z.boolean().default(false),
+  })
+  .passthrough()
+export type AskedQuestion = z.infer<typeof AskedQuestion>
+
 const approvalRequestedPayload = z
   .object({
     approvalId: z.string().min(1),
@@ -49,6 +74,13 @@ const approvalRequestedPayload = z
     expiresAt: z.number().int().positive(),
     targetPath: z.string().optional(),
     outsideRoot: z.boolean().optional(),
+    /**
+     * Present when this is a QUESTION rather than a permission request. A question is
+     * not a yes/no: it carries its own options and is answered, not approved. The phone
+     * renders a wholly different surface for it, because confusing "may I?" with
+     * "which one?" is how a person answers the wrong thing in a hurry.
+     */
+    questions: z.array(AskedQuestion).min(1).max(4).optional(),
   })
   .passthrough()
 
@@ -58,6 +90,8 @@ const approvalDecidedPayload = z
     verdict: Verdict,
     decidedBy: z.string().min(1),
     reply: z.string().optional(),
+    /** For a question: what was actually chosen, so history reads as an answer. */
+    answers: z.record(z.string()).optional(),
   })
   .passthrough()
 
@@ -131,6 +165,13 @@ const decisionMessage = z
     approvalId: z.string().min(1),
     verdict: Verdict,
     reply: z.string().optional(),
+    /**
+     * Answers to a question approval: question text → chosen label(s). Multi-select
+     * answers are comma-separated, matching Claude Code's own output shape.
+     */
+    answers: z.record(z.string()).optional(),
+    /** Freeform text typed instead of (or alongside) picking an option. */
+    response: z.string().optional(),
   })
   .passthrough()
 

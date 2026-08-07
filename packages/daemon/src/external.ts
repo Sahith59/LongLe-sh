@@ -2,7 +2,7 @@ import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { basename } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import type { SessionEvent } from '@longleash/protocol'
+import { AskedQuestion, type SessionEvent } from '@longleash/protocol'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { ApprovalStore } from './approvals.js'
 import type { DecisionOutcome, SessionStatus } from './sessions.js'
@@ -78,9 +78,57 @@ interface ExternalSession {
 interface Waiting {
   resolve: (decision: HookDecision) => void
   timer: ReturnType<typeof setTimeout>
+  /** Set when this is a question: answering it is not the same act as allowing it. */
+  questions?: AskedQuestion[]
 }
 
 const newId = (prefix: string) => `${prefix}_${randomBytes(9).toString('base64url')}`
+
+/**
+ * Claude Code's AskUserQuestion tool, read out of the hook payload. Anything that does
+ * not parse is treated as "not a question", which degrades to the ordinary permission
+ * path rather than dropping the interaction — a malformed question must never become a
+ * silent no-op at someone's terminal.
+ */
+export function readQuestions(toolName: string, input: unknown): AskedQuestion[] | null {
+  if (toolName !== 'AskUserQuestion') return null
+  if (!input || typeof input !== 'object') return null
+  const raw = (input as { questions?: unknown }).questions
+  if (!Array.isArray(raw) || raw.length === 0) return null
+  const parsed: AskedQuestion[] = []
+  for (const q of raw.slice(0, 4)) {
+    const result = AskedQuestion.safeParse(q)
+    if (result.success) parsed.push(result.data)
+  }
+  return parsed.length > 0 ? parsed : null
+}
+
+/**
+ * What Claude receives once a question has been answered on the phone. A PreToolUse hook
+ * cannot supply a tool's result — it can only allow, deny, or modify input — so the
+ * answer travels back as the denial reason. Phrased to be unmistakable: the tool did not
+ * run, but the question HAS been answered and must not be asked again.
+ */
+export function formatAnswers(
+  questions: AskedQuestion[],
+  answers: Record<string, string>,
+  response?: string,
+): string {
+  const lines: string[] = []
+  for (const q of questions) {
+    const picked = answers[q.question]
+    if (picked) lines.push(`\u2022 ${q.question} \u2192 ${picked}`)
+  }
+  if (response !== undefined && response.trim() !== '') {
+    lines.push(`\u2022 They also said: ${response.trim()}`)
+  }
+  return [
+    'Answered by the user from their phone (LongLeash). Treat the following as their reply',
+    'to this question and carry on — do not ask it again.',
+    '',
+    ...lines,
+  ].join('\n')
+}
 
 function summarize(toolName: string, input: unknown): string {
   let detail = ''
@@ -173,8 +221,12 @@ export class ExternalSessions {
       })
     }
 
+    const questions = readQuestions(toolName, toolInput)
     const approvalId = newId('apr')
-    const inputSummary = summarize(toolName, toolInput)
+    // A question's summary is the question itself; a tool's is what it would touch.
+    const inputSummary = questions
+      ? questions.map((q) => q.question).join(' · ').slice(0, 300)
+      : summarize(toolName, toolInput)
     const expiresAt = this.now() + this.waitMs
     this.approvals.create({
       approvalId,
@@ -187,7 +239,14 @@ export class ExternalSessions {
     })
     this.emit(session.sessionId, {
       type: 'approval.requested',
-      payload: { approvalId, toolName, inputSummary, expiresAt, outsideRoot: false },
+      payload: {
+        approvalId,
+        toolName,
+        inputSummary,
+        expiresAt,
+        outsideRoot: false,
+        ...(questions === null ? {} : { questions }),
+      },
     })
 
     return new Promise<HookDecision>((resolve) => {
@@ -211,14 +270,27 @@ export class ExternalSessions {
         resolve({ decision: 'ask', reason: 'No answer from the phone; deciding in the terminal.' })
       }, this.waitMs)
       timer.unref?.()
-      this.waiting.set(approvalId, { resolve, timer })
+      this.waiting.set(approvalId, {
+        resolve,
+        timer,
+        ...(questions === null ? {} : { questions }),
+      })
     })
   }
 
   /** The phone answered. Mirrors SessionManager.decide, for this manager's approvals only. */
-  decide(approvalId: string, verdict: 'allow' | 'deny', decidedBy: string, reply?: string): DecisionOutcome {
+  decide(
+    approvalId: string,
+    verdict: 'allow' | 'deny',
+    decidedBy: string,
+    reply?: string,
+    answers?: Record<string, string>,
+  ): DecisionOutcome {
     const approval = this.approvals.get(approvalId)
     if (!approval) return 'unknown'
+    const waiter = this.waiting.get(approvalId)
+    const questions = waiter?.questions
+
     const committed = this.approvals.decide(
       approvalId,
       verdict === 'allow' ? 'allowed' : 'denied',
@@ -226,22 +298,42 @@ export class ExternalSessions {
       reply,
     )
     if (!committed) return 'already-decided'
+
     this.emit(approval.sessionId, {
       type: 'approval.decided',
-      payload: { approvalId, verdict, decidedBy, ...(reply === undefined ? {} : { reply }) },
+      payload: {
+        approvalId,
+        verdict,
+        decidedBy,
+        ...(reply === undefined ? {} : { reply }),
+        ...(answers === undefined ? {} : { answers }),
+      },
     })
-    const waiter = this.waiting.get(approvalId)
+
     if (waiter) {
       this.waiting.delete(approvalId)
       clearTimeout(waiter.timer)
-      waiter.resolve(
-        verdict === 'allow'
-          ? { decision: 'allow', reason: `Approved from your phone by ${decidedBy}` }
-          : {
-              decision: 'deny',
-              reason: reply ? `Denied from your phone: ${reply}` : 'Denied from your phone',
-            },
-      )
+      // A question is answered, never "approved": the tool is refused on purpose and the
+      // chosen options travel back as the reason, which is the only channel a PreToolUse
+      // hook has for saying something to the model.
+      if (questions !== undefined && answers !== undefined) {
+        waiter.resolve({ decision: 'deny', reason: formatAnswers(questions, answers, reply) })
+      } else if (questions !== undefined) {
+        // The person dismissed the question instead of answering it.
+        waiter.resolve({
+          decision: 'ask',
+          reason: 'The user left this question for the terminal.',
+        })
+      } else {
+        waiter.resolve(
+          verdict === 'allow'
+            ? { decision: 'allow', reason: `Approved from your phone by ${decidedBy}` }
+            : {
+                decision: 'deny',
+                reason: reply ? `Denied from your phone: ${reply}` : 'Denied from your phone',
+              },
+        )
+      }
     }
     return 'decided'
   }

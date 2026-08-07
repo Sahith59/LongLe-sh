@@ -31,6 +31,7 @@ import {
   type LinkPath,
 } from './lib/client.js'
 import { ApprovalCard } from './ui/ApprovalCard.js'
+import { QuestionCard } from './ui/QuestionCard.js'
 import { NewSessionSheet } from './ui/NewSessionSheet.js'
 import { SessionCard } from './ui/SessionCard.js'
 import { Transcript } from './ui/Transcript.js'
@@ -150,6 +151,30 @@ export default function App() {
     [store],
   )
 
+  /**
+   * Answering a question is not approving it. The verdict field still travels (the wire
+   * has one), but what the daemon acts on is the answers — it turns them into the reply
+   * Claude receives.
+   */
+  const answer = useCallback(
+    (approval: PendingApproval, answers: Record<string, string>, response?: string) => {
+      store.markDeciding(approval.approvalId)
+      const sent = clientRef.current?.decide(approval.approvalId, 'deny', response, answers)
+      if (!sent) store.rollbackDecision(approval.approvalId)
+    },
+    [store],
+  )
+
+  /** Hand a question back to the terminal, unanswered and unspoiled. */
+  const leaveQuestion = useCallback(
+    (approval: PendingApproval) => {
+      store.markDeciding(approval.approvalId)
+      const sent = clientRef.current?.decide(approval.approvalId, 'deny')
+      if (!sent) store.rollbackDecision(approval.approvalId)
+    },
+    [store],
+  )
+
   const search = useCallback((query: string) => clientRef.current?.findFolders(query), [])
 
   const enableAlerts = useCallback(() => {
@@ -236,6 +261,8 @@ export default function App() {
             error={error}
             onClearError={() => setError(null)}
             onDecide={decide}
+            onAnswer={answer}
+            onLeave={leaveQuestion}
             onStop={() => clientRef.current?.stopSession(openSession.sessionId)}
             onResume={() => clientRef.current?.resumeSession(openSession.sessionId)}
             onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
@@ -252,6 +279,8 @@ export default function App() {
             error={error}
             onClearError={() => setError(null)}
             onDecide={decide}
+            onAnswer={answer}
+            onLeave={leaveQuestion}
             onOpen={setOpenSessionId}
             onNew={() => setSheetOpen(true)}
             alerts={alerts}
@@ -427,6 +456,8 @@ export function ConsoleScreen({
   error,
   onClearError,
   onDecide,
+  onAnswer,
+  onLeave,
   onOpen,
   onNew,
   alerts,
@@ -441,6 +472,8 @@ export function ConsoleScreen({
   error: string | null
   onClearError: () => void
   onDecide: (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => void
+  onAnswer: (approval: PendingApproval, answers: Record<string, string>, response?: string) => void
+  onLeave: (approval: PendingApproval) => void
   onOpen: (sessionId: string) => void
   onNew: () => void
   alerts?: AlertsState | null
@@ -462,17 +495,28 @@ export function ConsoleScreen({
             </SectionLabel>
             <div className="stack">
               <AnimatePresence initial={false}>
-                {approvals.map((approval) => (
-                  <ApprovalCard
-                    key={approval.approvalId}
-                    approval={approval}
-                    context={
-                      snapshot.sessions[approval.sessionId]?.title || 'Untitled session'
-                    }
-                    onDecide={onDecide}
-                    onOpen={() => onOpen(approval.sessionId)}
-                  />
-                ))}
+                {approvals.map((approval) =>
+                  approval.questions ? (
+                    <QuestionCard
+                      key={approval.approvalId}
+                      approval={approval}
+                      questions={approval.questions}
+                      context={snapshot.sessions[approval.sessionId]?.title || 'Untitled session'}
+                      onAnswer={onAnswer}
+                      onLeave={onLeave}
+                    />
+                  ) : (
+                    <ApprovalCard
+                      key={approval.approvalId}
+                      approval={approval}
+                      context={
+                        snapshot.sessions[approval.sessionId]?.title || 'Untitled session'
+                      }
+                      onDecide={onDecide}
+                      onOpen={() => onOpen(approval.sessionId)}
+                    />
+                  ),
+                )}
               </AnimatePresence>
             </div>
           </section>
@@ -562,6 +606,8 @@ export function DetailScreen({
   error,
   onClearError,
   onDecide,
+  onAnswer,
+  onLeave,
   onStop,
   onResume,
   onSend,
@@ -574,6 +620,8 @@ export function DetailScreen({
   error: string | null
   onClearError: () => void
   onDecide: (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => void
+  onAnswer: (approval: PendingApproval, answers: Record<string, string>, response?: string) => void
+  onLeave: (approval: PendingApproval) => void
   onStop: () => void
   onResume: () => void
   onSend: (text: string) => boolean
@@ -653,9 +701,19 @@ export function DetailScreen({
             </SectionLabel>
             <div className="stack">
               <AnimatePresence initial={false}>
-                {approvals.map((approval) => (
-                  <ApprovalCard key={approval.approvalId} approval={approval} onDecide={onDecide} />
-                ))}
+                {approvals.map((approval) =>
+                  approval.questions ? (
+                    <QuestionCard
+                      key={approval.approvalId}
+                      approval={approval}
+                      questions={approval.questions}
+                      onAnswer={onAnswer}
+                      onLeave={onLeave}
+                    />
+                  ) : (
+                    <ApprovalCard key={approval.approvalId} approval={approval} onDecide={onDecide} />
+                  ),
+                )}
               </AnimatePresence>
             </div>
           </section>

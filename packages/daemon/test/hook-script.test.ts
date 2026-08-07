@@ -212,6 +212,31 @@ describe('the hook script — the terminal must never notice a problem', () => {
     expect(called).toBe(true)
   })
 
+  it('a QUESTION always reaches the phone, in every permission mode', async () => {
+    // Claude Code shows its question dialog regardless of permission mode — it is asking
+    // the human to choose, not asking to be allowed. An auto-mode session that skipped
+    // this asked its questions to an empty room.
+    let seen = 0
+    const port = await listenOn((_body, respond) => {
+      seen += 1
+      respond(200, { decision: 'ask', reason: 'x' })
+    })
+    writeFileSync(
+      join(dir, 'hook-endpoint.json'),
+      JSON.stringify({ url: `http://127.0.0.1:${port}/hook`, secret: 's' }),
+    )
+    for (const mode of ['bypassPermissions', 'acceptEdits', 'plan', 'default']) {
+      await run({
+        hook_event_name: 'PreToolUse',
+        session_id: 'abc',
+        tool_name: 'AskUserQuestion',
+        tool_input: { questions: [{ question: 'Which?', header: 'Pick', options: [] }] },
+        permission_mode: mode,
+      })
+    }
+    expect(seen).toBe(4)
+  })
+
   it('with no daemon endpoint at all, it exits clean and silent', async () => {
     const { stdout, code } = await run({
       hook_event_name: 'PreToolUse',

@@ -1,4 +1,4 @@
-import type { SessionEvent } from '@longleash/protocol'
+import type { AskedQuestion, SessionEvent } from '@longleash/protocol'
 
 export type SessionStatus = 'running' | 'waiting' | 'ended' | 'errored'
 
@@ -46,6 +46,12 @@ export interface PendingApproval {
   inputSummary: string
   targetPath?: string
   outsideRoot: boolean
+  /**
+   * Present when Claude is ASKING rather than requesting permission. A question is
+   * answered by choosing, not by allowing — the phone renders a different surface,
+   * because mistaking "which one?" for "may I?" is how someone answers wrongly in a hurry.
+   */
+  questions?: AskedQuestion[]
 }
 
 export interface StoreState {
@@ -178,6 +184,7 @@ export function createStore(options: StoreOptions = {}) {
           inputSummary: string
           targetPath?: string
           outsideRoot?: boolean
+          questions?: AskedQuestion[]
         }
         if (settled.has(payload.approvalId)) break
         approvals.set(payload.approvalId, {
@@ -187,6 +194,7 @@ export function createStore(options: StoreOptions = {}) {
           inputSummary: payload.inputSummary,
           ...(payload.targetPath === undefined ? {} : { targetPath: payload.targetPath }),
           outsideRoot: payload.outsideRoot === true,
+          ...(payload.questions === undefined ? {} : { questions: payload.questions }),
         })
         break
       }

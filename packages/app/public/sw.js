@@ -52,7 +52,9 @@ self.addEventListener('push', (event) => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       if (windows.some((w) => w.visibilityState === 'visible')) return
       await self.registration.showNotification('LongLeash', {
-        body: 'A session needs you.',
+        // The kind, never the content: "a question" tells you what KIND of thirty
+        // seconds this will be, without putting a word of the question on a lock screen.
+        body: data.t === 'question' ? 'Claude has a question for you.' : 'A session needs you.',
         tag: data.approvalId || 'longleash-approval',
         data,
         icon: '/icon-192.png',

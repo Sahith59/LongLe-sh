@@ -109,6 +109,48 @@ const breach: PendingApproval = {
   outsideRoot: true,
 }
 
+/** A real AskUserQuestion, exactly as Claude Code's hook payload delivers one. */
+const question: PendingApproval = {
+  approvalId: 'a-q1',
+  sessionId: 's-1',
+  toolName: 'AskUserQuestion',
+  inputSummary: 'How should the earpiece know a question is meant for you?',
+  outsideRoot: false,
+  questions: [
+    {
+      question: 'How should the earpiece know a question is meant for you?',
+      header: 'Trigger',
+      multiSelect: false,
+      options: [
+        {
+          label: 'Manual trigger (Recommended)',
+          description:
+            "Double-tap the stem to say 'answer this' — buildable now, sidesteps the hard intent problem, and dodges the legal exposure of recording all day.",
+        },
+        {
+          label: 'Always-on passive detection',
+          description:
+            'Constantly listening, inferring when a question is aimed at you — much harder to get right, and raises consent issues directly.',
+        },
+        {
+          label: 'Not sure yet, want your take',
+          description: "Let's talk through the trade-off before deciding.",
+        },
+      ],
+    },
+    {
+      question: 'Which surfaces should ship in the MVP?',
+      header: 'MVP scope',
+      multiSelect: true,
+      options: [
+        { label: 'iPhone app', description: 'The one everyone already carries.' },
+        { label: 'Watch complication', description: 'Glanceable, but a second thing to build.' },
+        { label: 'Web dashboard', description: 'Good for review after the fact.' },
+      ],
+    },
+  ],
+}
+
 const folders: FolderHit[] = [
   { path: '/Users/sahith/Desktop/FD_Engineer', label: 'Desktop/FD_Engineer', kind: 'folder' },
   { path: '/Users/sahith/Desktop/sticknotes', label: 'Desktop/sticknotes', kind: 'folder' },
@@ -235,6 +277,8 @@ function Flow() {
             error={null}
             onClearError={noop}
             onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
             onStop={noop}
             onResume={noop}
             onSend={never}
@@ -251,6 +295,8 @@ function Flow() {
             error={null}
             onClearError={noop}
             onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
             onOpen={() => setOpen(true)}
             onNew={noop}
           />
@@ -264,6 +310,28 @@ function Flow() {
 function Preview() {
   if (screen === 'flow') return <Flow />
 
+  if (screen === 'question') {
+    return (
+      <>
+        <Rail connected via="lan" />
+        <ConsoleScreen
+          approvals={[question]}
+          active={[sticknotes]}
+          past={[]}
+          snapshot={{ sessions: snapshot.sessions, approvals: [question] }}
+          diagnostic={null}
+          error={null}
+          onClearError={noop}
+          onDecide={noop}
+          onAnswer={noop}
+          onLeave={noop}
+          onOpen={noop}
+          onNew={noop}
+        />
+      </>
+    )
+  }
+
   if (screen === 'detail') {
     return (
       <>
@@ -276,6 +344,8 @@ function Preview() {
           error={null}
           onClearError={noop}
           onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
           onStop={noop}
           onResume={noop}
           onSend={never}
@@ -297,6 +367,8 @@ function Preview() {
           error={null}
           onClearError={noop}
           onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
           onStop={noop}
           onResume={noop}
           onSend={never}
@@ -319,6 +391,8 @@ function Preview() {
           error={null}
           onClearError={noop}
           onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
           onOpen={noop}
           onNew={noop}
         />
@@ -347,6 +421,8 @@ function Preview() {
           error={null}
           onClearError={noop}
           onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
           onStop={noop}
           onResume={noop}
           onSend={never}
@@ -369,6 +445,8 @@ function Preview() {
           error={null}
           onClearError={noop}
           onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
           onOpen={noop}
           onNew={noop}
         />
@@ -388,6 +466,8 @@ function Preview() {
           error={null}
           onClearError={noop}
           onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
           onStop={noop}
           onResume={noop}
           onSend={never}
@@ -410,6 +490,8 @@ function Preview() {
           error={null}
           onClearError={noop}
           onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
           onOpen={noop}
           onNew={noop}
         />
@@ -430,6 +512,8 @@ function Preview() {
           error="Not connected to your laptop — the message was not sent."
           onClearError={noop}
           onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
           onOpen={noop}
           onNew={noop}
         />
@@ -449,6 +533,8 @@ function Preview() {
         error={null}
         onClearError={noop}
         onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
         onOpen={noop}
         onNew={noop}
       />

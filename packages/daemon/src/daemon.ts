@@ -105,7 +105,11 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     } else if (event.type === 'approval.requested') {
       write(`? ${event.sessionId} needs approval: ${String(payload.inputSummary)}`)
       // The tap on the pocket. IDs only — the notifier enforces it, this comment remembers it.
-      push.notifyApproval(event.sessionId, String(payload.approvalId))
+      push.notifyApproval(
+        event.sessionId,
+        String(payload.approvalId),
+        Array.isArray(payload.questions) ? 'question' : undefined,
+      )
     } else if (event.type === 'approval.decided') {
       write(`${payload.verdict === 'allow' ? '✓' : '✗'} ${String(payload.verdict)} by ${String(payload.decidedBy)}`)
     } else if (event.type === 'activity.tool') {

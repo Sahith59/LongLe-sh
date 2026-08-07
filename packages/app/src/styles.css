@@ -799,6 +799,181 @@ body {
   min-height: 44px;
 }
 
+/* -------------------------------------------------------------- questions
+   Claude is ASKING, not requesting permission. This surface shares the
+   approval's materials but never its shape: no Allow/Deny pair, options as
+   keys that LIGHT UP when chosen, and one Send key that stays dark until
+   there is something to send. */
+
+.question {
+  background: var(--grad-key-hot);
+  border-radius: var(--r);
+  box-shadow: var(--raise-lg);
+  padding: 15px 15px 14px;
+}
+.question .head {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+.question .sigil {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+  color: var(--ink);
+}
+.question .headtext {
+  flex: 1;
+  min-width: 0;
+}
+.question h3 {
+  margin: 1px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.question .who {
+  margin: 3px 0 0;
+  font: 400 11px/1.5 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.question .progress {
+  flex: none;
+  padding: 5px 9px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: var(--engrave);
+  font: 600 10.5px/1 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.qblock {
+  margin-top: 15px;
+}
+.qchip {
+  display: inline-block;
+  margin-bottom: 7px;
+  padding: 4px 9px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: var(--engrave);
+  font: 600 9.5px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.qtext {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: -0.014em;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+.qhint {
+  margin: 4px 0 0;
+  font: 400 11.5px/1.4 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-3);
+}
+.qoptions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 11px;
+}
+/* An option is a key. Chosen means brighter — the same luminance language the
+   rest of the interface speaks, so no new vocabulary has to be learned. */
+.key.qoption {
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 11px 13px;
+  text-align: left;
+  font-weight: 500;
+}
+.key.qoption.on {
+  background: linear-gradient(172deg, #3a3e45 0%, #2b2e34 52%, #24262b 100%);
+}
+.qtick {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 1px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.32);
+  box-shadow: var(--engrave);
+  color: var(--sage);
+}
+.qbody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.qlabel {
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+.qdesc {
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+/* A preview is read, so it sits in a well. */
+.qpreview {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--recess);
+  box-shadow: var(--sink);
+  font: 400 11.5px/1.55 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.qacts {
+  margin-top: 14px;
+}
+.qacts .key {
+  width: 100%;
+}
+.question .field.note {
+  margin-top: 12px;
+}
+/* Two full-sentence actions never fit side by side on a phone; stacking them is
+   the honest layout rather than letting the labels collide. */
+.question .approvalfoot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin-top: 12px;
+}
+
 /* --------------------------------------------------------------- readout
    The transcript well: the one large recessed surface. The conversation is
    read out of the machine, not printed on top of it. */

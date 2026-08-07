@@ -532,7 +532,10 @@ export class LongLeashServer {
           message.approvalId,
           message.verdict,
           connection.deviceId,
-          message.reply,
+          // A freeform reply and a question's typed response arrive on different fields;
+          // the manager treats either as the words that accompany the decision.
+          message.reply ?? message.response,
+          message.answers,
         )
       }
       this.log(`decision ${message.verdict} on ${message.approvalId} -> ${outcome}`)

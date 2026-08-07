@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { SessionEvent } from '@longleash/protocol'
 import { EventLog } from '../src/eventlog.js'
 import { ApprovalStore } from '../src/approvals.js'
-import { ExternalSessions, transcriptDeltas } from '../src/external.js'
+import { ExternalSessions, formatAnswers, readQuestions, transcriptDeltas } from '../src/external.js'
 
 let dir: string
 let eventLog: EventLog
@@ -299,5 +299,136 @@ describe('transcript lines → deltas', () => {
     expect(transcriptDeltas('not an object')).toEqual([])
     expect(transcriptDeltas({ type: 'assistant' })).toEqual([])
     expect(transcriptDeltas({ type: 'assistant', message: { content: 'weird-string' } })).toEqual([])
+  })
+})
+
+
+describe('questions — Claude asking, not asking permission', () => {
+  it('reads a question out of the hook payload, and refuses to invent one', () => {
+    const parsed = readQuestions('AskUserQuestion', {
+  questions: [
+    {
+      question: 'Which trigger method?',
+      header: 'Trigger',
+      multiSelect: false,
+      options: [
+        { label: 'Manual', description: 'Double-tap the stem.' },
+        { label: 'Always-on', description: 'Constantly listening.' },
+      ],
+    },
+  ],
+})
+    expect(parsed).not.toBeNull()
+    expect(parsed?.[0]?.question).toBe('Which trigger method?')
+    expect(parsed?.[0]?.options).toHaveLength(2)
+
+    // Anything else is not a question, and malformed input degrades rather than throws.
+    expect(readQuestions('Bash', { command: 'ls' })).toBeNull()
+    expect(readQuestions('AskUserQuestion', null)).toBeNull()
+    expect(readQuestions('AskUserQuestion', { questions: [] })).toBeNull()
+    expect(readQuestions('AskUserQuestion', { questions: [{ nope: true }] })).toBeNull()
+  })
+
+  it('an approval for a question carries the questions to the phone', async () => {
+    const external = manager({ waitMs: 5000 })
+    void external.preToolUse('abc', '/x', join(dir, 'n.jsonl'), 'AskUserQuestion', {
+  questions: [
+    {
+      question: 'Which trigger method?',
+      header: 'Trigger',
+      multiSelect: false,
+      options: [
+        { label: 'Manual', description: 'Double-tap the stem.' },
+        { label: 'Always-on', description: 'Constantly listening.' },
+      ],
+    },
+  ],
+})
+    await until(() => seen.some((e) => e.type === 'approval.requested'))
+    const payload = seen.find((e) => e.type === 'approval.requested')?.payload as {
+      questions?: { question: string }[]
+      inputSummary: string
+    }
+    expect(payload.questions?.[0]?.question).toBe('Which trigger method?')
+    // The summary is the question itself, so a notification list reads sensibly.
+    expect(payload.inputSummary).toContain('Which trigger method?')
+    external.shutdown()
+  })
+
+  it('answering sends the choice back to Claude as an unmistakable instruction', async () => {
+    const external = manager({ waitMs: 5000 })
+    const pending = external.preToolUse('abc', '/x', join(dir, 'n.jsonl'), 'AskUserQuestion', {
+  questions: [
+    {
+      question: 'Which trigger method?',
+      header: 'Trigger',
+      multiSelect: false,
+      options: [
+        { label: 'Manual', description: 'Double-tap the stem.' },
+        { label: 'Always-on', description: 'Constantly listening.' },
+      ],
+    },
+  ],
+})
+    await until(() => seen.some((e) => e.type === 'approval.requested'))
+    const approvalId = (seen.find((e) => e.type === 'approval.requested')?.payload as {
+      approvalId: string
+    }).approvalId
+
+    external.decide(approvalId, 'deny', 'dev_phone', undefined, {
+      'Which trigger method?': 'Manual',
+    })
+    const verdict = await pending
+    // A PreToolUse hook cannot supply a tool result, so the answer rides the denial —
+    // verified against real Claude Code, which replied "Blue it is." to exactly this shape.
+    expect(verdict.decision).toBe('deny')
+    expect(verdict.reason).toContain('Which trigger method? \u2192 Manual')
+    expect(verdict.reason).toContain('do not ask it again')
+    external.shutdown()
+  })
+
+  it('dismissing a question hands it back to the terminal rather than answering it wrongly', async () => {
+    const external = manager({ waitMs: 5000 })
+    const pending = external.preToolUse('abc', '/x', join(dir, 'n.jsonl'), 'AskUserQuestion', {
+  questions: [
+    {
+      question: 'Which trigger method?',
+      header: 'Trigger',
+      multiSelect: false,
+      options: [
+        { label: 'Manual', description: 'Double-tap the stem.' },
+        { label: 'Always-on', description: 'Constantly listening.' },
+      ],
+    },
+  ],
+})
+    await until(() => seen.some((e) => e.type === 'approval.requested'))
+    const approvalId = (seen.find((e) => e.type === 'approval.requested')?.payload as {
+      approvalId: string
+    }).approvalId
+
+    external.decide(approvalId, 'deny', 'dev_phone')
+    const verdict = await pending
+    expect(verdict.decision).toBe('ask')
+    external.shutdown()
+  })
+
+  it('formats multi-select answers and typed words together', () => {
+    const questions = readQuestions('AskUserQuestion', {
+  questions: [
+    {
+      question: 'Which trigger method?',
+      header: 'Trigger',
+      multiSelect: false,
+      options: [
+        { label: 'Manual', description: 'Double-tap the stem.' },
+        { label: 'Always-on', description: 'Constantly listening.' },
+      ],
+    },
+  ],
+})!
+    const text = formatAnswers(questions, { 'Which trigger method?': 'Manual, Always-on' }, 'but start simple')
+    expect(text).toContain('Manual, Always-on')
+    expect(text).toContain('They also said: but start simple')
   })
 })

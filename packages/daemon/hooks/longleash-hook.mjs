@@ -101,6 +101,12 @@ function ruleMatches(rule, tool, input) {
  */
 function terminalWouldAsk(event) {
   const tool = event.tool_name
+  // A QUESTION is not a permission. Claude Code shows its dialog in every permission
+  // mode — bypass, acceptEdits, plan, all of them — because it is asking the human to
+  // choose, not asking to be allowed. So it always travels to the phone; filtering it
+  // by permission mode is what made auto-mode sessions ask their questions to an empty
+  // room while the person waited on the other side of the world.
+  if (tool === 'AskUserQuestion') return true
   if (READ_ONLY.has(tool)) return false
   const mode = event.permission_mode
   if (mode === 'bypassPermissions' || mode === 'plan') return false

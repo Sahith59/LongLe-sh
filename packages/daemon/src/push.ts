@@ -107,14 +107,19 @@ export class PushNotifier {
    * a slow push service must never delay the agent loop, and a failed push loses
    * nothing — the approval still sits in the inbox.
    */
-  notifyApproval(sessionId: string, approvalId: string): void {
+  notifyApproval(sessionId: string, approvalId: string, kind?: 'question'): void {
     const rows = this.db
       .prepare('SELECT endpoint, device_id, json FROM push_subscriptions')
       .all() as SubscriptionRow[]
     if (rows.length === 0) return
 
-    // IDs only. Adding any content here is a protocol violation, not a feature.
-    const payload = JSON.stringify({ t: 'approval', sessionId, approvalId })
+    // Still IDs only — `kind` says which SHAPE of interaction waits, never a word of
+    // its content, so the lock screen can be useful without leaking anything.
+    const payload = JSON.stringify({
+      t: kind === 'question' ? 'question' : 'approval',
+      sessionId,
+      approvalId,
+    })
 
     for (const row of rows) {
       let subscription: PushSubscriptionJson
