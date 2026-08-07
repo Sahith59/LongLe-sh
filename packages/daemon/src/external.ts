@@ -68,6 +68,10 @@ interface ExternalSession {
   title: string
   /** The claude process itself, reported by the hook — what Stop actually stops. */
   pid: number | null
+  /** False until the first human message renames it from its folder. */
+  named: boolean
+  /** The permission mode Claude Code last reported for this session. */
+  permissionMode: string | null
   /** Byte offset already ingested from the transcript. */
   offset: number
   /** Carry-over of a partial trailing line between polls. */
@@ -211,8 +215,18 @@ export class ExternalSessions {
     transcriptPath: string,
     toolName: string,
     toolInput: unknown,
+    permissionMode?: string,
   ): Promise<HookDecision> {
     const session = this.ensure(claudeSessionId, cwd, transcriptPath)
+    // Surface the mode the moment it changes: a phone that is being asked about a session
+    // running in auto mode deserves to see that contradiction rather than puzzle over it.
+    if (permissionMode !== undefined && permissionMode !== session.permissionMode) {
+      session.permissionMode = permissionMode
+      this.emit(session.sessionId, {
+        type: 'session.status',
+        payload: { status: session.status, permissionMode },
+      })
+    }
 
     if (!this.hasAudience()) {
       return Promise.resolve({
@@ -425,6 +439,8 @@ export class ExternalSessions {
       startedAt: this.now(),
       title: `${basename(cwd)} — terminal`,
       pid: null,
+      named: false,
+      permissionMode: null,
       offset: hasHistory && existsSync(transcriptPath) ? statSync(transcriptPath).size : 0,
       remainder: '',
       timer: null,
@@ -491,12 +507,58 @@ export class ExternalSessions {
       for (const delta of transcriptDeltas(parsed)) deltas.push(delta)
     }
     for (const delta of deltas) this.emit(session.sessionId, delta)
+
+    // The first thing the person asked for becomes the session's name. Every terminal
+    // session in one folder was otherwise called the same thing, which is useless
+    // precisely when several are open at once.
+    if (!session.named) {
+      for (const delta of deltas) {
+        if (delta.type !== 'stream.delta' || delta.payload.kind !== 'user') continue
+        const title = titleFrom(delta.payload.text)
+        if (title === null) continue
+        session.named = true
+        session.title = title
+        this.emit(session.sessionId, {
+          type: 'session.status',
+          payload: { status: session.status, title },
+        })
+        break
+      }
+    }
   }
 
   private emit(sessionId: string, input: AppendInput): void {
     const event = this.eventLog.append(sessionId, input)
     this.onEvent?.(event)
   }
+}
+
+/**
+ * What the person actually said. Claude Code records slash commands as markup
+ * (`<command-name>/exit</command-name>…`) in the same place as real messages; rendering
+ * that verbatim on a phone shows plumbing where speech should be.
+ */
+export function humanSaid(text: string): string {
+  if (/<command-(name|message|args)>/.test(text)) {
+    const name = text.match(/<command-name>([^<]*)<\/command-name>/)?.[1]?.trim()
+    const args = text.match(/<command-args>([^<]*)<\/command-args>/)?.[1]?.trim()
+    if (name === undefined || name === '') return ''
+    return args ? `${name} ${args}` : name
+  }
+  return text
+}
+
+/**
+ * A name a person would recognise, taken from the first thing they asked for. Without
+ * this every terminal session in one folder is called the same thing, which makes a list
+ * of them useless exactly when there are several to choose between.
+ */
+export function titleFrom(text: string): string | null {
+  const line = humanSaid(text).trim().split('\n').find((l) => l.trim() !== '')
+  if (line === undefined) return null
+  const clean = line.trim()
+  if (clean === '') return null
+  return clean.length > 72 ? `${clean.slice(0, 71)}\u2026` : clean
 }
 
 /** Is this pid still a claude process? PIDs recycle; never kill on faith. */
@@ -531,12 +593,12 @@ export function transcriptDeltas(line: unknown): AppendInput[] {
 
   if (record.type === 'user') {
     const content = message.content
-    if (typeof content === 'string') push('user', content)
+    if (typeof content === 'string') push('user', humanSaid(content))
     else if (Array.isArray(content)) {
       for (const block of content) {
         const b = block as Record<string, unknown>
         // tool_result blocks are plumbing between the agent and its tools, not speech.
-        if (b.type === 'text' && typeof b.text === 'string') push('user', b.text)
+        if (b.type === 'text' && typeof b.text === 'string') push('user', humanSaid(b.text))
       }
     }
     return out

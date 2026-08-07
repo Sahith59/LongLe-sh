@@ -80,3 +80,15 @@ export function splitTool(text: string): { name: string; detail: string } {
     detail: detail.startsWith('/') && !detail.includes(' ') ? shortPath(detail) : detail,
   }
 }
+
+/**
+ * Claude Code's permission modes, in words. Shown on a session so that being asked —
+ * or not being asked — is never a mystery: an auto-approving session that still pages
+ * your phone is a contradiction you can only spot if the mode is visible.
+ */
+export const MODE_LABEL: Record<string, string> = {
+  default: 'asks first',
+  acceptEdits: 'auto-accepts edits',
+  bypassPermissions: 'auto-approves everything',
+  plan: 'planning only',
+}

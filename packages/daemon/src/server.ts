@@ -142,6 +142,7 @@ export class LongLeashServer {
         transcript_path?: string
         tool_name?: string
         tool_input?: unknown
+        permission_mode?: string
         ll_pid?: number
       }
       const { session_id: sessionId, cwd, transcript_path: transcript } = body
@@ -167,6 +168,12 @@ export class LongLeashServer {
           transcript ?? '',
           body.tool_name,
           body.tool_input,
+          body.permission_mode,
+        )
+        // Printed so a surprising ask is diagnosable from the daemon terminal rather than
+        // guessed at: it names the mode the session claims to be running in.
+        this.log(
+          `? ${body.tool_name} in ${sessionId.slice(0, 8)} (mode: ${body.permission_mode ?? 'not reported'}) -> ${decision.decision}`,
         )
         return decision
       }

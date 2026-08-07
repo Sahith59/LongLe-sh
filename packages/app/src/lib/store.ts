@@ -36,6 +36,8 @@ export interface SessionView {
    * conversation between surfaces rather than being locked to whichever one began it.
    */
   resumeId?: string
+  /** The permission mode the laptop reports for this session, when it says. */
+  permissionMode?: string
   error?: string
 }
 
@@ -206,12 +208,19 @@ export function createStore(options: StoreOptions = {}) {
         break
       }
       case 'session.status': {
-        const payload = event.payload as { status: SessionStatus }
+        const payload = event.payload as {
+          status: SessionStatus
+          title?: string
+          permissionMode?: string
+        }
         if (payload.status === 'waiting' || payload.status === 'running') {
           session.status = payload.status
           // The session is alive again, so a past failure is history rather than current state.
           delete session.error
         }
+        // A terminal session renames itself once it knows what it was asked to do.
+        if (payload.title !== undefined && payload.title !== '') session.title = payload.title
+        if (payload.permissionMode !== undefined) session.permissionMode = payload.permissionMode
         break
       }
       case 'session.ended': {

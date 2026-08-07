@@ -5,7 +5,14 @@ import { join } from 'node:path'
 import type { SessionEvent } from '@longleash/protocol'
 import { EventLog } from '../src/eventlog.js'
 import { ApprovalStore } from '../src/approvals.js'
-import { ExternalSessions, formatAnswers, readQuestions, transcriptDeltas } from '../src/external.js'
+import {
+  ExternalSessions,
+  formatAnswers,
+  humanSaid,
+  readQuestions,
+  titleFrom,
+  transcriptDeltas,
+} from '../src/external.js'
 
 let dir: string
 let eventLog: EventLog
@@ -430,5 +437,61 @@ describe('questions — Claude asking, not asking permission', () => {
     const text = formatAnswers(questions, { 'Which trigger method?': 'Manual, Always-on' }, 'but start simple')
     expect(text).toContain('Manual, Always-on')
     expect(text).toContain('They also said: but start simple')
+  })
+})
+
+
+describe('a terminal session earns a name', () => {
+  it('renames itself to the first thing the person asked for', async () => {
+    const transcript = join(dir, 'name.jsonl')
+    writeFileSync(transcript, '')
+    const external = manager()
+    external.sessionStart('abc', '/Users/x/proj', transcript)
+    // Born knowing only its folder — which is why two sessions in one directory used to
+    // be indistinguishable in the list.
+    expect(external.listSessions()[0]?.title).toBe('proj — terminal')
+
+    appendFileSync(
+      transcript,
+      line({ type: 'user', message: { content: 'Fix the flaky pagination test\nsecond line ignored' } }),
+    )
+    await until(() => external.listSessions()[0]?.title === 'Fix the flaky pagination test')
+
+    const renamed = seen.find(
+      (e) => e.type === 'session.status' && (e.payload as { title?: string }).title !== undefined,
+    )
+    expect((renamed?.payload as { title: string }).title).toBe('Fix the flaky pagination test')
+
+    // A later message must not rename it again — the name is what it set out to do.
+    appendFileSync(transcript, line({ type: 'user', message: { content: 'now do something else' } }))
+    await new Promise((r) => setTimeout(r, 90))
+    expect(external.listSessions()[0]?.title).toBe('Fix the flaky pagination test')
+    external.shutdown()
+  })
+
+  it('reports the permission mode, and only when it changes', async () => {
+    const external = manager({ audience: false })
+    await external.preToolUse('abc', '/x', join(dir, 'n.jsonl'), 'Bash', {}, 'bypassPermissions')
+    await external.preToolUse('abc', '/x', join(dir, 'n.jsonl'), 'Bash', {}, 'bypassPermissions')
+    const modeEvents = seen.filter(
+      (e) => e.type === 'session.status' && (e.payload as { permissionMode?: string }).permissionMode,
+    )
+    expect(modeEvents).toHaveLength(1)
+    expect((modeEvents[0]?.payload as { permissionMode: string }).permissionMode).toBe('bypassPermissions')
+    external.shutdown()
+  })
+})
+
+describe('slash commands are machinery, not speech', () => {
+  it('renders a command by name instead of its markup', () => {
+    expect(humanSaid('<command-name>/exit</command-name> <command-message>exit</command-message> <command-args></command-args>')).toBe('/exit')
+    expect(humanSaid('<command-name>/model</command-name> <command-args>opus</command-args>')).toBe('/model opus')
+    expect(humanSaid('just a normal message')).toBe('just a normal message')
+  })
+
+  it('never titles a session after a slash command with no name', () => {
+    expect(titleFrom('<command-name></command-name>')).toBeNull()
+    expect(titleFrom('   ')).toBeNull()
+    expect(titleFrom('a'.repeat(100))?.length).toBe(72)
   })
 })

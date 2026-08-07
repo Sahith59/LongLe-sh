@@ -46,7 +46,7 @@ import {
   listVariants,
   useKeyboardInset,
 } from './ui/primitives.js'
-import { ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
+import { MODE_LABEL, ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
 import { PathChip } from './ui/PathChip.js'
 import { enablePush, pushPermission, syncPush } from './lib/push.js'
 import { QrScanner } from './ui/QrScanner.js'
@@ -686,6 +686,14 @@ export function DetailScreen({
             </span>
             <span className="dot" aria-hidden="true">·</span>
             <span>{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
+            {session.permissionMode ? (
+              <>
+                <span className="dot" aria-hidden="true">·</span>
+                <span title="The permission mode this session is running in">
+                  {MODE_LABEL[session.permissionMode] ?? session.permissionMode}
+                </span>
+              </>
+            ) : null}
             <span className="dot" aria-hidden="true">·</span>
             <PathChip text={session.cwd} kind="folder" max={30} expandable />
           </p>
@@ -766,13 +774,7 @@ export function DetailScreen({
                 }
               }}
               placeholder={
-                inTerminal
-                  ? live
-                    ? 'Take over — ends the terminal side, continues here…'
-                    : 'Type to take this conversation over…'
-                  : live
-                    ? 'Reply to this session…'
-                    : 'Type to carry this on…'
+                inTerminal ? 'Take over and reply…' : live ? 'Reply…' : 'Carry this on…'
               }
               aria-label="Reply to this session"
             />

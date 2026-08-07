@@ -31,6 +31,17 @@ const sessionStatusPayload = z
   .object({
     status: z.enum(['running', 'waiting', 'errored', 'ended']),
     detail: z.string().optional(),
+    /**
+     * A better name, learned after the fact. A terminal session is born knowing only its
+     * folder — every session in one directory would otherwise be called the same thing —
+     * so it renames itself to the first thing the person actually asked for.
+     */
+    title: z.string().optional(),
+    /**
+     * The permission mode the session is running in, as Claude Code reports it. Shown on
+     * the phone because "why am I being asked about this?" must never be a mystery.
+     */
+    permissionMode: z.string().optional(),
   })
   .passthrough()
 
