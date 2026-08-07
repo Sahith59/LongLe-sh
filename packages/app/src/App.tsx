@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { ArrowUp, ChevronLeft, Link2, Plus, RotateCcw, ScanLine, Square } from 'lucide-react'
+import {
+  ArrowUp,
+  Check,
+  ChevronLeft,
+  Copy,
+  Link2,
+  Plus,
+  RotateCcw,
+  ScanLine,
+  Square,
+  SquareTerminal,
+} from 'lucide-react'
 import {
   approvalsFor,
   createStore,
@@ -630,6 +641,9 @@ export function DetailScreen({
             <span className="dot" aria-hidden="true">·</span>
             <PathChip text={session.cwd} kind="folder" max={30} expandable />
           </p>
+          {session.resumeId ? (
+            <ResumeInTerminal cwd={session.cwd} resumeId={session.resumeId} />
+          ) : null}
         </div>
 
         {approvals.length > 0 ? (
@@ -721,6 +735,74 @@ export function DetailScreen({
         )}
       </div>
     </Screen>
+  )
+}
+
+/* --------------------------------------------------------- resume in terminal */
+
+/**
+ * The escape hatch that keeps a conversation from belonging to any one surface.
+ * Claude Code stores transcripts per project folder, so resuming needs both the
+ * folder and the id — this hands over the whole command rather than an id the
+ * person then has to assemble something around.
+ */
+function ResumeInTerminal({ cwd, resumeId }: { cwd: string; resumeId: string }) {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const command = `cd ${JSON.stringify(cwd)} && claude --resume ${resumeId}`
+
+  const copy = () => {
+    void navigator.clipboard
+      ?.writeText(command)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => {
+        // Clipboard refused (older browser, insecure origin). The command is on
+        // screen either way, so long-press to select still works.
+      })
+  }
+
+  return (
+    <div className="resumeterm">
+      <button
+        type="button"
+        className="tap quiet"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <SquareTerminal size={14} strokeWidth={2.2} aria-hidden="true" />
+        {open ? 'Hide the terminal command' : 'Continue in a terminal'}
+      </button>
+      {open ? (
+        <motion.div
+          className="resumebody"
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={EASE}
+        >
+          <code className="resumecmd">{command}</code>
+          <Key className="sm wide" onClick={copy}>
+            {copied ? (
+              <>
+                <Check size={15} strokeWidth={2.6} aria-hidden="true" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy size={15} strokeWidth={2.2} aria-hidden="true" />
+                Copy command
+              </>
+            )}
+          </Key>
+          <p className="resumenote">
+            Paste this in any terminal to pick this exact conversation back up at your keyboard.
+            It reappears here while it runs.
+          </p>
+        </motion.div>
+      ) : null}
+    </div>
   )
 }
 

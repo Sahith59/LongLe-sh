@@ -111,6 +111,51 @@ describe('session list', () => {
     expect(stateOf(store).sessions.ses_1?.resumable).toBe(true)
   })
 
+  it('remembers the conversation id so it can be picked up at a keyboard', () => {
+    const store = createStore()
+    store.apply(
+      ev({
+        v: 1,
+        seq: 1,
+        sessionId: 'ses_1',
+        ts: 1,
+        type: 'session.started',
+        payload: { agent: 'claude', cwd: '/x', origin: 'terminal', resumeId: 'abc-123' },
+      }),
+    )
+    expect(stateOf(store).sessions.ses_1?.resumeId).toBe('abc-123')
+
+    // It also arrives on the ending event and in a reconnect seed.
+    const other = createStore()
+    other.apply(started('ses_2'))
+    other.apply(
+      ev({
+        v: 1,
+        seq: 2,
+        sessionId: 'ses_2',
+        ts: 1,
+        type: 'session.ended',
+        payload: { resumable: true, resumeId: 'def-456' },
+      }),
+    )
+    expect(stateOf(other).sessions.ses_2?.resumeId).toBe('def-456')
+
+    const seeded = createStore()
+    seeded.seedSessions([
+      {
+        sessionId: 'ses_3',
+        agent: 'claude',
+        cwd: '/x',
+        title: 't',
+        origin: 'terminal',
+        status: 'ended',
+        resumable: true,
+        resumeId: 'ghi-789',
+      },
+    ])
+    expect(stateOf(seeded).sessions.ses_3?.resumeId).toBe('ghi-789')
+  })
+
   it('tracks status through ended and errored', () => {
     const store = createStore()
     store.apply(started('ses_1'))

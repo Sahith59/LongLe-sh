@@ -41,6 +41,8 @@ export interface SessionSummary {
  */
 export interface SessionListing extends SessionSummary {
   resumable: boolean
+  /** The agent's conversation id, so the phone can offer `claude --resume <id>`. */
+  resumeId?: string
 }
 
 export interface StartSessionInput {
@@ -323,6 +325,7 @@ export class SessionManager {
         status: live ? live.status : (row.status as SessionStatus),
         startedAt: row.started_at,
         resumable: row.agent_session_id !== null,
+        ...(row.agent_session_id === null ? {} : { resumeId: row.agent_session_id }),
       }
     })
   }
@@ -387,10 +390,15 @@ export class SessionManager {
    * because this is precisely the fact that flips AS a session ends.
    */
   private resumableOf(sessionId: string): boolean {
+    return this.resumeIdOf(sessionId) !== undefined
+  }
+
+  /** The agent's conversation id, once it has announced one. */
+  private resumeIdOf(sessionId: string): string | undefined {
     const row = this.approvals.rawDb
       .prepare('SELECT agent_session_id FROM sessions WHERE session_id = ?')
       .get(sessionId) as { agent_session_id: string | null } | undefined
-    return row?.agent_session_id != null
+    return row?.agent_session_id ?? undefined
   }
 
   private spawn(
@@ -564,7 +572,11 @@ export class SessionManager {
     this.releasePending(session, 'Session stopped from your device')
     this.emit(sessionId, {
       type: 'session.ended',
-      payload: { reason: `stopped by ${actor}`, resumable: this.resumableOf(sessionId) },
+      payload: {
+        reason: `stopped by ${actor}`,
+        resumable: this.resumableOf(sessionId),
+        ...(this.resumeIdOf(sessionId) === undefined ? {} : { resumeId: this.resumeIdOf(sessionId) }),
+      },
     })
     return true
   }
@@ -606,7 +618,11 @@ export class SessionManager {
     this.markStatus(sessionId, 'ended')
     this.emit(sessionId, {
       type: 'session.ended',
-      payload: { reason: `stopped by ${actor}`, resumable: this.resumableOf(sessionId) },
+      payload: {
+        reason: `stopped by ${actor}`,
+        resumable: this.resumableOf(sessionId),
+        ...(this.resumeIdOf(sessionId) === undefined ? {} : { resumeId: this.resumeIdOf(sessionId) }),
+      },
     })
     return true
   }
@@ -759,7 +775,12 @@ export class SessionManager {
         this.markStatus(session.sessionId, 'ended')
         this.emit(session.sessionId, {
           type: 'session.ended',
-          payload: { resumable: this.resumableOf(session.sessionId) },
+          payload: {
+            resumable: this.resumableOf(session.sessionId),
+            ...(this.resumeIdOf(session.sessionId) === undefined
+              ? {}
+              : { resumeId: this.resumeIdOf(session.sessionId) }),
+          },
         })
       }
     } catch (err) {

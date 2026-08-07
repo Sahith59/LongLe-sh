@@ -255,6 +255,22 @@ describe('terminal sessions, adopted through hooks', () => {
     external.shutdown()
   })
 
+  it('offers the conversation id from the first moment, so it can be resumed at a keyboard', () => {
+    const external = manager()
+    external.sessionStart('abc-123', '/Users/x/proj', join(dir, 'n.jsonl'))
+
+    // In the listing a phone receives on connect…
+    expect(external.listSessions()[0]?.resumeId).toBe('abc-123')
+    // …in the event announcing it…
+    const started = seen.find((e) => e.type === 'session.started')
+    expect((started?.payload as { resumeId?: string }).resumeId).toBe('abc-123')
+    // …and in the event closing it.
+    external.sessionEnd('abc-123')
+    const ended = seen.find((e) => e.type === 'session.ended')
+    expect((ended?.payload as { resumeId?: string }).resumeId).toBe('abc-123')
+    external.shutdown()
+  })
+
   it('session end closes the story', () => {
     const external = manager()
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl'))

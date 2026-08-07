@@ -1021,6 +1021,42 @@ body {
   max-width: 100%;
 }
 
+/* ------------------------------------------------- resume in a terminal */
+
+.resumeterm {
+  margin: 10px 0 0;
+}
+.resumeterm .tap svg {
+  color: var(--ink-3);
+}
+.resumebody {
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+/* A readout, not a control: the command is read out of the machine and copied. */
+.resumecmd {
+  display: block;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--recess);
+  box-shadow: var(--sink);
+  font: 400 12px/1.6 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-2);
+  /* Long paths and ids must wrap rather than push the card sideways. */
+  overflow-wrap: anywhere;
+  -webkit-user-select: all;
+  user-select: all;
+}
+.resumenote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
 /* ------------------------------------------------------------------ dock */
 
 .dock {

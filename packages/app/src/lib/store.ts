@@ -30,6 +30,12 @@ export interface SessionView {
   activity: ActivityItem[]
   /** Whether typing can carry this conversation on — false for pre-resume-id history. */
   resumable: boolean
+  /**
+   * The agent's own conversation id. Offered so a person can pick the SAME conversation
+   * back up at their keyboard with `claude --resume <id>` — the freedom to move a
+   * conversation between surfaces rather than being locked to whichever one began it.
+   */
+  resumeId?: string
   error?: string
 }
 
@@ -60,6 +66,7 @@ export interface SessionSeed {
   origin: string
   status: SessionStatus
   resumable?: boolean
+  resumeId?: string
 }
 
 export interface StoreOptions {
@@ -125,11 +132,18 @@ export function createStore(options: StoreOptions = {}) {
       case 'session.started': {
         // A fresh start supersedes any earlier failure.
         delete session.error
-        const payload = event.payload as { agent: string; cwd: string; title?: string; origin?: string }
+        const payload = event.payload as {
+          agent: string
+          cwd: string
+          title?: string
+          origin?: string
+          resumeId?: string
+        }
         session.agent = payload.agent
         session.cwd = payload.cwd
         session.title = payload.title ?? ''
         session.origin = payload.origin ?? 'unknown'
+        if (payload.resumeId) session.resumeId = payload.resumeId
         break
       }
       case 'stream.delta': {
@@ -197,8 +211,9 @@ export function createStore(options: StoreOptions = {}) {
         // Whether this can be carried on flips exactly as it ends — a terminal session
         // adopted on stop, an agent that only just announced its resume id. Taking it
         // from the live event is what keeps Reopen honest without a reconnect.
-        const payload = event.payload as { resumable?: boolean }
+        const payload = event.payload as { resumable?: boolean; resumeId?: string }
         if (typeof payload.resumable === 'boolean') session.resumable = payload.resumable
+        if (payload.resumeId) session.resumeId = payload.resumeId
         break
       }
       case 'session.errored': {
@@ -225,6 +240,7 @@ export function createStore(options: StoreOptions = {}) {
       session.origin = seed.origin
       session.status = seed.status
       session.resumable = seed.resumable ?? false
+      if (seed.resumeId) session.resumeId = seed.resumeId
     }
     notify()
   }

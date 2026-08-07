@@ -18,6 +18,12 @@ const sessionStartedPayload = z
     cwd: z.string().min(1),
     title: z.string().optional(),
     origin: SessionOrigin.optional(),
+    /**
+     * The agent's own conversation id. Carried to the phone so a person can pick the
+     * SAME conversation back up at their keyboard — `claude --resume <id>` in the
+     * session's folder — instead of being locked to whichever surface started it.
+     */
+    resumeId: z.string().optional(),
   })
   .passthrough()
 
@@ -73,7 +79,11 @@ const sessionErroredPayload = z.object({ message: z.string().min(1) }).passthrou
  * its Reopen button stays wrong until the next reconnect.
  */
 const sessionEndedPayload = z
-  .object({ reason: z.string().optional(), resumable: z.boolean().optional() })
+  .object({
+    reason: z.string().optional(),
+    resumable: z.boolean().optional(),
+    resumeId: z.string().optional(),
+  })
   .passthrough()
 
 const envelope = {

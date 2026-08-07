@@ -271,7 +271,7 @@ export class ExternalSessions {
     this.emit(session.sessionId, { type: 'session.status', payload: { status: 'ended' } })
     this.emit(session.sessionId, {
       type: 'session.ended',
-      payload: { reason: 'terminal session ended', resumable: adopted },
+      payload: { reason: 'terminal session ended', resumable: adopted, resumeId: claudeSessionId },
     })
   }
 
@@ -284,8 +284,9 @@ export class ExternalSessions {
     origin: 'terminal'
     title: string
     resumable: boolean
+    resumeId: string
   }[] {
-    return [...this.sessions.values()].map((session) => ({
+    return [...this.sessions.entries()].map(([claudeSessionId, session]) => ({
       sessionId: session.sessionId,
       agent: 'claude',
       cwd: session.cwd,
@@ -293,7 +294,11 @@ export class ExternalSessions {
       startedAt: session.startedAt,
       origin: 'terminal',
       title: session.title,
+      // Live: it cannot be reopened while it is still running at the keyboard…
       resumable: false,
+      // …but its conversation id is known from the first hook event, so the phone can
+      // always offer `claude --resume <id>` for picking it up later.
+      resumeId: claudeSessionId,
     }))
   }
 
@@ -337,7 +342,13 @@ export class ExternalSessions {
     if (!hasHistory) {
       this.emit(sessionId, {
         type: 'session.started',
-        payload: { agent: 'claude', cwd, title: session.title, origin: 'terminal' },
+        payload: {
+          agent: 'claude',
+          cwd,
+          title: session.title,
+          origin: 'terminal',
+          resumeId: claudeSessionId,
+        },
       })
     }
     this.emit(sessionId, { type: 'session.status', payload: { status: 'running' } })

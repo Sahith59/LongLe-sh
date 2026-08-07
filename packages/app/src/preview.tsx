@@ -44,6 +44,7 @@ const sticknotes: SessionView = {
   ],
   output:
     'Good call. I added a confirm step: the first tap turns the button into "Delete?" and only a second tap within three seconds removes the note.',
+  resumeId: '5b642291-c45b-4b9a-aa8b-3cfdcb1091bc',
   activity: [
     { toolName: 'Read', inputSummary: 'src/App.tsx', autoApproved: true },
     { toolName: 'Grep', inputSummary: 'onDelete', autoApproved: true },
