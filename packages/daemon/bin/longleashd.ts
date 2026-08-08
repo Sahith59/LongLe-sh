@@ -52,18 +52,81 @@ if (!best) {
 /** Bind to loopback when there is no LAN to serve; the relay carries every byte. */
 const bindHost = best?.address ?? '127.0.0.1'
 
-const daemon = await startDaemon({
-  allowedRoots: roots,
-  host: bindHost,
-  port: Number(process.env.PORT ?? 4321),
-  ...(existsSync(join(APP_DIR, 'index.html')) ? { staticRoot: APP_DIR } : {}),
-  denyOutsideRoot: process.env.LONGLEASH_STRICT !== '0',
-  // LONGLEASH_ASK_EVERYTHING=1 pre-approves nothing, so even reading a file comes to your phone.
-  ...(process.env.LONGLEASH_ASK_EVERYTHING === '1' ? { allowedTools: [] } : {}),
-  dataDir,
-  log: (line) => console.log(line),
-  ...(relay === null ? {} : { relayUrl: relay.url }),
-})
+const wantedPort = Number(process.env.PORT ?? 4321)
+
+/**
+ * Is a LongLeash already listening here? A port collision has two very different
+ * meanings and only one of them is an error: a second daemon on the same machine is a
+ * mistake worth naming, while some unrelated program on 4321 is merely in the way and
+ * should not stop anything.
+ */
+async function whoHasPort(host: string, port: number): Promise<'longleash' | 'other' | 'free'> {
+  try {
+    const res = await fetch(`http://${host}:${port}/health`, {
+      signal: AbortSignal.timeout(1200),
+    })
+    const body = (await res.json().catch(() => ({}))) as { name?: string }
+    return body.name === 'longleash' ? 'longleash' : 'other'
+  } catch (err) {
+    // Refused means nobody is there; anything else means something is, just not talking HTTP.
+    const code = (err as { cause?: { code?: string } }).cause?.code
+    return code === 'ECONNREFUSED' ? 'free' : 'other'
+  }
+}
+
+const holder = await whoHasPort(bindHost, wantedPort)
+if (holder === 'longleash') {
+  console.error(`\nLongLeash is already running on ${bindHost}:${wantedPort}.`)
+  console.error('Use that one, or stop it first (press q + Enter in its terminal).')
+  console.error(`If its terminal is gone:  lsof -t -iTCP:${wantedPort} -sTCP:LISTEN | xargs kill\n`)
+  process.exit(1)
+}
+if (holder === 'other') {
+  console.log(`Port ${wantedPort} is taken by something else — using a free port instead.`)
+}
+
+/**
+ * Start, and never die of a bind failure that has a safe alternative. A LAN address can
+ * vanish or be taken between choosing it and binding to it (a network switch mid-command
+ * does exactly this); with a relay configured, loopback still serves the whole product.
+ */
+async function boot(host: string, port: number) {
+  return startDaemon({
+    allowedRoots: roots,
+    host,
+    port,
+    ...(existsSync(join(APP_DIR, 'index.html')) ? { staticRoot: APP_DIR } : {}),
+    denyOutsideRoot: process.env.LONGLEASH_STRICT !== '0',
+    // LONGLEASH_ASK_EVERYTHING=1 pre-approves nothing, so even reading a file comes to your phone.
+    ...(process.env.LONGLEASH_ASK_EVERYTHING === '1' ? { allowedTools: [] } : {}),
+    dataDir,
+    log: (line) => console.log(line),
+    ...(relay === null ? {} : { relayUrl: relay.url }),
+  })
+}
+
+const started = await (async () => {
+  const firstPort = holder === 'other' ? 0 : wantedPort
+  try {
+    return { daemon: await boot(bindHost, firstPort), host: bindHost, lan: best !== undefined }
+  } catch (err) {
+    const code = (err as { code?: string }).code
+    console.log(`\nCould not listen on ${bindHost}:${firstPort} (${code ?? 'unknown error'}).`)
+    if (relay !== null) {
+      console.log('Falling back to loopback — the relay carries everything.\n')
+      // `lan: false` matters: every URL printed below must describe where it ACTUALLY
+      // listens, or the pairing address would point at an interface it never bound.
+      return { daemon: await boot('127.0.0.1', 0), host: '127.0.0.1', lan: false }
+    }
+    console.error('No relay is configured, so there is no other way in. Set one once:')
+    console.error('  LONGLEASH_RELAY_URL=wss://<your-relay>/ws pnpm start ~\n')
+    process.exit(1)
+  }
+})()
+const daemon = started.daemon
+/** Where it truly listens — not where we hoped to. */
+const servedHost = started.host
+const servedOnLan = started.lan
 
 /** The relay's app origin: where a phone can live even when this laptop is unreachable. */
 function relayAppOrigin(wsUrl: string): string {
@@ -84,7 +147,7 @@ function freshPairingUrl(): string {
     hostPairing({ registry: daemon.registry, relayUrl: relay.url, challenge, log: (line) => console.log(`[pair] ${line}`) })
     return `${relayAppOrigin(relay.url)}?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
   }
-  return `http://${bindHost}:${daemon.port}/?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
+  return `http://${servedHost}:${daemon.port}/?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
 }
 
 const url = freshPairingUrl()
@@ -120,9 +183,9 @@ if (preApproved.length > 0) {
 console.log('Agents may work only in:')
 for (const root of roots) console.log(`  ${resolve(root)}`)
 console.log(
-  best
-    ? `\nListening on ${best.address}:${daemon.port} (${best.iface}, ${best.label})`
-    : `\nListening on ${bindHost}:${daemon.port} (no local network — relay only)`,
+  servedOnLan && best
+    ? `\nListening on ${servedHost}:${daemon.port} (${best.iface}, ${best.label})`
+    : `\nListening on ${servedHost}:${daemon.port} (no local network — relay only)`,
 )
 console.log(
   relay !== null
@@ -132,8 +195,8 @@ console.log(
 console.log('\nScan this with your phone, then add it to your home screen:\n')
 qrcode.generate(url, { small: true })
 console.log(`\n  ${url}\n`)
-if (relay !== null && best) {
-  console.log(`(LAN fallback for pairing at home: http://${best.address}:${daemon.port}/?c=…&s=… — same code)`)
+if (relay !== null && servedOnLan) {
+  console.log(`(LAN fallback for pairing at home: http://${servedHost}:${daemon.port}/?c=…&s=… — same code)`)
 }
 console.log('Press n + Enter for a fresh pairing QR, r + Enter to revoke every device, q + Enter to quit.\n')
 
