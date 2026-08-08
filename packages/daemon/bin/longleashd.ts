@@ -7,7 +7,7 @@ import qrcode from 'qrcode-terminal'
 import { startDaemon } from '../src/daemon.js'
 import { resolveRelayUrl } from '../src/config.js'
 import { hostPairing } from '../src/pairing-host.js'
-import { findCandidates, vpnWarning } from '../demo/lan.js'
+import { findCandidates, noAddressReason, vpnWarning } from '../demo/lan.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const APP_DIR = resolve(here, '../../app/dist')
@@ -19,13 +19,6 @@ if (roots.length === 0) {
   process.exit(1)
 }
 
-const candidates = findCandidates()
-const best = candidates[0]
-if (!best) {
-  console.error('\nNo usable network address. Connect to Wi-Fi (or your phone hotspot) and retry.\n')
-  process.exit(1)
-}
-
 // Set LONGLEASH_RELAY_URL once and it is remembered; `off` forgets it.
 const dataDir = process.env.LONGLEASH_DATA ?? join(homedir(), '.longleash')
 const relay = resolveRelayUrl(process.env.LONGLEASH_RELAY_URL, dataDir)
@@ -33,9 +26,35 @@ if (relay?.source === 'remembered') {
   console.log(`Relay: ${relay.url} (remembered — LONGLEASH_RELAY_URL=off forgets it)`)
 }
 
+/**
+ * A LAN address is what a phone dials on the same network. It is NOT required to run:
+ * with a relay configured the daemon only ever dials OUT, and pairing already points at
+ * the relay-served app. Refusing to start without one grounded the whole product over a
+ * capability it was not going to use — which is exactly what USB tethering triggers,
+ * because macOS then holds only 192.0.0.2 (the iOS service-continuity range).
+ */
+const candidates = findCandidates()
+const best = candidates[0]
+if (!best && relay === null) {
+  console.error(`\n${noAddressReason()}`)
+  console.error('\nWith no relay configured either, there is no way for a phone to reach this')
+  console.error('laptop at all. Fix either one:')
+  console.error('  • join the same Wi-Fi as your phone, or')
+  console.error('  • set a relay once, which also works from anywhere:')
+  console.error('      LONGLEASH_RELAY_URL=wss://<your-relay>/ws pnpm start ~\n')
+  process.exit(1)
+}
+if (!best) {
+  console.log(noAddressReason())
+  console.log('Running through the relay only.')
+  console.log('(Same-network pairing is unavailable; everything else works as usual.)\n')
+}
+/** Bind to loopback when there is no LAN to serve; the relay carries every byte. */
+const bindHost = best?.address ?? '127.0.0.1'
+
 const daemon = await startDaemon({
   allowedRoots: roots,
-  host: best.address,
+  host: bindHost,
   port: Number(process.env.PORT ?? 4321),
   ...(existsSync(join(APP_DIR, 'index.html')) ? { staticRoot: APP_DIR } : {}),
   denyOutsideRoot: process.env.LONGLEASH_STRICT !== '0',
@@ -65,7 +84,7 @@ function freshPairingUrl(): string {
     hostPairing({ registry: daemon.registry, relayUrl: relay.url, challenge, log: (line) => console.log(`[pair] ${line}`) })
     return `${relayAppOrigin(relay.url)}?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
   }
-  return `http://${best.address}:${daemon.port}/?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
+  return `http://${bindHost}:${daemon.port}/?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
 }
 
 const url = freshPairingUrl()
@@ -100,7 +119,11 @@ if (preApproved.length > 0) {
 }
 console.log('Agents may work only in:')
 for (const root of roots) console.log(`  ${resolve(root)}`)
-console.log(`\nListening on ${best.address}:${daemon.port} (${best.iface}, ${best.label})`)
+console.log(
+  best
+    ? `\nListening on ${best.address}:${daemon.port} (${best.iface}, ${best.label})`
+    : `\nListening on ${bindHost}:${daemon.port} (no local network — relay only)`,
+)
 console.log(
   relay !== null
     ? `Relay: ${relay.url} — your phone can reach this laptop from anywhere.`
@@ -109,7 +132,7 @@ console.log(
 console.log('\nScan this with your phone, then add it to your home screen:\n')
 qrcode.generate(url, { small: true })
 console.log(`\n  ${url}\n`)
-if (relay !== null) {
+if (relay !== null && best) {
   console.log(`(LAN fallback for pairing at home: http://${best.address}:${daemon.port}/?c=…&s=… — same code)`)
 }
 console.log('Press n + Enter for a fresh pairing QR, r + Enter to revoke every device, q + Enter to quit.\n')

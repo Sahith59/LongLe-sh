@@ -15,9 +15,11 @@ export interface Candidate {
  *  - public IPs usually belong to a VPN tunnel, not the LAN
  * Rank what is left so the hotspot subnet wins when it exists.
  */
-export function findCandidates(): Candidate[] {
+export function findCandidates(
+  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
+): Candidate[] {
   const out: Candidate[] = []
-  for (const [iface, nets] of Object.entries(networkInterfaces())) {
+  for (const [iface, nets] of Object.entries(interfaces)) {
     for (const net of nets ?? []) {
       if (net.family !== 'IPv4' || net.internal) continue
       const ip = net.address
@@ -47,4 +49,28 @@ export function vpnWarning(): string | null {
     // Diagnostics are best-effort; never block the demo on them.
   }
   return null
+}
+
+/**
+ * Why there is nothing to bind to, in words a person can act on. USB tethering is the
+ * case worth naming: macOS then holds only 192.0.0.2 (the iOS service-continuity range),
+ * which looks like a working connection and is not one a phone browser can dial.
+ */
+export function noAddressReason(
+  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
+): string {
+  const addresses: string[] = []
+  for (const nets of Object.values(interfaces)) {
+    for (const net of nets ?? []) {
+      if (net.family === 'IPv4' && !net.internal) addresses.push(net.address)
+    }
+  }
+  if (addresses.some((ip) => ip.startsWith('192.0.0.'))) {
+    return 'Your phone appears to be tethered over USB, which gives this Mac no address a browser can reach. Use the phone\u2019s Wi-Fi hotspot instead, or rely on the relay.'
+  }
+  if (addresses.some((ip) => ip.startsWith('169.254.'))) {
+    return 'This Mac has a self-assigned address, which means it never got one from the network.'
+  }
+  if (addresses.length === 0) return 'This Mac has no network connection at all.'
+  return `No address a phone could dial (found: ${addresses.join(', ')}).`
 }
