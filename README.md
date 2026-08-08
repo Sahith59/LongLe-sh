@@ -4,6 +4,35 @@
 >
 > LongLeash is a **long-distance relationship with your terminal** — but, like, a healthy one. Your agents do the heavy lifting at home; you approve, deny, and occasionally yell "NO. BAD CLAUDE." from brunch, the gym, or your cousin's wedding. They miss you. Pet them remotely. 📱⛓️💻
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Sahith59/LongLe-sh/main/scripts/install.sh | bash
+```
+
+Then:
+
+```bash
+longleash
+```
+
+Scan the QR with your phone and add the page to your home screen. That is the whole setup.
+
+The installer needs Node 22+, git, and (to have anything to watch) [Claude Code](https://claude.com/claude-code).
+It never uses `sudo` and writes only inside your home directory: the code in `~/.longleash-app`,
+a `longleash` command in `~/.local/bin`, and its data in `~/.longleash`. Running it twice is safe.
+
+| Command | What it does |
+| --- | --- |
+| `longleash` | Watch your home folder and print a pairing QR |
+| `longleash ~/code ~/notes` | Watch only these folders |
+| `longleash update` | Pull the newest version and rebuild |
+| `longleash hooks` | Re-install the Claude Code hooks (`--remove` to undo) |
+| `longleash where` | Print where LongLeash is installed |
+
+To uninstall: `longleash hooks --remove`, then delete `~/.longleash-app`, `~/.local/bin/longleash`, and `~/.longleash`.
+
+
 ## What this actually is
 
 A standalone, end-to-end, open-source system to control everything running on your dev laptop from your phone — **anywhere in the world**:
