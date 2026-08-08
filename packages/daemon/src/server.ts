@@ -295,6 +295,48 @@ export class LongLeashServer {
     this.folders = folders
   }
 
+  /**
+   * Move to a different local address without tearing anything down.
+   *
+   * A laptop that changes network — home Wi-Fi to a phone hotspot, a cable pulled — keeps
+   * a listener bound to an address that no longer exists, so anyone on the new network
+   * finds nothing. Only the raw listener is recycled; the Fastify instance, its routes,
+   * the event log, and every live session survive untouched. The relay leg is a separate
+   * outbound connection and never notices.
+   *
+   * Returns the port now served, which may differ if the old one is taken over there.
+   */
+  async rebind(host: string): Promise<number> {
+    const wanted = this.boundPort
+    await new Promise<void>((resolve) => this.app.server.close(() => resolve()))
+
+    const tryListen = (port: number): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        const onError = (err: Error): void => {
+          this.app.server.removeListener('listening', onListening)
+          reject(err)
+        }
+        const onListening = (): void => {
+          this.app.server.removeListener('error', onError)
+          resolve()
+        }
+        this.app.server.once('error', onError)
+        this.app.server.once('listening', onListening)
+        this.app.server.listen(port, host)
+      })
+
+    try {
+      await tryListen(wanted)
+    } catch {
+      // That port may belong to something else on the new network; any port beats none.
+      await tryListen(0)
+    }
+    const address = this.app.server.address()
+    this.boundPort = typeof address === 'object' && address !== null ? address.port : wanted
+    this.log(`rebound to ${host}:${this.boundPort}`)
+    return this.boundPort
+  }
+
   /** Wire in lock-screen notifications so an approval can tap a pocket, not just a screen. */
   attachPush(push: PushNotifier): void {
     this.push = push

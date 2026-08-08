@@ -367,6 +367,8 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
   let closed = false
   let wire: Wire | null = null
   let attempt = 0
+  /** The pending backoff, so a network change can cancel it instead of waiting it out. */
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
   let path: LinkPath = 'lan'
   let relayOrigin = false
   const subscribed = new Set<string>()
@@ -490,9 +492,35 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       path = relayOrigin ? 'relay' : 'lan'
       const delay = Math.min(1000 * 2 ** attempt, 15_000)
       attempt += 1
-      setTimeout(() => void attach(), delay)
+      retryTimer = setTimeout(() => void attach(), delay)
     },
   }
+
+  /**
+   * Backoff is right for a laptop that keeps refusing, and wrong for a phone that just
+   * changed networks. Walking out of the house swaps Wi-Fi for cellular: the socket dies,
+   * a backoff of up to fifteen seconds begins, and the app you pull out of your pocket
+   * says "reconnecting" for no reason — the new network was ready the whole time.
+   *
+   * So two things collapse the wait to nothing: the browser reporting it is online again,
+   * and the app becoming visible. Both mean the world just changed in our favour, and
+   * neither is worth waiting out a timer for.
+   */
+  const reconnectNow = (): void => {
+    if (closed || wire !== null) return
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
+    attempt = 0
+    void attach()
+  }
+  const onOnline = (): void => reconnectNow()
+  const onVisible = (): void => {
+    if (document.visibilityState === 'visible') reconnectNow()
+  }
+  window.addEventListener('online', onOnline)
+  document.addEventListener('visibilitychange', onVisible)
 
   const attach = async (): Promise<void> => {
     if (closed) return
@@ -564,6 +592,9 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     close: () => {
       closed = true
       stopHomeProbe()
+      if (retryTimer !== null) clearTimeout(retryTimer)
+      window.removeEventListener('online', onOnline)
+      document.removeEventListener('visibilitychange', onVisible)
       wire?.close()
     },
   }

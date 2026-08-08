@@ -127,6 +127,13 @@ const daemon = started.daemon
 /** Where it truly listens — not where we hoped to. */
 const servedHost = started.host
 const servedOnLan = started.lan
+/**
+ * Where it is serving RIGHT NOW. Mutable because the machine can move between networks
+ * while running, and a pairing URL printed afterwards must point at the live address
+ * rather than the one chosen at boot.
+ */
+let servingHost = servedHost
+let servingPort = daemon.port
 
 /** The relay's app origin: where a phone can live even when this laptop is unreachable. */
 function relayAppOrigin(wsUrl: string): string {
@@ -147,7 +154,7 @@ function freshPairingUrl(): string {
     hostPairing({ registry: daemon.registry, relayUrl: relay.url, challenge, log: (line) => console.log(`[pair] ${line}`) })
     return `${relayAppOrigin(relay.url)}?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
   }
-  return `http://${servedHost}:${daemon.port}/?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
+  return `http://${servingHost}:${servingPort}/?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
 }
 
 const url = freshPairingUrl()
@@ -198,6 +205,40 @@ console.log(`\n  ${url}\n`)
 if (relay !== null && servedOnLan) {
   console.log(`(LAN fallback for pairing at home: http://${servedHost}:${daemon.port}/?c=…&s=… — same code)`)
 }
+/**
+ * Follow the machine onto whatever network it lands on.
+ *
+ * A laptop that moves — home Wi-Fi to a phone hotspot, a cable pulled, a hotspot
+ * appearing — keeps a listener bound to an address that has ceased to exist, so a phone
+ * on the NEW network finds nothing and the only cure was restarting the daemon. Watching
+ * for the change costs one interface read every few seconds and keeps the local path
+ * alive across the move. The relay never needed this; it dials out and reconnects itself.
+ */
+const NETWORK_WATCH_MS = 5000
+const networkWatch = setInterval(() => {
+  const nextBest = findCandidates()[0]
+  const nextHost = nextBest?.address ?? '127.0.0.1'
+  if (nextHost === servingHost) return
+  const was = servingHost
+  servingHost = nextHost
+  void daemon.server
+    .rebind(nextHost)
+    .then((port) => {
+      servingPort = port
+      console.log(`\nNetwork changed: ${was} -> ${nextHost}. Now serving ${nextHost}:${port}.`)
+      console.log(
+        nextBest
+          ? 'Press n + Enter for a pairing QR on this network.'
+          : 'No local network now — the relay carries everything.',
+      )
+    })
+    .catch((err: unknown) => {
+      console.log(`\nNetwork changed but rebinding failed (${String(err)}).`)
+      console.log(relay !== null ? 'The relay is unaffected.' : 'Restart the daemon to recover.')
+    })
+}, NETWORK_WATCH_MS)
+networkWatch.unref?.()
+
 console.log('Press n + Enter for a fresh pairing QR, r + Enter to revoke every device, q + Enter to quit.\n')
 
 process.stdin.setEncoding('utf8')
@@ -215,11 +256,13 @@ process.stdin.on('data', (chunk: string) => {
     console.log(`>>> revoked ${active.length} device(s); their live connections are cut`)
   }
   if (key === 'q') {
+    clearInterval(networkWatch)
     void daemon.stop().then(() => process.exit(0))
   }
 })
 
 const shutdown = () => {
+  clearInterval(networkWatch)
   void daemon.stop().then(() => process.exit(0))
 }
 process.on('SIGINT', shutdown)
