@@ -2,7 +2,7 @@ import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { basename } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { AskedQuestion, type SessionEvent } from '@longleash/protocol'
+import { AskedQuestion, type SessionEvent, type SessionGate } from '@longleash/protocol'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { ApprovalStore } from './approvals.js'
 import type { DecisionOutcome, SessionStatus } from './sessions.js'
@@ -72,6 +72,8 @@ interface ExternalSession {
   named: boolean
   /** The permission mode Claude Code last reported for this session. */
   permissionMode: string | null
+  /** LongLeash's own gate: whether this session may page the phone at all. */
+  gate: SessionGate
   /** Byte offset already ingested from the transcript. */
   offset: number
   /** Carry-over of a partial trailing line between polls. */
@@ -218,6 +220,14 @@ export class ExternalSessions {
     permissionMode?: string,
   ): Promise<HookDecision> {
     const session = this.ensure(claudeSessionId, cwd, transcriptPath)
+
+    // Muted by the person: approve without asking. This exists because a session whose
+    // permission mode auto-approves ignores a refusal from anyone — so paging a phone
+    // about it is a question whose answer cannot matter, which is worse than silence.
+    if (session.gate === 'auto') {
+      return Promise.resolve({ decision: 'allow', reason: 'Auto-approved: you muted this session.' })
+    }
+
     // Surface the mode the moment it changes: a phone that is being asked about a session
     // running in auto mode deserves to see that contradiction rather than puzzle over it.
     if (permissionMode !== undefined && permissionMode !== session.permissionMode) {
@@ -352,6 +362,18 @@ export class ExternalSessions {
     return 'decided'
   }
 
+  /** Mute or unmute a session from the phone. Returns false for a session it does not know. */
+  setGate(externalSessionId: string, gate: SessionGate): boolean {
+    const session = [...this.sessions.values()].find((s) => s.sessionId === externalSessionId)
+    if (!session) return false
+    session.gate = gate
+    this.emit(session.sessionId, {
+      type: 'session.status',
+      payload: { status: session.status, gate },
+    })
+    return true
+  }
+
   sessionEnd(claudeSessionId: string): void {
     const session = this.sessions.get(claudeSessionId)
     if (!session) return
@@ -391,6 +413,7 @@ export class ExternalSessions {
     title: string
     resumable: boolean
     resumeId: string
+    gate: SessionGate
   }[] {
     return [...this.sessions.entries()].map(([claudeSessionId, session]) => ({
       sessionId: session.sessionId,
@@ -405,6 +428,7 @@ export class ExternalSessions {
       // …but its conversation id is known from the first hook event, so the phone can
       // always offer `claude --resume <id>` for picking it up later.
       resumeId: claudeSessionId,
+      gate: session.gate,
     }))
   }
 
@@ -441,6 +465,7 @@ export class ExternalSessions {
       pid: null,
       named: false,
       permissionMode: null,
+      gate: 'ask',
       offset: hasHistory && existsSync(transcriptPath) ? statSync(transcriptPath).size : 0,
       remainder: '',
       timer: null,

@@ -495,3 +495,62 @@ describe('slash commands are machinery, not speech', () => {
     expect(titleFrom('a'.repeat(100))?.length).toBe(72)
   })
 })
+
+
+describe('the gate — asking for less, never more', () => {
+  it('a muted session approves without ever paging the phone', async () => {
+    const external = manager({ waitMs: 5000 })
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl'))
+    expect(external.setGate('ext_abc', 'auto')).toBe(true)
+
+    const verdict = await external.preToolUse('abc', '/x', join(dir, 'n.jsonl'), 'Bash', {
+      command: 'pnpm build',
+    })
+    expect(verdict.decision).toBe('allow')
+    // The point of muting: no approval is created, so nothing rings.
+    expect(seen.some((e) => e.type === 'approval.requested')).toBe(false)
+    external.shutdown()
+  })
+
+  it('unmuting restores asking, and the phone is told either way', async () => {
+    const external = manager({ waitMs: 5000 })
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl'))
+    external.setGate('ext_abc', 'auto')
+    external.setGate('ext_abc', 'ask')
+
+    const gates = seen
+      .filter((e) => e.type === 'session.status')
+      .map((e) => (e.payload as { gate?: string }).gate)
+      .filter((g) => g !== undefined)
+    expect(gates).toEqual(['auto', 'ask'])
+
+    void external.preToolUse('abc', '/x', join(dir, 'n.jsonl'), 'Bash', {})
+    await until(() => seen.some((e) => e.type === 'approval.requested'))
+    external.shutdown()
+  })
+
+  it('refuses to gate a session it has never seen', () => {
+    const external = manager()
+    expect(external.setGate('ext_nope', 'auto')).toBe(false)
+    external.shutdown()
+  })
+
+  it('a muted session still shows everything in its transcript', async () => {
+    const transcript = join(dir, 'muted.jsonl')
+    writeFileSync(transcript, '')
+    const external = manager()
+    external.sessionStart('abc', '/x', transcript)
+    external.setGate('ext_abc', 'auto')
+    await external.preToolUse('abc', '/x', transcript, 'Bash', { command: 'ls' })
+
+    appendFileSync(
+      transcript,
+      line({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }] },
+      }),
+    )
+    await until(() => seen.some((e) => e.type === 'stream.delta'))
+    external.shutdown()
+  })
+})

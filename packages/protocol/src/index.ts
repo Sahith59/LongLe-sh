@@ -12,6 +12,14 @@ export type SessionOrigin = z.infer<typeof SessionOrigin>
 export const Verdict = z.enum(['allow', 'deny'])
 export type Verdict = z.infer<typeof Verdict>
 
+/**
+ * How much this session should bother the phone. LongLeash's own gate, layered on top of
+ * whatever permission mode the agent runs in — it can only ask for LESS, never more,
+ * because a mode that auto-approves ignores a refusal no matter who sends it.
+ */
+export const SessionGate = z.enum(['ask', 'auto'])
+export type SessionGate = z.infer<typeof SessionGate>
+
 const sessionStartedPayload = z
   .object({
     agent: AgentKind,
@@ -42,6 +50,8 @@ const sessionStatusPayload = z
      * the phone because "why am I being asked about this?" must never be a mystery.
      */
     permissionMode: z.string().optional(),
+    /** LongLeash's own gate for this session: whether it should page the phone at all. */
+    gate: SessionGate.optional(),
   })
   .passthrough()
 
@@ -262,6 +272,15 @@ const pushTestMessage = z
   })
   .passthrough()
 
+const setGateMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('setGate'),
+    sessionId: z.string().min(1),
+    gate: SessionGate,
+  })
+  .passthrough()
+
 /**
  * Take over a terminal-started session: stop its terminal process if still
  * running, then continue the same conversation from the phone with this text.
@@ -287,6 +306,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   pushUnsubscribeMessage,
   pushTestMessage,
   takeOverMessage,
+  setGateMessage,
 ])
 export type ClientMessage = z.infer<typeof ClientMessageSchema>
 

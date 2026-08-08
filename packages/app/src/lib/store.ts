@@ -38,6 +38,8 @@ export interface SessionView {
   resumeId?: string
   /** The permission mode the laptop reports for this session, when it says. */
   permissionMode?: string
+  /** LongLeash's own gate: 'ask' pages the phone, 'auto' stays silent. */
+  gate?: 'ask' | 'auto'
   error?: string
 }
 
@@ -75,6 +77,7 @@ export interface SessionSeed {
   status: SessionStatus
   resumable?: boolean
   resumeId?: string
+  gate?: 'ask' | 'auto'
 }
 
 export interface StoreOptions {
@@ -212,6 +215,7 @@ export function createStore(options: StoreOptions = {}) {
           status: SessionStatus
           title?: string
           permissionMode?: string
+          gate?: 'ask' | 'auto'
         }
         if (payload.status === 'waiting' || payload.status === 'running') {
           session.status = payload.status
@@ -221,6 +225,7 @@ export function createStore(options: StoreOptions = {}) {
         // A terminal session renames itself once it knows what it was asked to do.
         if (payload.title !== undefined && payload.title !== '') session.title = payload.title
         if (payload.permissionMode !== undefined) session.permissionMode = payload.permissionMode
+        if (payload.gate !== undefined) session.gate = payload.gate
         break
       }
       case 'session.ended': {
@@ -258,6 +263,7 @@ export function createStore(options: StoreOptions = {}) {
       session.status = seed.status
       session.resumable = seed.resumable ?? false
       if (seed.resumeId) session.resumeId = seed.resumeId
+      if (seed.gate) session.gate = seed.gate
     }
     notify()
   }

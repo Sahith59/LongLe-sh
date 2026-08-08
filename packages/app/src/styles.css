@@ -1196,6 +1196,25 @@ body {
   max-width: 100%;
 }
 
+/* ------------------------------------------------------------- the gate */
+
+.gateswitch {
+  margin: 10px 0 0;
+}
+.gateswitch .tap svg {
+  color: var(--ink-3);
+}
+.gateswitch .tap[aria-pressed='true'] svg {
+  color: var(--clay);
+}
+.gatenote {
+  margin: 4px 2px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
 /* ------------------------------------------------- resume in a terminal */
 
 .resumeterm {

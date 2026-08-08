@@ -609,6 +609,22 @@ export class LongLeashServer {
       return
     }
 
+    if (message.type === 'setGate') {
+      const applied =
+        this.external !== null && message.sessionId.startsWith('ext_')
+          ? this.external.setGate(message.sessionId, message.gate)
+          : false
+      this.log(`gate ${message.sessionId} -> ${message.gate}${applied ? '' : ' (unknown session)'}`)
+      this.sendTo(connection, {
+        v: PROTOCOL_VERSION,
+        type: 'ack',
+        of: 'setGate',
+        sessionId: message.sessionId,
+        outcome: applied ? 'set' : 'unknown-session',
+      })
+      return
+    }
+
     if (message.type === 'takeOver') {
       // The baton pass: if the terminal process still runs, end it (verified pid),
       // which adopts the conversation; then wake it through the SDK with this text.

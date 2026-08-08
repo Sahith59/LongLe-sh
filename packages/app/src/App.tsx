@@ -9,6 +9,8 @@ import {
   Plus,
   RotateCcw,
   ScanLine,
+  Bell,
+  BellOff,
   Square,
   SquareTerminal,
 } from 'lucide-react'
@@ -267,6 +269,7 @@ export default function App() {
             onResume={() => clientRef.current?.resumeSession(openSession.sessionId)}
             onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
             onTakeOver={(text) => clientRef.current?.takeOver(openSession.sessionId, text) ?? false}
+            onSetGate={(gate) => clientRef.current?.setGate(openSession.sessionId, gate)}
           />
         ) : (
           <ConsoleScreen
@@ -612,6 +615,7 @@ export function DetailScreen({
   onResume,
   onSend,
   onTakeOver,
+  onSetGate,
 }: {
   session: SessionView
   approvals: PendingApproval[]
@@ -626,6 +630,7 @@ export function DetailScreen({
   onResume: () => void
   onSend: (text: string) => boolean
   onTakeOver: (text: string) => boolean
+  onSetGate: (gate: 'ask' | 'auto') => void
 }) {
   const [message, setMessage] = useState('')
   const still = useReducedMotion()
@@ -697,6 +702,13 @@ export function DetailScreen({
             <span className="dot" aria-hidden="true">·</span>
             <PathChip text={session.cwd} kind="folder" max={30} expandable />
           </p>
+          {inTerminal && live ? (
+            <GateSwitch
+              gate={session.gate ?? 'ask'}
+              {...(session.permissionMode ? { permissionMode: session.permissionMode } : {})}
+              onSet={onSetGate}
+            />
+          ) : null}
           {session.resumeId ? (
             <ResumeInTerminal cwd={session.cwd} resumeId={session.resumeId} />
           ) : null}
@@ -795,6 +807,55 @@ export function DetailScreen({
         )}
       </div>
     </Screen>
+  )
+}
+
+/* ------------------------------------------------------------------ the gate */
+
+/**
+ * Whether this session may page your phone at all.
+ *
+ * It only ever asks for LESS. A session whose permission mode auto-approves ignores a
+ * refusal from anyone — so paging you about it is a question whose answer cannot matter,
+ * and muting is the honest remedy. The label says what the mode actually is beside it,
+ * so the two are never confused for one another.
+ */
+function GateSwitch({
+  gate,
+  permissionMode,
+  onSet,
+}: {
+  gate: 'ask' | 'auto'
+  permissionMode?: string
+  onSet: (gate: 'ask' | 'auto') => void
+}) {
+  const muted = gate === 'auto'
+  return (
+    <div className="gateswitch">
+      <button
+        type="button"
+        className="tap quiet"
+        aria-pressed={muted}
+        onClick={() => onSet(muted ? 'ask' : 'auto')}
+      >
+        {muted ? (
+          <BellOff size={14} strokeWidth={2.2} aria-hidden="true" />
+        ) : (
+          <Bell size={14} strokeWidth={2.2} aria-hidden="true" />
+        )}
+        {muted ? 'Not asking you — tap to ask again' : 'Asking you first — tap to stop asking'}
+      </button>
+      {muted ? (
+        <p className="gatenote">
+          Tools run without reaching your phone. The transcript still shows everything.
+        </p>
+      ) : permissionMode === 'bypassPermissions' ? (
+        <p className="gatenote">
+          This session auto-approves everything on the laptop, so your answer cannot stop
+          it. Stop asking, or Stop the session.
+        </p>
+      ) : null}
+    </div>
   )
 }
 

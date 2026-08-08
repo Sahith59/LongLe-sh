@@ -543,6 +543,8 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     pushSubscribe: (subscription: unknown) =>
       send({ v: PROTOCOL_VERSION, type: 'pushSubscribe', subscription }),
     pushTest: () => send({ v: PROTOCOL_VERSION, type: 'pushTest' }),
+    setGate: (sessionId: string, gate: 'ask' | 'auto') =>
+      send({ v: PROTOCOL_VERSION, type: 'setGate', sessionId, gate }),
     takeOver: (sessionId: string, text: string) =>
       send({ v: PROTOCOL_VERSION, type: 'takeOver', sessionId, text }),
     decide: (
