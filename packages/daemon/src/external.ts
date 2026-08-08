@@ -129,10 +129,14 @@ export function formatAnswers(
     lines.push(`\u2022 They also said: ${response.trim()}`)
   }
   return [
-    'Answered by the user from their phone (LongLeash). Treat the following as their reply',
-    'to this question and carry on — do not ask it again.',
+    // Opens with "Not an error" on purpose: Claude Code paints every intercepted tool
+    // red under an "Error:" prefix, so the first words a person reads in their terminal
+    // should contradict that. The model reads the same sentence and treats it as a reply.
+    'Not an error — answered from your phone via LongLeash.',
     '',
     ...lines,
+    '',
+    'Continue with this answer; do not ask the question again.',
   ].join('\n')
 }
 

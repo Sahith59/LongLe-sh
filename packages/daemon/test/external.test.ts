@@ -390,7 +390,8 @@ describe('questions — Claude asking, not asking permission', () => {
     // verified against real Claude Code, which replied "Blue it is." to exactly this shape.
     expect(verdict.decision).toBe('deny')
     expect(verdict.reason).toContain('Which trigger method? \u2192 Manual')
-    expect(verdict.reason).toContain('do not ask it again')
+    expect(verdict.reason).toContain('Not an error')
+    expect(verdict.reason).toContain('do not ask the question again')
     external.shutdown()
   })
 
