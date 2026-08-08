@@ -1,34 +1,197 @@
-# Decisions — what was chosen and why
+# DECISIONS — the running log
 
-## 2026-07-29 PIVOT: standalone product (overrides "compose, don't build" for the product itself)
+Every decision that shapes LongLeash, with **why**, so nobody (including future us) has to
+re-derive it or accidentally undo it. Newest at the bottom of each section.
 
-Sahith's explicit call after the goal changed from personal tool to public open-source product: no third-party apps as dependencies (Happy, Termius, Tailscale all out); every product surface built/owned by us. The original evaluation scored the custom build (Tether, 74) below composition (79) **for a personal tool** — the public-product goal flips that weighting, so Tether + our own E2E relay is now the architecture of record (PLAN.md v2). Accepted costs, stated once: $99/yr Apple, solo maintenance of daemon + app + relay + extension against SDK/ACP churn, ~29 dev-days to public v1. Risk mitigation carried over: structured protocols only (never TUI scraping — the Omnara failure mode), relay never stores credentials (#680 lesson), typed API as the security boundary. The composed stack (Remote Control etc.) remains Sahith's personal stopgap while v1 is built — dogfooding both informs the product.
+**How to use this file:** append when a decision is made or reversed. Never delete an entry —
+if a decision is overturned, add a new one that says so and why. A decision without its reason
+is worthless six months later, so the reason is mandatory.
 
-## How the architecture was chosen (2026-07-29)
+---
 
-Eleven agents in four stages: six parallel researchers (terminal capture, VS Code extension APIs, agent protocols, phone stack, networking/security, prior art), three independently designed architectures, a weighted judge, and a hostile critique. Raw data in `../agents/archive/`.
+## 1. Product shape
 
-| Design | Score | In one line |
-|---|---|---|
-| **Happy-on-Tailnet** (winner) | 79 | Compose maintained tools; custom work is config + three scripts |
-| Tether | 74 | Custom TS daemon + Expo app: highest polish ceiling, forever-maintenance for one user (−7 over-engineering) |
-| Switchboard | 73 | Protocol-first control plane: best extensibility on paper, "the product is the protocol" (−9 over-engineering) |
+**Standalone open-source product, not a wrapper around someone else's tool** *(2026-07-29)*
+One daemon, our own relay, our own web app. Rationale: every product surface must be ours or
+we inherit someone else's roadmap and outages.
 
-Weighting: solves the pain 30 · solo-maintainable 25 · UX ceiling 20 · security 15 · extensibility 10, explicit over-engineering penalty. Decisive fact: the custom builds concede in their own risk sections that they rebuild ~90% of Happy (maintained, 22.9k-star, MIT) — and Omnara's deprecation shows how solo-maintained agent wrappers end. Critique verdict: **sound-with-fixes**; all five blocking fixes are folded into PLAN.md.
+**Web app (PWA), not native iOS** *(2026-08-01, revised from Expo/native)*
+$0 cost and zero-friction install matter more for an open-source product than lock-screen
+action buttons. Killed the need for an Apple Developer account ($99/yr), EAS builds, and App
+Store review. **Cost of the choice:** notifications can't carry Approve/Deny buttons; you open
+the app to answer.
 
-## The five architectural decisions
+**No accounts, no OAuth, no user database** *(2026-08-03)*
+Asked directly whether to add login/signup/Google OAuth. Answer was no:
+- Pairing already establishes cryptographic identity — an account would add nothing.
+- A user table is exactly the honeypot this architecture exists to avoid.
+- A signup wall in front of *your own laptop* is absurd.
+- Hosting cost and breach liability for zero benefit.
+**Revisit only if:** a hosted relay with quotas, teams, or billing arrives.
 
-1. **Compose, don't build.** Happy = ~90% of the brief. Trade-off: upstream fix latency and UX ceiling; Phase-5 fork is the exit.
-2. **Tailscale-only networking, zero public endpoints.** Cloudflare Tunnel rejected (edge reads plaintext of an RCE channel). Trade-off: VPN on both devices; occasional first-request retry.
-3. **tmux as sole terminal capture layer.** macOS cannot retro-attach PTYs (reptyr is Linux-only). Trade-off: non-tmux terminals invisible — stated honestly in the UI.
-4. **Structured agent channels; terminal view is mirror-only.** SDK/ACP for approvals, never TUI scraping; never resize agent TUIs to phone width (ink corruption). Trade-off: hand-launched bare `claude` gets mirror-only.
-5. **Single-writer sessions, enforced by a wrapper.** Dual-writer `--resume` risks transcript corruption (unverified, assumed dangerous). Trade-off: one extra hop on laptop handback.
+**Per-session gate (mute) controlled from the phone** *(2026-08-08)*
+Can only ever ask for LESS, never more. A session in an auto-approving mode ignores refusals
+from anyone; offering a switch that pretended otherwise would be a broken promise with a nicer
+label.
 
-## Notable smaller calls
+---
 
-- Dead-man's switch direction inverted (critique fix): laptop pings healthchecks.io; alert fires when pings STOP. A dead laptop can't send its own alert.
-- FileVault stays ON; accept down-until-home on unattended reboot, with detection. Never auto-login on an RCE machine.
-- Plain sshd over the tailnet instead of "Tailscale SSH" (GUI app can't accept incoming SSH) — and sshd runs at the login window, softening the reboot gap.
-- VibeTunnel and a standing `code tunnel` LaunchAgent cut as over-engineering: break-glass tools get started on demand, not run 24/7.
-- Self-hosting the relay moved earlier (after Phase 2), gated on spike S4, because the hosted relay is the weakest reliability/security link.
-- Start free (Termius) — Blink ~$20/yr only if reconnect UX grates.
+## 2. Architecture invariants (violating these breaks the product)
+
+**Never scrape a TUI to detect prompts — structured channels only.**
+This is why Omnara struggled and it must not be why we do. Everything comes from Claude Code's
+own hooks and its transcript JSONL — a file format, not a screen.
+
+**A hook must never break the terminal.**
+Every failure path in `longleash-hook.mjs` exits 0 with no output, which Claude Code reads as
+"no opinion". Daemon down, endpoint stale, network weird → the session behaves as if LongLeash
+were not installed.
+
+**Never ask about something whose answer cannot matter.** *(2026-08-08, learned the hard way)*
+An auto-approving session runs the command regardless. Paging a phone about it is worse than
+silence — it teaches the user their answers are theatre. This is why the mode filter lists the
+modes that GATE (`default`, `acceptEdits`) rather than the ones that don't: the "don't" list was
+incomplete the moment `auto` appeared, and over-asking is the unforgivable direction.
+Under-asking merely hands the decision to the terminal, which is safe by construction.
+
+**The relay stores nothing and reads nothing.** Ciphertext routing only. HKDF-derived room tags,
+AES-GCM frames. Keys live on the two devices.
+
+**Push payloads carry IDs only.** A `kind` discriminator (`approval` / `question` / `test`) is
+allowed because it names the SHAPE of the interaction, never its content. The in-app inbox is
+the source of truth, never the notification.
+
+**Typed API operations only — never a generic exec endpoint.** Remote start only into
+allowlisted roots. Every mutating call audit-logged.
+
+**Nothing binds `0.0.0.0`.** LAN address or loopback only; the relay is outbound.
+
+**One writer per conversation.** The phone can take a terminal session over, but only by ending
+the terminal side first. Two drivers is never allowed.
+
+**Never require a user to weaken their security.** Disk encryption, firewalls, OS updates are
+their call. See `docs/REQUIREMENTS.md`.
+
+**Say what cannot be done rather than pretending.** VS Code chat panels are sealed webviews;
+non-tmux terminals are uncapturable. The UI and docs say so.
+
+---
+
+## 3. Technical decisions
+
+**Cloudflare Workers + Durable Objects for the relay** *(2026-08-02)*
+Chosen after Oracle Always Free failed (no ARM capacity in any region) and Fly/VPS were
+rejected for cost. Free tier: 100k requests/day, no credit card. One Durable Object per room.
+**Live at** `https://longleash-relay.tsahith59.workers.dev`.
+
+**noble crypto, not WebCrypto** *(2026-08-02)*
+`crypto.subtle` is undefined on non-secure origins, and `http://LAN-IP` is not one. Discovered
+on a real phone; earlier rehearsals passed only because 127.0.0.1 is browser-exempt.
+
+**Answers to questions travel as the denial reason** *(2026-08-08)*
+A PreToolUse hook can only allow / deny / stay out — it cannot supply a tool result (verified
+against docs AND a live session). So LongLeash stops `AskUserQuestion` and puts the answer in
+the reason field. Claude reads it correctly. **Cost:** the terminal paints it red under
+`Error:`, so the message opens with "Not an error".
+
+**Questions bypass every permission-mode filter.** Claude Code shows question dialogs in every
+mode because it is asking the human to CHOOSE, not asking to be ALLOWED.
+
+**Tailwind v4 + tokens in `@theme`** *(2026-08-03)*
+So future shadcn / 21st.dev components inherit our system instead of bringing their own.
+
+**`resumable` and `resumeId` ride on live events, not just `hello`** *(2026-08-04)*
+A fact that changes AS a session ends cannot be sent only before it begins. This bug hid the
+Reopen button until a reconnect.
+
+**A LAN address is not required to run** *(2026-08-08)*
+With a relay configured the daemon only dials out. Refusing to start without a local address
+grounded the product on exactly the setup (phone tethering) where remote access matters most.
+
+---
+
+## 4. Design system — "Matte Graphite"
+
+*(2026-08-03, after three rejected rounds)*
+
+**Diagnosis of what was wrong:** an aurora gradient behind frosted glass on a light background
+is the single loudest "AI generated this" signal of 2026. Four aesthetics were stacked
+(neumorphism + glassmorphism + aurora + display grotesque). Everything was elevated, so nothing
+was. No thesis tied to what the product does.
+
+**The system:** one physical logic, three materials — **raised** (you can press it),
+**engraved** (the machine is telling you), **recessed** (you read out of it). Near-black ground,
+matte machined keys with a four-layer bulge, no gloss anywhere.
+
+**Colour discipline:** the interface speaks in LUMINANCE. Brighter = closer to you; the
+brightest key on screen is the thing that needs you. Two dim tints (sage `#a5c2af`, clay
+`#c99b93`) are TEXT INK ONLY — never a fill, never a border. A uniformly grey screen means
+nothing wants you, readable from across a room.
+
+**Type:** Instrument Serif (voice), Instrument Sans (interface), Geist Mono (machine).
+Self-hosted so it renders on a laptop hotspot with no internet.
+
+**Motion:** one easing curve `cubic-bezier(.32,.72,.24,1)`, three durations (180/260/400ms),
+exits ~65%. Transform and opacity only. The session title is a shared element that flies
+between the card and the detail header.
+
+**Logo:** the machined robot-dog with carabiner clip and sage LED, chosen by Sahith 2026-08-03.
+
+---
+
+## 5. Money and go-to-market *(open — see §7)*
+
+**Relay ownership** *(decided 2026-08-08, action pending)*
+Every installed copy currently points at Sahith's personal Cloudflare Worker. Only routes
+ciphertext, so no privacy issue, but it is on a personal account with a 100k req/day free tier.
+**Decision: create a separate Cloudflare account for LongLeash (tomorrow, 2026-08-09).**
+Later option: a "deploy your own relay" step in the installer.
+
+**No npm/npx publishing yet** *(2026-08-08)*
+LongLeash is a long-running daemon, not a one-shot tool — the wrong shape for `npx`.
+`better-sqlite3` would need compiling on every stranger's machine. Revisit when the daemon is
+bundled with SQLite prebuilds, and then as `npm i -g`, not `npx`.
+
+---
+
+## 6. Open questions
+
+- Relay at scale: who pays when there are thousands of users?
+- Is there a paid tier that does not require closing the source?
+- VS Code extension: nice-to-have, would not have prevented any bug so far.
+
+---
+
+## 7. Competitive reality *(researched 2026-08-08)*
+
+**The fact that dominates everything:** Anthropic shipped `/remote-control` in **February
+2026**. It bridges a running Claude Code session to claude.ai/code and the Claude iOS/Android
+apps. Free with Pro/Max — which our users already pay for. It is first-party, and it does the
+core thing LongLeash does.
+
+**Its real limits (as of this research):**
+- Officially a **research preview** — may change or be withdrawn
+- **One remote session per Claude Code instance**; it is per-session, not an inbox across all
+- Terminal must stay open; ~10 minute unreachability times the session out
+- Single-user only
+- Claude Code only
+
+**Where LongLeash is genuinely different:**
+- **One inbox across every session**, not one session at a time
+- **Terminal sessions appear without being explicitly enabled** — you don't have to remember
+- **Self-hosted**: chat content never transits Anthropic's cloud; our relay cannot read it
+- **Lock-screen push** with content-free payloads
+- **Take-over / handoff** between phone and keyboard, both directions
+- **Per-session gating**, mode visibility, audit log
+- Open source
+
+**Others in the space:** Happy (free, open source), Omnara (freemium, App Store), Cosyra (cloud
+containers, paid), Claude Remote, Cursor/Warp background agents.
+
+**Honest read:** the differentiators are real but they are refinements on a capability the
+platform owner now gives away. That is the central business problem, not a detail.
+
+Sources: [Claude Code Remote Control docs](https://code.claude.com/docs/en/remote-control) ·
+[Best Mobile Apps for Claude Code 2026](https://nimbalyst.com/blog/best-mobile-apps-for-claude-code-2026/) ·
+[Happy](https://happy.engineering/) · [Omnara](https://www.omnara.com/pricing) ·
+[Product Hunt alternatives](https://www.producthunt.com/products/claude-code-remote-access/alternatives)
