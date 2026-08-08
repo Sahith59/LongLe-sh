@@ -136,6 +136,13 @@ describe('the hook script — the terminal must never notice a problem', () => {
     )
     for (const [mode, tool] of [
       ['bypassPermissions', 'Bash'],
+      // 'auto' is what VS Code's chat actually reports — the value that was missed, and
+      // that paged a phone about every command an auto-approving session ran.
+      ['auto', 'Bash'],
+      ['auto', 'Write'],
+      // Any mode this hook has never heard of decides for itself; staying silent hands
+      // the decision to the terminal, which is safe by construction.
+      ['someFutureMode', 'Bash'],
       ['plan', 'Bash'],
       ['acceptEdits', 'Edit'],
       ['acceptEdits', 'Write'],

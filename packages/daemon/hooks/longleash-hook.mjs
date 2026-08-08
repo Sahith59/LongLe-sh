@@ -47,6 +47,19 @@ const READ_ONLY = new Set(['Read', 'Glob', 'Grep'])
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
 /**
+ * The ONLY modes that stop and ask a human. Everything else — auto, bypassPermissions,
+ * plan, and whatever gets added next — decides for itself.
+ *
+ * Listing what gates, rather than what does not, is deliberate. The first version listed
+ * the non-gating modes and missed "auto" entirely, so a VS Code session that approves
+ * everything itself paged a phone about every command it ran: questions whose answers
+ * could not matter. Erring the other way is harmless by construction — a hook that stays
+ * silent hands the decision to the terminal's own prompt, which is exactly where it would
+ * have been without LongLeash.
+ */
+const GATING_MODES = new Set(['default', 'acceptEdits'])
+
+/**
  * The person's own allow rules, from every settings file Claude Code reads.
  * A tool the terminal auto-runs must not interrogate the phone.
  */
@@ -108,8 +121,9 @@ function terminalWouldAsk(event) {
   // room while the person waited on the other side of the world.
   if (tool === 'AskUserQuestion') return true
   if (READ_ONLY.has(tool)) return false
-  const mode = event.permission_mode
-  if (mode === 'bypassPermissions' || mode === 'plan') return false
+  // Absent means an older Claude Code that only had the gating behaviour.
+  const mode = event.permission_mode ?? 'default'
+  if (!GATING_MODES.has(mode)) return false
   if (mode === 'acceptEdits' && EDIT_TOOLS.has(tool)) return false
   const rules = loadAllowRules(event.cwd)
   if (rules.some((rule) => ruleMatches(rule, tool, event.tool_input))) return false
