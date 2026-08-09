@@ -154,47 +154,19 @@ ok "Agents may work in: $ROOTS"
 
 step "Creating the longleash command"
 
+# A two-line stub, deliberately. Everything the command DOES lives in scripts/longleash.sh
+# inside the repo, so `longleash update` updates the command's behaviour too. The old wrapper
+# baked the logic in here, which meant a command installed in August still behaved like August
+# no matter how much newer code arrived — and nothing announced that.
 cat > "$BIN_DIR/longleash" <<WRAPPER
 #!/usr/bin/env bash
-# Created by the LongLeash installer. Safe to edit — the two lines below are the settings.
+# Created by the LongLeash installer. The three values below are the settings; the behaviour
+# lives in \$LONGLEASH_DIR/scripts/longleash.sh and updates with the code.
 set -euo pipefail
-LONGLEASH_DIR="$INSTALL_DIR"
-DEFAULT_ROOTS="$ROOTS"
-DEFAULT_RELAY="$RELAY"
-
-case "\${1:-}" in
-  update)
-    git -C "\$LONGLEASH_DIR" pull --ff-only
-    ( cd "\$LONGLEASH_DIR" && pnpm install --silent --prod=false && pnpm --filter @longleash/app build >/dev/null )
-    echo "LongLeash updated."
-    exit 0 ;;
-  hooks)
-    # Wire up every agent present. Each installer refuses on its own terms rather than
-    # half-installing, so a missing or too-old CLI never blocks the others.
-    node "\$LONGLEASH_DIR/packages/daemon/hooks/install-hooks.mjs" "\${@:2}" || true
-    if command -v codex >/dev/null 2>&1; then
-      node "\$LONGLEASH_DIR/packages/daemon/hooks/install-codex-hooks.mjs" "\${@:2}" || true
-    fi
-    exit 0 ;;
-  devices)
-    exec node "\$LONGLEASH_DIR/packages/daemon/bin/longleash-devices.mjs" ;;
-  revoke)
-    exec node "\$LONGLEASH_DIR/packages/daemon/bin/longleash-devices.mjs" revoke "\${@:2}" ;;
-  where)
-    echo "\$LONGLEASH_DIR"; exit 0 ;;
-  -h|--help|help)
-    echo "longleash [folders…]     watch these folders (default: \$DEFAULT_ROOTS)"
-    echo "longleash devices        list the phones paired with this laptop"
-    echo "longleash revoke <id>    cut off a lost or stolen device, immediately"
-    echo "longleash update         pull the newest version and rebuild"
-    echo "longleash hooks          re-install the agent hooks (--remove to undo)"
-    echo "longleash where          print where LongLeash is installed"
-    exit 0 ;;
-esac
-
-cd "\$LONGLEASH_DIR/packages/daemon"
-if [ "\$DEFAULT_RELAY" != "off" ]; then export LONGLEASH_RELAY_URL="\${LONGLEASH_RELAY_URL:-\$DEFAULT_RELAY}"; fi
-if [ \$# -gt 0 ]; then exec pnpm start "\$@"; else exec pnpm start \$DEFAULT_ROOTS; fi
+export LONGLEASH_DIR="$INSTALL_DIR"
+export LONGLEASH_DEFAULT_ROOTS="$ROOTS"
+export LONGLEASH_DEFAULT_RELAY="$RELAY"
+exec bash "\$LONGLEASH_DIR/scripts/longleash.sh" "\$@"
 WRAPPER
 chmod +x "$BIN_DIR/longleash"
 ok "Installed $BIN_DIR/longleash"
