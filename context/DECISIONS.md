@@ -9,6 +9,22 @@ is worthless six months later, so the reason is mandatory.
 
 ---
 
+## 0. The vision (restated by Sahith, 2026-08-08 — read this first)
+
+**The problem:** a developer who leans on AI agents cannot leave their desk. Every agent that
+needs a decision — an approval, a choice — blocks until a human is physically in front of the
+laptop. Four hours away means four hours of stalled work.
+
+**The product:** the human's remaining job — deciding — moves to their phone. Every agent
+session on the laptop (terminal, IDE, whatever) is visible and answerable from anywhere.
+
+**The scope, explicitly:** *not Claude-only.* Claude Code, Codex, Gemini CLI, Cursor — any tool
+with agentic capability on the machine. This is the differentiator and the reason the product
+exists; treating it as a Claude accessory is a category error.
+
+**The measure of success:** people pay for things that make their lives easier. If a developer
+can genuinely walk away for five hours and stay in control, that is worth money.
+
 ## 1. Product shape
 
 **Standalone open-source product, not a wrapper around someone else's tool** *(2026-07-29)*
@@ -188,8 +204,41 @@ core thing LongLeash does.
 **Others in the space:** Happy (free, open source), Omnara (freemium, App Store), Cosyra (cloud
 containers, paid), Claude Remote, Cursor/Warp background agents.
 
-**Honest read:** the differentiators are real but they are refinements on a capability the
-platform owner now gives away. That is the central business problem, not a detail.
+**CORRECTION (2026-08-08, same day).** The read above was wrong because it measured LongLeash
+against Claude Code. Sahith restated the vision: LongLeash is a **control plane for every local
+AI agent** — Claude Code, Codex, Gemini CLI, and whatever comes next — not a Claude accessory.
+The problem is not "Claude Code lacks a phone client"; it is **a developer cannot leave their
+desk, because any agent that needs a decision blocks until a human is physically there.**
+
+That reframing survives the competitive fact, because of a structural asymmetry:
+
+> **No first-party will ever be cross-vendor.** Anthropic will not ship a Codex client. OpenAI
+> will not ship a Claude client. Google will ship neither. A universal control plane can only be
+> built by a third party. `/remote-control` is not a competitor to that — it is a competitor to
+> one row of it.
+
+**And it is buildable, not aspirational** — verified 2026-08-08. Every major agent CLI now
+exposes the same structured shape LongLeash already integrates with:
+- **Claude Code** — `PreToolUse` hooks (built, shipped)
+- **Codex CLI** — `PermissionRequest` hook: *"runs when Codex is about to ask for approval… can
+  allow the request, deny the request, or decline to decide and let the normal approval prompt
+  continue"* — the same three-way contract, so the existing hook design ports directly
+- **Gemini CLI** — hooks on `onToolUse` / `onBeforeRequest`, configured in `settings.json` with
+  the same layered precedence
+
+The hard parts (relay, E2E, push, approvals, questions, take-over, gating) are agent-agnostic
+and already built. Each new agent is a hook script and an adapter, not a new product.
+
+**What stays genuinely hard, and must not be waved away:**
+- Three hook systems, each young and each evolving — permanent maintenance cost. (It is also the
+  moat: the same work that is annoying for us is prohibitive for a casual competitor.)
+- Unknown how many developers run more than one agent CLI. Needs evidence, not assumption.
+- Open source and self-hostable means weak pricing power over the core.
+
+Sources: [Codex PermissionRequest hooks](https://github.com/openai/codex/issues/28833) ·
+[Codex hooks system](https://deepwiki.com/openai/codex/3.11-hooks-system) ·
+[Gemini CLI hooks](https://geminicli.com/docs/hooks/) ·
+[Google's hooks announcement](https://developers.googleblog.com/tailor-gemini-cli-to-your-workflow-with-hooks/)
 
 Sources: [Claude Code Remote Control docs](https://code.claude.com/docs/en/remote-control) ·
 [Best Mobile Apps for Claude Code 2026](https://nimbalyst.com/blog/best-mobile-apps-for-claude-code-2026/) ·
