@@ -84,16 +84,17 @@ exists, any price is a guess with a payment form attached.
 | Tier | Price | What it is |
 | --- | --- | --- |
 | **Free, forever** | $0 | Everything. Self-hosted relay. No feature withheld. Non-negotiable — it is the trust and the differentiation. |
-| **LongLeash Cloud** | **$10/mo** | Our relay + push. Zero setup, no Cloudflare account. |
+| **LongLeash Cloud** | **$7/mo or $70/yr** | Our relay + push. Zero setup, no Cloudflare account, no port forwarding. Framed as **supporting the project**, not renting a feature. |
 | **Teams** | **$20/user/mo** | Shared visibility across a team's agents, audit of who approved what, SSO later. Well under Conductor's $60, inside the $63–100 team budget, paid with employer money. |
 
-**CORRECTED 2026-08-08 — this file previously recommended ~$6, on folklore.** §6.1 shows there is
-no published test in which ~$5 beats ~$10, that $10.00 is both the median and modal subscription
-price across 115,000 apps, and that low-price tiers realise **3–6x less LTV per payer** with no
-reliable conversion advantage. Going cheap would have cost revenue to buy a benefit that does not
-exist in the data. **Round numbers, never .99** — charm pricing is a discount signal that
-undermines quality perception for an unproven tool, and every developer tool in the market
-prices round.
+**Price history of this recommendation, kept so the reasoning is auditable:** ~$6 (intuition) →
+$10 (general subscription data, §6.1) → **$7 (category-specific data, §6.0)**. The $10 correction
+was itself wrong: RevenueCat's $10 median comes from 115,000 *consumer mobile apps*, a different
+market. Every product in LongLeash's actual category — open-source, self-hostable, paid hosted
+remote access — clusters at **$5–8**: Nabu Casa $6.50, Coolify $5, Healthchecks $5, ngrok $8,
+Tailscale $8. Above ~$10 users compare against a $0.99 domain rather than a coffee.
+**Round numbers, never .99** (§6.1) — charm pricing signals *discount*, which is the wrong signal
+for an unproven tool.
 
 **Why ≤$20 regardless: the wallet, not psychology.** 62% of developers personally spend ≤$20/mo
 on *all* AI tooling combined, and Claude Pro already consumes most of that.
@@ -109,18 +110,98 @@ one that does not drop when you have actually left the house"** — the single c
 voice about every incumbent (§6.4), and the thing LongLeash spent a week of field testing
 fixing.
 
-**Honest revenue expectation.** At the category-realistic 1–3% conversion, 1,000 paying
-individuals requires 33k–100k free users — implausible for a solo project in a market where
-most launches go unnoticed. **$10k/month from individual developers is not supported by any
-evidence gathered.** A realistic individual-tier outcome is tens to low hundreds of dollars per
-month. Teams is the only path evidenced to reach four figures, and it is a different sales
-motion, not a different price tag.
+**Revenue expectation — REVISED UPWARD 2026-08-08 by §6.0, and the earlier figure was too
+pessimistic.** OSS conversion is not one number; it spans **1% (Coolify) to 30% (Nabu Casa)**,
+and the gap is explained by *why* people pay. Nabu Casa's 30% comes from users who state plainly
+they could self-host and pay anyway — **to fund the project.**
+
+| If conversion is… | Users needed for $10k/mo at $7 |
+| --- | --- |
+| 1% (Coolify — infrastructure convenience only) | ~140,000 — not achievable |
+| 5% (Bessemer's stated OSS ceiling) | ~28,000 — hard |
+| 15% (halfway to Nabu Casa) | ~9,500 — plausible with a real community |
+| 30% (Nabu Casa — stewardship motive) | **~4,800 — genuinely reachable** |
+
+So the target is not absurd. It is **conditional on being the kind of project people want to
+fund**, which is earned through openness, reliability and visible stewardship — not through
+pricing tactics. The earlier claim that $10k/mo "is not supported by any evidence" was based on
+consumer-SaaS conversion rates that do not describe this category.
 
 ---
 
 ## 6. Evidence log
 
 *(populated by research agents 2026-08-08)*
+
+### 6.0 THE STRUCTURAL TWIN: Home Assistant / Nabu Casa *(researched 2026-08-08)*
+
+**This is the closest precedent that exists, and it outranks the general subscription data in
+§6.1 because it is the same shape: open-source software you self-host, with a paid hosted
+service whose main value is remote access.**
+
+**Price: $6.50/mo or $65/yr, unchanged since Feb 2022.** Includes remote access via
+`*.ui.nabu.casa` (no port forwarding, works behind CGNAT), voice-assistant integrations, cloud
+TTS/STT, 5GB encrypted backup, webhook endpoints, camera relay.
+
+**Conversion: 30.4%** — the `cloud` integration is configured on **160,237 of 526,947** reporting
+installs (Home Assistant's own opt-in analytics). Cross-checked against the Open Home
+Foundation's 2025 annual report (CHF 8.84M revenue, 52 staff) and 2026 budget (CHF 11.12M royalty
+income from Nabu Casa): 160k × ~$78 ≈ $12.5M. The two estimates agree. **Bootstrapped, zero
+investors.**
+
+**That is ~10–30x the OSS category benchmark, and the reason is not the feature.** Across 321
+on-topic user comments the top reason for paying is **"to fund the project"** (14%, and every
+single top-voted comment), from people who say outright they could self-host:
+> *"I personally wanted to fund further development, **even though it would be trivial to use the
+> same solution I have for my other services**"* [75 upvotes]
+
+The founder is explicit that this is the design:
+> *"The Home Assistant Cloud functionality is **a perk for becoming a supporter of the Home
+> Assistant project**… You are not paying to just maintain the cloud servers."*
+> *"**We don't want to come to rely on donations** and have to show Wikipedia-style beg banners."*
+
+**The subscription is the donate button with a product attached** — and it converts 10–30x better
+than actual donations (Plausible: $8,500 MRR vs six $5 donations; core-js: 9B downloads → $400/mo).
+
+**They deliberately do not cripple the free path.** Their own remote-access docs recommend
+Tailscale, ZeroTier and DuckDNS *by name, on the same page as the paid product.* But:
+> *"Our account page and relayer are not open source."*
+
+**That is the exact template for LongLeash:** everything open except the relay and the account
+layer.
+
+**Proven price band for "remote access to what I already run": $5–8/mo.**
+Nabu Casa $6.50 · Coolify $5 · Healthchecks $5 · ngrok $8 · Tailscale $8. Above ~$10/mo users
+start comparing against a $0.99 domain rather than a coffee. Annual at 10× monthly is the
+near-universal convention.
+
+**OSS free→paid conversion, real numbers:** Coolify **1%** (1,700 cloud customers vs 154,000
+self-hosters). Nabu Casa **30%**. The spread between those two *is* the strategy question.
+
+**Metered free tiers in open source are always circumvented — no counterexample found.**
+OpenProject's enterprise-token bypass gist has 537 stars / 217 forks and is legally clean under
+AGPL. Tellingly, the projects that succeed **do not ship counters at all**: Sentry self-hosted
+has no event quota; Plausible CE has zero limits by choice; PostHog's OSS build caps
+*structurally*, not numerically.
+
+> **Gate on infrastructure, never on a counter in the binary.** A self-hoster can compile
+> `longleashd`; they cannot mint our push certificate or our relay's address space.
+
+**Documented failure modes to avoid:** donations alone never work (core-js: on 52% of the top
+1,000 sites, $400/mo, under $2/hour, plus hate mail). Retroactive licence changes get forked and
+the fork wins the defaults (HashiCorp→OpenTofu in 5 weeks; Redis→Valkey, still the default in
+Fedora 42, Ubuntu 26.04, Debian 13). Selling the self-hostable artifact fails — Keygen's founder:
+users *"could fork the code and give themselves the EE features without any ramifications."*
+
+Sources: [Nabu Casa pricing](https://www.nabucasa.com/pricing/) ·
+[HA analytics](https://analytics.home-assistant.io/) ·
+[Open Home Foundation 2025 report](https://www.openhomefoundation.org/assets/documents/annual-report-2025-11-jun-2026.pdf) ·
+[HA Cloud launch](https://www.home-assistant.io/blog/2017/12/17/introducing-home-assistant-cloud/) ·
+[HA remote access docs](https://www.home-assistant.io/docs/configuration/remote/) ·
+[Coolify pricing](https://coolify.io/pricing) · [Healthchecks](https://healthchecks.io/pricing/) ·
+[ngrok](https://ngrok.com/pricing) · [Tailscale](https://tailscale.com/pricing) ·
+[core-js funding](https://github.com/zloirock/core-js/blob/master/docs/2023-02-14-so-whats-next.md) ·
+[Keygen fair source](https://keygen.sh/blog/keygen-is-now-fair-source/)
 
 ### 6.1 Conversion and price psychology *(researched 2026-08-08 — the most rigorous of the three)*
 
