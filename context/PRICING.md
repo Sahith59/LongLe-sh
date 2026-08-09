@@ -84,10 +84,24 @@ exists, any price is a guess with a payment form attached.
 | Tier | Price | What it is |
 | --- | --- | --- |
 | **Free, forever** | $0 | Everything. Self-hosted relay. No feature withheld. Non-negotiable — it is the trust and the differentiation. |
-| **LongLeash Cloud** | ~$6/mo | Our relay + push. Zero setup, no Cloudflare account. Sits between ClawTab's $4.99 and the $9 Omnara could not sustain. |
-| **Teams** | ~$12/user/mo | Shared visibility across a team's agents, audit of who approved what, SSO later. Far under Conductor's $60, inside the $63–100 team budget, and paid with employer money. |
+| **LongLeash Cloud** | **$10/mo** | Our relay + push. Zero setup, no Cloudflare account. |
+| **Teams** | **$20/user/mo** | Shared visibility across a team's agents, audit of who approved what, SSO later. Well under Conductor's $60, inside the $63–100 team budget, paid with employer money. |
 
-**Do not choose $9 over $10 believing evidence supports it — none does (§6.3).**
+**CORRECTED 2026-08-08 — this file previously recommended ~$6, on folklore.** §6.1 shows there is
+no published test in which ~$5 beats ~$10, that $10.00 is both the median and modal subscription
+price across 115,000 apps, and that low-price tiers realise **3–6x less LTV per payer** with no
+reliable conversion advantage. Going cheap would have cost revenue to buy a benefit that does not
+exist in the data. **Round numbers, never .99** — charm pricing is a discount signal that
+undermines quality perception for an unproven tool, and every developer tool in the market
+prices round.
+
+**Why ≤$20 regardless: the wallet, not psychology.** 62% of developers personally spend ≤$20/mo
+on *all* AI tooling combined, and Claude Pro already consumes most of that.
+
+**The highest-leverage move is packaging, not the number.** Sidekiq's commercial licence sold
+33 copies ($1,650, "a failure"); repackaged as a $500 add-on with the OSS core still free it
+made **$70,000 in a year — 42x, from packaging alone.** Before tuning a price, ask what the
+paid *thing* is.
 
 **Positioning, which matters more than the number:** do not sell "control your agents from your
 phone." That is free from Anthropic, free from Happy, and bundled into Warp at $20. Sell **"the
@@ -108,9 +122,78 @@ motion, not a different price tag.
 
 *(populated by research agents 2026-08-08)*
 
-### 6.1 Open-source monetisation precedent
+### 6.1 Conversion and price psychology *(researched 2026-08-08 — the most rigorous of the three)*
 
-_pending_
+**Citation hygiene first — several "benchmarks" in circulation are fabricated.**
+**OpenView Partners shut down in December 2023.** Any citation of an "OpenView 2024/2025/2026
+Product Benchmarks" report is fabricated; the last real one is 2023. Likewise a claimed
+"ProfitWell 2026 SaaS Monetization Index" could not be found to exist. The widely-quoted
+"opt-in 18.2% / opt-out 48.8%" traces to an SEO agency's own 86 clients, and "opt-in >25% /
+opt-out >60%" is one consultant's stated personal opinion (*"I'm not an analyst"*).
+
+**Credible conversion benchmarks** (Poyar × ChartMogul × ProductLed, Jan 2026, N=200; and
+Lenny × Pendo, N=1,000+):
+- Freemium self-serve: **3–5% good, 6–12% great**; median across all products 8%
+- ~25% of freemium products convert **below 2.5%**
+- **Developer-focused products converted at 5% median — HALF the rate of non-developer
+  products.** This is the only credible devtools-specific number that exists.
+- **No rigorous OSS-user→paid benchmark exists at all.** Bessemer's *"often less than five
+  percent"* is a stated design target, not a measurement. Filing-derived ratios are far worse
+  (MongoDB 0.014%, GitLab ~0.02%) but compare downloads to organisations.
+
+**THE PRICE-LEVEL FINDING THAT CORRECTS OUR OWN RECOMMENDATION.**
+There is **no published randomised test comparing ~$5 vs ~$10** for a software subscription.
+The two largest observational datasets point the other way:
+- **RevenueCat** (115,000+ apps, $16B revenue): median monthly price **$10.00**, mode **$10.00**.
+  Year-1 realised LTV per payer: **$10.69 low-priced vs $62.19 high-priced.** Download→paid was
+  *higher* for high-priced apps (2.8% vs 1.4%).
+- **Adapty** (16,000+ apps): global median **$12.99/mo**; high-price apps earn **~3x the LTV**.
+
+Both are observational, not causal — but **there is no large-N evidence that going below $10
+buys conversion, and consistent evidence that low tiers end with 3–6x lower LTV per payer.**
+The "$10 psychological ceiling" is a *descriptive modal price*, not a demand cliff; no study
+privileges $10 over any other boundary.
+
+**The real reason to stay ≤$20 is the wallet, not psychology.**
+State of AI 2026 (Devographics, n=6,378, *personal* spend): **62.1% of developers personally
+spend ≤$20/month on all AI tooling combined**; 81.4% spend ≤$50. And $0-spenders fell from
+52.4% → 39.7% year over year, so personal payment is normalising fast.
+
+**Never use .99 for this product.** Anderson & Simester (2003) is the real study — but the
+effect is a *discount signal*, works only on unfamiliar goods bought by uninformed buyers,
+collapses from "+40%" in a tiny pilot to **+7%, and ~zero for familiar items**, in the
+best-powered arm (N=90,000). Never tested in B2B or software. The quality-signalling literature
+(Stiving 2000; Schindler & Kibarian 2001) says round numbers are what credibility-seeking
+sellers use where buyers cannot verify quality before purchase — which describes a new developer
+tool exactly. Observation: **every developer tool prices round** (Copilot $10, Cursor $20,
+Claude $20, Raycast $10, Docker $9); the consumer bundle Setapp prices $14.99.
+
+**THE MOST ACTIONABLE FINDING: repackaging beats price tuning.**
+**Sidekiq** — a $50 commercial licence of the open-source project sold **33 copies = $1,650**,
+which the author calls *"a failure."* Repackaged as a **$500 paid add-on with the OSS core still
+free**: ~140 copies = **$70,000 in one year. ~42x.** Not a price increase — a different package.
+Also: Server Density's fixed-plan repackaging (the one properly controlled A/B found anywhere,
+2012) **doubled revenue per visitor while cutting signups 25%**; Baremetrics cut its cheapest
+plan and LTV rose 143%.
+
+**The documented failure:** Indie Worldwide raised $29 → $49 and removed monthly.
+*"Growth almost immediately stagnated. Signups went down. Churn went up."* Held a year:
+**$37,980 revenue vs $51,560 expenses — a $13,580 loss.** Reversed to $29 and recovered.
+"Raising prices always increases revenue" is **not** supported by traceable data; the
+most-cited backing (*"1% price improvement → 11% operating profit"*) is Marn & Rosiello,
+**HBR 1992**, on large industrial firms.
+
+Sources: [ChartMogul/Poyar 2026](https://chartmogul.com/reports/saas-conversion-report/) ·
+[Lenny × Pendo](https://www.lennysnewsletter.com/p/what-is-a-good-free-to-paid-conversion) ·
+[RevenueCat State of Subscription Apps 2026](https://www.revenuecat.com/state-of-subscription-apps) ·
+[Adapty 2026](https://adapty.io/state-of-in-app-subscriptions-report/) ·
+[State of AI 2026 spend](https://2026.stateofai.dev/en-US/usage/) ·
+[Anderson & Simester 2003 PDF](https://www.kellogg.northwestern.edu/faculty/anderson_e/htm/personalpage_files/Papers/Effects_of_9_Price_Endings_on_Retail_Sales.pdf) ·
+[Strulov-Shlain 2023](https://gwern.net/doc/economics/2023-strulovshlain.pdf) ·
+[Sidekiq $70k](https://www.mikeperham.com/2013/10/01/how-to-make-100k-in-oss-by-working-hard/) ·
+[Server Density A/B](https://www.kalzumeus.com/2012/08/13/doubling-saas-revenue/) ·
+[Indie Worldwide failure](https://anthonycastrio.substack.com/p/i-made-a-mistake) ·
+[Bessemer open source](https://www.bvp.com/atlas/roadmap-open-source)
 
 ### 6.2 Direct competitor pricing *(researched 2026-08-08)*
 
