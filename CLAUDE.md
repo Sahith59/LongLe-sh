@@ -29,6 +29,7 @@ Phone (Expo app: Inbox / Sessions / Activity) ⇄ E2E encrypted channel (LAN dir
 - Sahith is new to much of this stack — explain in plain language first, command second. `context/GLOSSARY.md` has the vocabulary.
 - TypeScript everywhere; no over-engineering; env vars for all secrets.
 - Agents/subagents write reports to `agents/` as `YYYY-MM-DD-topic.md` (see `agents/README.md`); raw data in `agents/archive/`.
+- `context/PRICING.md` holds the commercial strategy and the evidence behind it. Do not implement billing until its "THE DECISION" section names a model and a price.
 - `context/DECISIONS.md` is the running decision log — every choice with its REASON. Read it before proposing architecture, design, or commercial changes; append when a decision is made or reversed, and never delete an entry.
 - `context/STATE.md` is the single source of truth for project state. Spikes (S0 gate for Phase A; S1–S5) must pass/fail explicitly before building on what they verify.
 - Commit only when Sahith asks. The repo will be public one day — write code and docs as if strangers are reading.
