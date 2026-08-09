@@ -8,7 +8,7 @@ import { parseClientMessage, PROTOCOL_VERSION, type SessionEvent } from '@longle
 import { timingSafeEqual } from 'node:crypto'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { PushNotifier } from './push.js'
-import type { ExternalSessions } from './external.js'
+import { surfaceOf, terminalAgentOf, type ExternalSessions } from './external.js'
 import type { DeviceRegistry } from './auth.js'
 import { PairingError } from './auth.js'
 import { SessionError, type SessionManager } from './sessions.js'
@@ -144,11 +144,20 @@ export class LongLeashServer {
         tool_input?: unknown
         permission_mode?: string
         ll_pid?: number
+        /** Which CLI this came from. Absent means Claude Code, the original caller. */
+        ll_agent?: string
+        /** The agent's own tool-call id, when it fires the same hook more than once. */
+        ll_dedupe?: string
+        /** Terminal or editor, as detected by the hook from its own environment. */
+        ll_surface?: string
       }
       const { session_id: sessionId, cwd, transcript_path: transcript } = body
       if (typeof sessionId !== 'string' || sessionId === '') {
         return reply.code(400).send({ reason: 'missing session_id' })
       }
+
+      const agent = terminalAgentOf(body.ll_agent)
+      const surface = surfaceOf(body.ll_surface)
 
       if (body.hook_event_name === 'SessionStart') {
         this.external.sessionStart(
@@ -156,12 +165,33 @@ export class LongLeashServer {
           cwd ?? '',
           transcript ?? '',
           typeof body.ll_pid === 'number' ? body.ll_pid : undefined,
+          agent,
+          surface,
         )
-        this.log(`terminal session ${sessionId.slice(0, 8)} started in ${cwd ?? '?'}`)
+        this.log(`${agent} session ${sessionId.slice(0, 8)} started in ${cwd ?? '?'} (${surface})`)
         return {}
       }
       if (body.hook_event_name === 'PreToolUse') {
         if (typeof body.tool_name !== 'string') return reply.code(400).send({ reason: 'missing tool_name' })
+        /**
+         * When the person answers at their keyboard instead, the agent moves straight on
+         * and the hook process exits — killing this request. That is the ONLY signal we get
+         * that the question is already settled, so we listen for it and clear the card from
+         * the phone immediately. Without this, the phone shows a decision that was made
+         * minutes ago until the full timeout elapses.
+         *
+         * `close` also fires on a normal response, which is harmless: by then the approval
+         * is already decided and abandoning a decided approval is a no-op.
+         */
+        const gone = new AbortController()
+        reply.raw.on('close', () => {
+          // `close` on the RESPONSE fires both when we finish replying and when the client
+          // vanishes; `writableEnded` is what tells them apart. Listening on the REQUEST
+          // instead does NOT work — that closes as soon as the body has been read, which
+          // would abandon every approval the instant it was created.
+          if (!reply.raw.writableEnded) gone.abort()
+        })
+
         const decision = await this.external.preToolUse(
           sessionId,
           cwd ?? '',
@@ -169,6 +199,14 @@ export class LongLeashServer {
           body.tool_name,
           body.tool_input,
           body.permission_mode,
+          {
+            ...(typeof body.ll_dedupe === 'string' && body.ll_dedupe !== ''
+              ? { dedupeKey: body.ll_dedupe }
+              : {}),
+            agent,
+            surface,
+            abandoned: gone.signal,
+          },
         )
         // Printed so a surprising ask is diagnosable from the daemon terminal rather than
         // guessed at: it names the mode the session claims to be running in.
@@ -182,6 +220,55 @@ export class LongLeashServer {
         return {}
       }
       return {} // unknown events are tolerated: a newer Claude Code must not break the daemon
+    })
+
+    /**
+     * Paired devices, and the power to un-pair one — for the day a phone is lost or stolen.
+     *
+     * Deliberately NOT a phone-facing operation. It is authorised by the same 0600 secret
+     * the hooks use, which only a process on the laptop can read: revocation is rooted in
+     * physical possession of the machine, so a thief holding an unlocked phone can neither
+     * revoke the owner's other devices nor un-revoke themselves.
+     *
+     * It must also run inside the LIVE daemon rather than a separate CLI touching SQLite,
+     * because the listeners that close the relay room and drop open sockets are in-process.
+     * A revocation written to the database by another process would leave the stolen phone
+     * connected until the next restart — revoked on paper, still listening in practice.
+     */
+    const localOnly = (request: { headers: Record<string, unknown> }): boolean => {
+      const presented = request.headers['x-longleash-hook']
+      return (
+        this.hookSecret !== null &&
+        typeof presented === 'string' &&
+        presented.length === this.hookSecret.length &&
+        timingSafeEqual(Buffer.from(presented), Buffer.from(this.hookSecret))
+      )
+    }
+
+    this.app.get('/devices', async (request, reply) => {
+      if (!localOnly(request as never)) return reply.code(401).send({ reason: 'unauthorized' })
+      return {
+        devices: this.registry.listDevices().map((d) => ({
+          deviceId: d.deviceId,
+          name: d.name,
+          createdAt: d.createdAt,
+          lastSeenAt: d.lastSeenAt,
+          revokedAt: d.revokedAt,
+          connected: (this.byDevice.get(d.deviceId)?.size ?? 0) > 0,
+        })),
+      }
+    })
+
+    this.app.post('/devices/revoke', async (request, reply) => {
+      if (!localOnly(request as never)) return reply.code(401).send({ reason: 'unauthorized' })
+      const deviceId = (request.body as { deviceId?: unknown })?.deviceId
+      if (typeof deviceId !== 'string' || deviceId === '') {
+        return reply.code(400).send({ reason: 'missing deviceId' })
+      }
+      const revoked = this.registry.revokeDevice(deviceId)
+      if (!revoked) return reply.code(404).send({ reason: 'unknown-or-already-revoked' })
+      this.log(`device ${deviceId} revoked — its sessions are closed and its relay room is shut`)
+      return { revoked: true, deviceId }
     })
 
     // Pairing is POST-only: link previews and crawlers issue GETs, and must never be able

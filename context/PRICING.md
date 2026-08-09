@@ -1,9 +1,13 @@
 # PRICING — strategy, evidence, and what is still unknown
 
+> **Read `BUSINESS.md` first.** It is the same plan in plain language, and it also covers
+> trust/security and go-to-market. **This file is the evidence behind it** — sources, raw
+> research, and the reasoning trail. Come here to check a claim, not to learn the plan.
+
 The commercial counterpart to `DECISIONS.md`. Same rule: **every conclusion carries its
 evidence**, so a future session can tell a researched finding from a guess.
 
-**Status:** research in progress (2026-08-08). Nothing here is final until §5 says it is.
+**Status:** research complete (2026-08-08); strategy settled 2026-08-09 — see `BUSINESS.md` §7.
 
 ---
 
@@ -72,7 +76,14 @@ pay this way.
 
 ---
 
-## 5. THE DECISION *(provisional, 2026-08-08 — awaiting Nabu Casa precedent)*
+## 5. THE DECISION *(settled 2026-08-09 — plain-language version in `BUSINESS.md`)*
+
+**Amended 2026-08-09, one change to the table below:** the free tier splits in two. Self-hosters
+get everything uncapped; users on *our* relay get **2 concurrent sessions** free. This preserves
+Sahith's original session-limit instinct by moving it to the only place it is enforceable — our
+own server — rather than into an MIT-licensed binary anyone can recompile (§6.0, "gate on
+infrastructure, never on a counter").
+
 
 **Price is not the bottleneck. Distribution is.** 72% of launches in this category drew ≤1
 comment (§6.4). The likely failure is not mispricing; it is that nobody ever hears about it.
@@ -408,11 +419,6 @@ Sources: [Pragmatic Engineer AI tooling 2026](https://newsletter.pragmaticengine
 **Not verifiable:** reddit.com blocks automated fetching, so r/ClaudeAI and r/cursor sentiment
 could not be checked. Stack Overflow's 2026 survey is unpublished — any "SO 2026" figure
 circulating is recycled 2025 data.
-
-### 6.4 Does the core assumption hold? (do developers run multiple agents; is the pain real)
-
-_pending — this is the finding that matters most; if it is negative, the strategy changes, not
-the price_
 
 ---
 

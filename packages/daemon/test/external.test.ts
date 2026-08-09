@@ -11,6 +11,7 @@ import {
   humanSaid,
   readQuestions,
   titleFrom,
+  terminalAgentOf,
   transcriptDeltas,
 } from '../src/external.js'
 
@@ -553,5 +554,276 @@ describe('the gate — asking for less, never more', () => {
     )
     await until(() => seen.some((e) => e.type === 'stream.delta'))
     external.shutdown()
+  })
+})
+
+describe('Codex fires every hook twice — the phone must still see one decision', () => {
+  it('joins two identical tool calls onto a single approval, and answers both', async () => {
+    const m = manager({ waitMs: 5_000 })
+    // Both arrive before either resolves, exactly as the two Codex hook processes do.
+    const first = m.preToolUse('cdx-1', dir, '', 'Bash', { command: 'rm -rf build' }, 'default', { dedupeKey: 'exec-abc' })
+    const second = m.preToolUse('cdx-1', dir, '', 'Bash', { command: 'rm -rf build' }, 'default', { dedupeKey: 'exec-abc' })
+
+    await until(() => seen.some((e) => e.type === 'approval.requested'))
+    const raised = seen.filter((e) => e.type === 'approval.requested')
+    expect(raised).toHaveLength(1) // one card, not two
+
+    const approvalId = (raised[0] as { payload: { approvalId: string } }).payload.approvalId
+    m.decide(approvalId, 'allow', 'phone', 'go ahead')
+
+    // The person answered once; both waiting hook processes get that same answer.
+    expect(await first).toEqual(await second)
+    expect((await first).decision).toBe('allow')
+    m.shutdown()
+  })
+
+  it('does not collapse genuinely different tool calls', async () => {
+    const m = manager({ waitMs: 5_000 })
+    void m.preToolUse('cdx-2', dir, '', 'Bash', { command: 'ls' }, 'default', { dedupeKey: 'exec-one' })
+    void m.preToolUse('cdx-2', dir, '', 'Bash', { command: 'rm -rf /' }, 'default', { dedupeKey: 'exec-two' })
+    await until(() => seen.filter((e) => e.type === 'approval.requested').length === 2)
+    expect(seen.filter((e) => e.type === 'approval.requested')).toHaveLength(2)
+    m.shutdown()
+  })
+
+  it('releases the key once settled, so the same tool asked again still asks', async () => {
+    const m = manager({ waitMs: 5_000 })
+    const first = m.preToolUse('cdx-3', dir, '', 'Bash', { command: 'ls' }, 'default', { dedupeKey: 'exec-same' })
+    await until(() => seen.some((e) => e.type === 'approval.requested'))
+    const id = (seen.find((e) => e.type === 'approval.requested') as { payload: { approvalId: string } })
+      .payload.approvalId
+    m.decide(id, 'allow', 'phone')
+    await first
+
+    seen.length = 0
+    void m.preToolUse('cdx-3', dir, '', 'Bash', { command: 'ls' }, 'default', { dedupeKey: 'exec-same' })
+    await until(() => seen.some((e) => e.type === 'approval.requested'))
+    // A stale verdict must never be replayed for a later, real decision.
+    expect(seen.filter((e) => e.type === 'approval.requested')).toHaveLength(1)
+    m.shutdown()
+  })
+
+  it('a muted session still auto-approves both copies without raising a card', async () => {
+    const m = manager({ waitMs: 5_000 })
+    m.sessionStart('cdx-4', dir, '')
+    const list = m.listSessions()
+    m.setGate(list[0]!.sessionId, 'auto')
+    seen.length = 0
+    const a = await m.preToolUse('cdx-4', dir, '', 'Bash', { command: 'ls' }, 'default', { dedupeKey: 'exec-x' })
+    const b = await m.preToolUse('cdx-4', dir, '', 'Bash', { command: 'ls' }, 'default', { dedupeKey: 'exec-x' })
+    expect(a.decision).toBe('allow')
+    expect(b.decision).toBe('allow')
+    expect(seen.filter((e) => e.type === 'approval.requested')).toHaveLength(0)
+    m.shutdown()
+  })
+})
+
+describe('a person running several agents must be able to tell them apart', () => {
+  it('a Codex session reports as codex, and says so in its title', () => {
+    const m = manager()
+    m.sessionStart('c-1', '/tmp/proj', '', undefined, 'codex')
+    const [s] = m.listSessions()
+    expect(s!.agent).toBe('codex')
+    expect(s!.title).toContain('codex')
+    const started = seen.find((e) => e.type === 'session.started') as { payload: { agent: string } }
+    expect(started.payload.agent).toBe('codex')
+    m.shutdown()
+  })
+
+  it('a Claude session is unchanged — the default stays the default', () => {
+    const m = manager()
+    m.sessionStart('c-2', '/tmp/proj', '')
+    const [s] = m.listSessions()
+    expect(s!.agent).toBe('claude')
+    expect(s!.title).toContain('terminal')
+    m.shutdown()
+  })
+
+  it('an unknown vendor degrades to claude rather than breaking the session', () => {
+    expect(terminalAgentOf('something-new')).toBe('claude')
+    expect(terminalAgentOf(undefined)).toBe('claude')
+    expect(terminalAgentOf('codex')).toBe('codex')
+  })
+
+  it('the vendor survives a session first seen at a permission question', async () => {
+    const m = manager({ waitMs: 50 })
+    // No SessionStart: the hook endpoint can meet a session for the first time here.
+    await m.preToolUse('c-3', '/tmp/proj', '', 'Bash', { command: 'ls' }, 'default', { agent: 'codex' })
+    expect(m.listSessions()[0]!.agent).toBe('codex')
+    m.shutdown()
+  })
+})
+
+describe('an approval nobody will ever answer must leave the phone', () => {
+  const requested = () => seen.filter((e) => e.type === 'approval.requested')
+  const decided = () =>
+    seen.filter((e) => e.type === 'approval.decided') as {
+      payload: { approvalId: string; verdict: string; decidedBy: string }
+    }[]
+
+  it('clears the moment the person answers at their keyboard', async () => {
+    const m = manager({ waitMs: 60_000 })
+    const gone = new AbortController()
+    const pending = m.preToolUse('k-1', dir, '', 'Bash', { command: 'ls' }, 'default', {
+      abandoned: gone.signal,
+    })
+    await until(() => requested().length === 1)
+
+    // The agent moved on at the keyboard, so the hook process died.
+    gone.abort()
+
+    // "ask" hands the decision back to the terminal, exactly as if we were never here.
+    expect((await pending).decision).toBe('ask')
+    expect(decided()).toHaveLength(1)
+    expect(decided()[0]!.payload.decidedBy).toBe('system:answered-at-keyboard')
+    m.shutdown()
+  })
+
+  it('does NOT abandon an approval that is answered normally', async () => {
+    // Regression guard: an earlier version listened on the request instead of the response
+    // and abandoned every approval the instant it was created.
+    const m = manager({ waitMs: 60_000 })
+    const gone = new AbortController()
+    const pending = m.preToolUse('k-2', dir, '', 'Bash', { command: 'ls' }, 'default', {
+      abandoned: gone.signal,
+    })
+    await until(() => requested().length === 1)
+    const id = (requested()[0] as { payload: { approvalId: string } }).payload.approvalId
+    m.decide(id, 'allow', 'phone', 'go on')
+    expect((await pending).decision).toBe('allow')
+    m.shutdown()
+  })
+
+  it('an already-answered approval ignores a late abort', async () => {
+    const m = manager({ waitMs: 60_000 })
+    const gone = new AbortController()
+    const pending = m.preToolUse('k-3', dir, '', 'Bash', { command: 'ls' }, 'default', {
+      abandoned: gone.signal,
+    })
+    await until(() => requested().length === 1)
+    const id = (requested()[0] as { payload: { approvalId: string } }).payload.approvalId
+    m.decide(id, 'allow', 'phone')
+    await pending
+    const before = decided().length
+    gone.abort() // the response finishing also closes the socket — must be a no-op
+    await new Promise((r) => setTimeout(r, 20))
+    expect(decided()).toHaveLength(before)
+    m.shutdown()
+  })
+
+  it('a session ending clears the questions it left behind', async () => {
+    const m = manager({ waitMs: 60_000 })
+    m.sessionStart('k-4', dir, '')
+    const pending = m.preToolUse('k-4', dir, '', 'Bash', { command: 'ls' }, 'default')
+    await until(() => requested().length === 1)
+
+    m.sessionEnd('k-4')
+
+    expect((await pending).decision).toBe('ask')
+    expect(decided()[0]!.payload.decidedBy).toBe('system:session-ended')
+    m.shutdown()
+  })
+
+  it('sweeps approvals whose deadline has passed — the case with no live waiter', async () => {
+    // Reproduces a restarted daemon: the row is pending, but the in-memory timer that would
+    // have cleared it died with the previous process.
+    const m = manager({ waitMs: 60_000 })
+    approvals.create({
+      approvalId: 'apr_stale',
+      sessionId: 'ext_k-5',
+      toolName: 'Bash',
+      inputSummary: 'Bash rm -rf /',
+      expiresAt: Date.now() - 1_000,
+      targetPath: null,
+      outsideRoot: false,
+    })
+    seen.length = 0
+
+    expect(m.sweepExpired()).toBe(1)
+    expect(approvals.get('apr_stale')?.status).toBe('denied')
+    expect(decided()[0]!.payload.decidedBy).toBe('system:expired')
+    // Sweeping again must not re-announce a decision already made.
+    expect(m.sweepExpired()).toBe(0)
+    m.shutdown()
+  })
+
+  it('leaves a still-valid approval alone', async () => {
+    const m = manager({ waitMs: 60_000 })
+    void m.preToolUse('k-6', dir, '', 'Bash', { command: 'ls' }, 'default')
+    await until(() => requested().length === 1)
+    expect(m.sweepExpired()).toBe(0)
+    expect(decided()).toHaveLength(0)
+    m.shutdown()
+  })
+})
+
+describe('the phone must never quote you saying something a machine wrote', () => {
+  // The exact blocks from Sahith's phone screenshots, 2026-08-09.
+  it('drops the IDE file-open notice', () => {
+    expect(
+      humanSaid(
+        '<ide_opened_file>The user opened the file /Volumes/Sahith_SSD/AgentMem-OS/deep-research-report (1).md in the IDE. This may or may not be related to the current task.</ide_opened_file>',
+      ),
+    ).toBe('')
+  })
+
+  it('drops a background task notification, ids and all', () => {
+    expect(
+      humanSaid(
+        '<task-notification> <task-id>bbtoj1bnv</task-id> <tool-use-id>toolu_01XU5C4RnQuRychL2Az2vBhw</tool-use-id> <output-file>/private/tmp/x.output</output-file> <status>completed</status> <summary>Background command "Wait for rate test" completed (exit code 0)</summary> </task-notification>',
+      ),
+    ).toBe('')
+  })
+
+  it('drops system reminders and IDE selections', () => {
+    expect(humanSaid('<system-reminder>Some background note</system-reminder>')).toBe('')
+    expect(humanSaid('<ide_selection>lines 4-9 of foo.ts</ide_selection>')).toBe('')
+  })
+
+  it('drops an unfamiliar machine block it has never seen before', () => {
+    // The list will grow; the general rule is what keeps the next one off the phone.
+    expect(humanSaid('<some-future-tag><id>7</id><state>done</state></some-future-tag>')).toBe('')
+  })
+
+  it('drops a truncated block that was cut off mid-write', () => {
+    expect(humanSaid('<task-notification> <task-id>abc</task-id> <status>run')).toBe('')
+  })
+
+  // The other direction matters more: dropping real speech is worse than showing noise.
+  it('keeps a real message that arrived alongside machinery', () => {
+    const said = humanSaid(
+      '<ide_opened_file>The user opened server.ts</ide_opened_file>\nfix the retry logic please',
+    )
+    expect(said).toBe('fix the retry logic please')
+  })
+
+  it('keeps prose that merely mentions one of these tags', () => {
+    const said = humanSaid('why does the transcript show <ide_opened_file> to the user?')
+    expect(said).toContain('why does the transcript show')
+  })
+
+  it('keeps ordinary messages untouched', () => {
+    expect(humanSaid('run the tests and tell me what breaks')).toBe(
+      'run the tests and tell me what breaks',
+    )
+  })
+
+  it('keeps code blocks containing angle brackets', () => {
+    const code = 'use this:\n```tsx\n<Button onClick={go}>Save</Button>\n```'
+    expect(humanSaid(code)).toBe(code)
+  })
+
+  it('still resolves slash commands to what the person ran', () => {
+    expect(humanSaid('<command-name>/compact</command-name><command-args>keep tests</command-args>')).toBe(
+      '/compact keep tests',
+    )
+  })
+
+  it('produces no transcript delta at all for a machine-only user entry', () => {
+    const deltas = transcriptDeltas({
+      type: 'user',
+      message: { content: [{ type: 'text', text: '<ide_opened_file>x.ts</ide_opened_file>' }] },
+    })
+    expect(deltas).toHaveLength(0)
   })
 })

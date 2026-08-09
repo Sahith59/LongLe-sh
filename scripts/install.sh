@@ -65,14 +65,34 @@ command -v pnpm >/dev/null 2>&1 || die "pnpm is required and could not be enable
   Install it with:  npm install -g pnpm"
 ok "pnpm $(pnpm --version)"
 
-# Claude Code is what LongLeash watches. The daemon runs without it, but with nothing to show.
+# The agents LongLeash watches. The daemon runs without any of them, but with nothing to show.
 if command -v claude >/dev/null 2>&1; then
   ok "Claude Code $(claude --version 2>/dev/null | head -1 || echo 'installed')"
   HAVE_CLAUDE=1
 else
   warn "Claude Code not found — install it from https://claude.com/claude-code"
-  warn "LongLeash will install anyway, but there will be no agents to watch."
   HAVE_CLAUDE=0
+fi
+
+# Codex is optional. Its hooks silently do nothing below 0.147.0, so an old Codex is
+# reported as "too old" rather than wired up to fail quietly later.
+CODEX_MIN="0.147.0"
+if command -v codex >/dev/null 2>&1; then
+  CODEX_VER="$(codex --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  if [ -n "$CODEX_VER" ] && [ "$(printf '%s\n%s\n' "$CODEX_MIN" "$CODEX_VER" | sort -V | head -1)" = "$CODEX_MIN" ]; then
+    ok "Codex CLI $CODEX_VER"
+    HAVE_CODEX=1
+  else
+    warn "Codex CLI ${CODEX_VER:-?} is too old for hooks — LongLeash needs $CODEX_MIN or newer."
+    warn "Update with 'codex update', then run: longleash hooks"
+    HAVE_CODEX=0
+  fi
+else
+  HAVE_CODEX=0
+fi
+
+if [ "$HAVE_CLAUDE" = "0" ] && [ "$HAVE_CODEX" = "0" ]; then
+  warn "No supported agent CLI found. LongLeash will install anyway, but there is nothing to watch yet."
 fi
 
 # ------------------------------------------------------------------ get the code
@@ -149,14 +169,26 @@ case "\${1:-}" in
     echo "LongLeash updated."
     exit 0 ;;
   hooks)
-    exec node "\$LONGLEASH_DIR/packages/daemon/hooks/install-hooks.mjs" "\${@:2}" ;;
+    # Wire up every agent present. Each installer refuses on its own terms rather than
+    # half-installing, so a missing or too-old CLI never blocks the others.
+    node "\$LONGLEASH_DIR/packages/daemon/hooks/install-hooks.mjs" "\${@:2}" || true
+    if command -v codex >/dev/null 2>&1; then
+      node "\$LONGLEASH_DIR/packages/daemon/hooks/install-codex-hooks.mjs" "\${@:2}" || true
+    fi
+    exit 0 ;;
+  devices)
+    exec node "\$LONGLEASH_DIR/packages/daemon/bin/longleash-devices.mjs" ;;
+  revoke)
+    exec node "\$LONGLEASH_DIR/packages/daemon/bin/longleash-devices.mjs" revoke "\${@:2}" ;;
   where)
     echo "\$LONGLEASH_DIR"; exit 0 ;;
   -h|--help|help)
-    echo "longleash [folders…]   watch these folders (default: \$DEFAULT_ROOTS)"
-    echo "longleash update       pull the newest version and rebuild"
-    echo "longleash hooks        re-install the Claude Code hooks (--remove to undo)"
-    echo "longleash where        print where LongLeash is installed"
+    echo "longleash [folders…]     watch these folders (default: \$DEFAULT_ROOTS)"
+    echo "longleash devices        list the phones paired with this laptop"
+    echo "longleash revoke <id>    cut off a lost or stolen device, immediately"
+    echo "longleash update         pull the newest version and rebuild"
+    echo "longleash hooks          re-install the agent hooks (--remove to undo)"
+    echo "longleash where          print where LongLeash is installed"
     exit 0 ;;
 esac
 
@@ -178,13 +210,23 @@ done
 
 # ------------------------------------------------------------------ hooks
 
-step "Connecting to Claude Code"
+step "Connecting to your agents"
 if [ "$HAVE_CLAUDE" = "1" ]; then
   node "$INSTALL_DIR/packages/daemon/hooks/install-hooks.mjs" >/dev/null
-  ok "Hooks installed — terminal sessions will appear on your phone"
+  ok "Claude Code — terminal sessions will appear on your phone"
   dim "     (your ~/.claude/settings.json was backed up first)"
 else
-  warn "Skipped — install Claude Code, then run: longleash hooks"
+  warn "Claude Code skipped — install it, then run: longleash hooks"
+fi
+
+if [ "$HAVE_CODEX" = "1" ]; then
+  node "$INSTALL_DIR/packages/daemon/hooks/install-codex-hooks.mjs" >/dev/null
+  ok "Codex CLI — sessions will appear on your phone"
+  dim "     (your ~/.codex/config.toml was backed up first)"
+  dim "     Codex will ask you to review the new hook on its next start — say yes,"
+  dim "     or it will not run. That prompt is Codex protecting you; do not bypass it."
+else
+  warn "Codex skipped — install or update Codex, then run: longleash hooks"
 fi
 
 # ------------------------------------------------------------------ verify

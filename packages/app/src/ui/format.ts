@@ -20,6 +20,18 @@ export const ORIGIN_LABEL: Record<string, string> = {
   unknown: 'origin unknown',
 }
 
+/**
+ * Which agent a session belongs to. Shown on every card because the whole point of
+ * LongLeash is that they arrive in ONE inbox — and an inbox that mixes vendors without
+ * naming them makes you open a session to find out whose it is.
+ */
+export const AGENT_LABEL: Record<string, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  gemini: 'Gemini',
+  terminal: 'Terminal',
+}
+
 export const STATUS_LABEL: Record<string, string> = {
   running: 'working',
   waiting: 'waiting for you',

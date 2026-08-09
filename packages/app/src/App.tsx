@@ -300,9 +300,9 @@ export default function App() {
         folders={folders}
         connected={connected}
         onSearch={search}
-        onStart={(dir, prompt) => {
+        onStart={(dir, prompt, agent) => {
           setError(null)
-          return clientRef.current?.startSession(dir, prompt) ?? false
+          return clientRef.current?.startSession(dir, prompt, agent) ?? false
         }}
         onClose={() => setSheetOpen(false)}
       />

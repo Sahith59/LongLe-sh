@@ -8,6 +8,8 @@ import { fileName, parentPath } from './format.js'
 const DISMISS_DISTANCE = 110
 const DISMISS_VELOCITY = 500
 
+const AGENT_NAME = { claude: 'Claude', codex: 'Codex' } as const
+
 export function NewSessionSheet({
   open,
   roots,
@@ -22,7 +24,7 @@ export function NewSessionSheet({
   folders: FolderHit[]
   connected: boolean
   onSearch: (query: string) => void
-  onStart: (dir: string, prompt: string) => boolean
+  onStart: (dir: string, prompt: string, agent: 'claude' | 'codex') => boolean
   onClose: () => void
 }) {
   const keyboard = useKeyboardInset(open)
@@ -86,12 +88,13 @@ function SheetBody({
   folders: FolderHit[]
   connected: boolean
   onSearch: (query: string) => void
-  onStart: (dir: string, prompt: string) => boolean
+  onStart: (dir: string, prompt: string, agent: 'claude' | 'codex') => boolean
   onClose: () => void
 }) {
   const [query, setQuery] = useState('')
   const [chosen, setChosen] = useState<FolderHit | null>(null)
   const [prompt, setPrompt] = useState('')
+  const [agent, setAgent] = useState<'claude' | 'codex'>('claude')
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
 
   // Search as you type, debounced: nobody should have to recall an absolute path from memory.
@@ -128,7 +131,7 @@ function SheetBody({
     return (
       <>
         <h2>Start a session</h2>
-        <p className="sub">Claude runs in this folder and asks before it touches anything else.</p>
+        <p className="sub">{AGENT_NAME[agent]} runs in this folder and asks before it touches anything else.</p>
 
         <div className="chosen">
           <span className="fico">
@@ -158,10 +161,26 @@ function SheetBody({
 
         {chosen.kind === 'file' ? (
           <p className="small dim" style={{ margin: '10px 2px 0' }}>
-            The task will name <span className="mono">{fileName(chosen.label)}</span> so Claude
-            starts on that file.
+            The task will name <span className="mono">{fileName(chosen.label)}</span> so
+            {' '}{AGENT_NAME[agent]} starts on that file.
           </p>
         ) : null}
+
+        {/* Which agent runs this. Two machined keys rather than a dropdown: with two choices a
+            dropdown hides one of them behind a tap, and the whole point of the product is that
+            you can see what is about to happen. */}
+        <div className="agentpick" role="group" aria-label="Which agent">
+          {(['claude', 'codex'] as const).map((option) => (
+            <Key
+              key={option}
+              className={agent === option ? 'picked' : ''}
+              aria-pressed={agent === option}
+              onClick={() => setAgent(option)}
+            >
+              {AGENT_NAME[option]}
+            </Key>
+          ))}
+        </div>
 
         <textarea
           ref={promptRef}
@@ -169,8 +188,8 @@ function SheetBody({
           style={{ marginTop: 12 }}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="What should Claude do?"
-          aria-label="Task for Claude"
+          placeholder={`What should ${AGENT_NAME[agent]} do?`}
+          aria-label={`Task for ${AGENT_NAME[agent]}`}
         />
 
         <Key
@@ -182,7 +201,7 @@ function SheetBody({
               chosen.kind === 'file'
                 ? `In the file ${fileName(chosen.label)}: ${prompt.trim()}`
                 : prompt.trim()
-            if (onStart(dir, task)) {
+            if (onStart(dir, task, agent)) {
               setPrompt('')
               onClose()
             }

@@ -9,10 +9,12 @@ import { SessionManager } from './sessions.js'
 import { LongLeashServer } from './server.js'
 import { RelayBridge } from './relay-bridge.js'
 import { createClaudeAgentFactory } from './adapters/claude.js'
+import { createCodexAgentFactory } from './adapters/codex.js'
 import { readPermissionPosture, type PermissionPosture } from './posture.js'
 import { FolderIndex } from './folders.js'
 import { PushNotifier } from './push.js'
 import { ExternalSessions } from './external.js'
+import { StayAwake } from './awake.js'
 
 export interface DaemonOptions {
   /** Directories agents may work in. Nothing outside these can be targeted. */
@@ -94,10 +96,38 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     ...(options.relayUrl === undefined ? {} : { relayUrl: options.relayUrl }),
   })
 
+  const awake = new StayAwake({ log: (line) => write(line) })
+
   // One mirror for every session source — phone-started agents and terminal sessions
   // alike broadcast, notify, and narrate through the same path.
+  /**
+   * Hold the machine awake only while agents are actually working. Recomputed from the two
+   * session sources on every lifecycle beat rather than counted incrementally, because a
+   * counter that drifts either strands the laptop awake or lets it sleep mid-job — and both
+   * failures are silent.
+   */
+  const reconcileAwake = (): void => {
+    // `sessions` and `external` are declared below and are still in the temporal dead zone
+    // while they are being constructed — and a manager can emit during construction. Reading
+    // them defensively keeps a lifecycle event from throwing inside the event handler, which
+    // would be an obscure crash for a feature that is only ever a convenience.
+    try {
+      const isLive = (s: { status: string }) => s.status === 'running' || s.status === 'waiting'
+      awake.update(sessions.listSessions().filter(isLive).length + external.listSessions().filter(isLive).length)
+    } catch {
+      // Not ready yet; the next lifecycle beat reconciles.
+    }
+  }
+
   const mirror = (event: import('@longleash/protocol').SessionEvent): void => {
     server.broadcastEvent(event)
+    if (
+      event.type === 'session.started' ||
+      event.type === 'session.ended' ||
+      event.type === 'session.status'
+    ) {
+      reconcileAwake()
+    }
     // Mirror the important beats to the terminal: a daemon that prints nothing looks dead.
     const payload = event.payload as Record<string, unknown>
     if (event.type === 'session.started') {
@@ -130,6 +160,10 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
         allowedTools: options.allowedTools ?? DEFAULT_READ_ONLY_TOOLS,
         isolateFromUserSettings: true,
       }),
+      // Codex driven through its own app-server, so a session can be STARTED from the phone
+      // rather than only observed. `untrusted` makes Codex ask about everything, which is the
+      // point: a session started remotely must route its decisions back to that phone.
+      codex: createCodexAgentFactory({ approvalPolicy: 'untrusted', log: write }),
     },
     onEvent: mirror,
     ...(options.denyOutsideRoot === undefined ? {} : { denyOutsideRoot: options.denyOutsideRoot }),
@@ -163,6 +197,11 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
         agentSessionId: info.claudeSessionId,
       }),
   })
+  // Keeps the inbox honest: anything whose deadline passed with no live waiter — the state a
+  // restarted daemon inherits — is closed out and the phone is told, rather than showing a
+  // question forever that nothing can answer.
+  external.startSweeping()
+
   const hookSecret = randomBytes(24).toString('base64url')
   server.attachExternal(external, hookSecret)
 
@@ -200,6 +239,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       // Agents first: a consume loop still writing while the databases close is an
       // unhandled rejection and a corrupted final status.
       await sessions.shutdown()
+      awake.release()
       external.shutdown()
       await server.close()
       eventLog.close()

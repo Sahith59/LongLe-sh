@@ -2,7 +2,7 @@ import { motion, useReducedMotion } from 'motion/react'
 import { ChevronRight, Radio } from 'lucide-react'
 import type { SessionView } from '../lib/store.js'
 import { Led, SPRING, itemVariants } from './primitives.js'
-import { ORIGIN_LABEL, STATUS_LABEL } from './format.js'
+import { AGENT_LABEL, ORIGIN_LABEL, STATUS_LABEL } from './format.js'
 import { PathChip } from './PathChip.js'
 
 /**
@@ -47,6 +47,8 @@ export function SessionCard({
       </button>
 
       <p className="meta">
+        <span className="agent">{AGENT_LABEL[session.agent] ?? session.agent}</span>
+        <span className="dot" aria-hidden="true">·</span>
         <span className={`state ${session.status}`}>
           {STATUS_LABEL[session.status] ?? session.status}
         </span>

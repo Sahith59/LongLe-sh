@@ -113,6 +113,83 @@ the reason field. Claude reads it correctly. **Cost:** the terminal paints it re
 **Questions bypass every permission-mode filter.** Claude Code shows question dialogs in every
 mode because it is asking the human to CHOOSE, not asking to be ALLOWED.
 
+**Codex CLI integrates on `PermissionRequest`, not `PreToolUse`** *(2026-08-09, proven live)*
+Codex fires `PermissionRequest` **only when it has already decided it needs a human**. REASON:
+this removes the entire class of bug that produced the auto-mode over-asking failure — on Claude
+Code we must replicate "would this have asked?" ourselves; on Codex we must not try. Confirmed
+live: in `bypassPermissions` mode `PermissionRequest` never fires while `PreToolUse` does.
+Full contract: `agents/2026-08-09-codex-gemini-hook-contracts.md`.
+
+**Codex hooks are version-gated and fail SILENTLY** *(2026-08-09)*
+Identical config produced 0 hook events on Codex 0.136.0 and 6 on 0.147.0. The config parses
+either way — there is no warning. REASON to care: the failure mode is total silence, which a user
+reads as "LongLeash is broken." The installer must check `codex --version` and refuse to claim
+Codex support below the working version rather than appear installed and do nothing.
+
+**Codex tool calls are deduped by a derived key** *(2026-08-09, claim narrowed same day)*
+Duplicate delivery was observed with three hook events registered, and NOT with the two LongLeash
+actually installs. So "fires twice, always" was an over-claim; the trigger is unestablished.
+Dedupe ships anyway. REASON: it costs nothing, and one decision appearing as two cards teaches a
+person their inbox double-counts — the same harm as over-asking. The key is
+`turn_id : sha256(tool_name + tool_input)`, because `PermissionRequest` carries **no
+`tool_use_id`** (only `PreToolUse` does). That gap was found by a live smoke test *after* unit
+tests passed against a fixture that had invented the field — fixtures now track shipped schemas.
+
+**Never tell users to pass `--dangerously-bypass-hook-trust`** *(2026-08-09)*
+Codex hashes hook commands and asks the user to review new or changed hooks. REASON: it is a
+security control the user is entitled to, and instructing them to disable it violates "never
+require a user to weaken their security." The installer explains the prompt instead of evading it.
+
+**Gemini CLI cannot approve through hooks — it needs ACP** *(2026-08-09)*
+Gemini's hook output has no `permissionDecision`; its internal decision variable is only ever
+assigned `"ask"`. A hook can deny or escalate, never resolve. REASON this is disqualifying: a
+phone that can only say *no* still forces the walk back to the desk, which is the exact thing the
+product exists to prevent. Gemini support therefore goes over `--acp`
+(`session/request_permission`) as a distinct session type — matching the architecture already
+stated in `CLAUDE.md`.
+**SETTLED 2026-08-09 by Sahith: ACP.** Full approve/deny is non-negotiable — a phone that can only
+say *no* is not the product. Accepted cost: a `gemini` the user typed themselves is not
+attachable; Gemini sessions are started from LongLeash. The UI must say so plainly rather than
+let a user wonder why their terminal session never appeared.
+
+**Gemini work is BLOCKED by Google, not by us** *(2026-08-09)*
+ACP `initialize` succeeds, but `session/new` returns *"This client is no longer supported for
+Gemini Code Assist for individuals… migrate to Antigravity."* A plain `gemini -p` fails the same
+way (`IneligibleTierError`, `tierId: free-tier`), so **Gemini CLI does not run on this machine at
+all** under `oauth-personal` auth. REASON not to proceed: an ACP adapter written against a
+handshake we have never completed cannot be tested or gated, and would ship looking finished.
+Unblocks with a `gemini-api-key` or Vertex auth — which costs per token and therefore changes what
+Gemini support asks of a *user*, making it a product decision and not merely a build task.
+**Until a third agent actually runs, the claim is "Claude + Codex, proven" — never "any agent."**
+
+**Revoking a device is a LAPTOP operation, and goes through the running daemon** *(2026-08-09)*
+`longleash devices` / `longleash revoke <id>`, authorised by the same 0600 secret the hooks
+use. Two REASONS, both load-bearing:
+- **Laptop-only:** revocation is rooted in physical possession of the machine, so someone
+  holding a stolen unlocked phone can neither cut off the owner's other devices nor un-revoke
+  themselves. The phone protocol deliberately has no revoke operation at all (tested).
+- **Through the live daemon, not the database:** the listeners that make revocation *real* —
+  closing the open socket, shutting the relay room, dropping the push subscription — are
+  in-process. A separate CLI writing to SQLite would leave a stolen phone revoked on paper and
+  still listening in practice, which is the worst possible outcome: it reads as done.
+
+The registry already had `revokeDevice`/`onRevoked` and the server already closed revoked
+sockets; what was missing was any way to trigger it. That gap is now closed.
+
+**Codex is driven through `codex app-server`, not `codex exec`** *(2026-08-09)*
+`exec` runs non-interactively as `bypassPermissions`, so it never asks — which would mean a
+session started from a phone that routes no decisions back to it. `app-server` is Codex's own
+JSON-RPC interface, gives streaming plus real approval requests, and satisfies the existing
+`AgentFactory` contract so `SessionManager` never learns which vendor it is running. REASON this
+matters beyond Codex: it is the second proof that the adapter boundary is the right one — a whole
+new vendor landed without touching the manager.
+
+**Stop must never wait on the agent it is stopping** *(2026-08-09)*
+The Codex adapter fires `turn/interrupt` and kills after a 250ms grace rather than awaiting the
+reply. REASON: someone presses Stop precisely when the agent is wedged, and an awaited reply that
+never arrives leaves the process alive while the phone reports it stopped. A control that is
+unreliable exactly when it is needed is worse than no control.
+
 **Tailwind v4 + tokens in `@theme`** *(2026-08-03)*
 So future shadcn / 21st.dev components inherit our system instead of bringing their own.
 
@@ -155,7 +232,39 @@ between the card and the detail header.
 
 ---
 
-## 5. Money and go-to-market *(open — see §7)*
+## 5. Money and go-to-market
+
+**Commercial strategy settled** *(2026-08-09)*
+Plain-language plan: `context/BUSINESS.md`. Evidence: `context/PRICING.md`. Five decisions:
+
+1. **The free tier is complete and uncapped for self-hosters** — every feature, forever.
+   REASON: it is the entire trust position, and the one thing no first-party competitor can copy.
+   Nabu Casa recommends free alternatives to its own paid product *by name* and still converts at
+   30%; crippling the free path does not raise conversion, it destroys the reason people fund you.
+2. **Limits live on our relay, never in shipped code.** Free on our relay = 2 concurrent sessions;
+   self-hosted = unlimited. REASON: a counter in an MIT-licensed daemon is a suggestion. No
+   counterexample was found in the research — every metered OSS free tier gets bypassed, and the
+   bypass becomes the project's public story (OpenProject's bypass gist: 537 stars, legally clean).
+   This also *preserves* Sahith's original session-cap idea by moving it somewhere enforceable.
+3. **$7/month or $70/year. Round numbers, never .99.** REASON: the proven band for "reach the
+   thing I already run" is $5–8 (Nabu Casa $6.50, Coolify $5, Healthchecks $5, ngrok $8,
+   Tailscale $8). Overturns an earlier $10 recommendation that was drawn from consumer mobile-app
+   data — the wrong market. Round pricing is what every credible developer tool uses; .99 signals
+   discount, which is the wrong signal for an unproven tool.
+4. **Everything open except the relay and the billing/account layer.** REASON: the Nabu Casa line
+   verbatim — *"Our account page and relayer are not open source."* An infrastructure boundary, not
+   a feature boundary, so the open-source promise stays whole.
+5. **No billing until 100 people use LongLeash for free.** REASON: 72% of the 130 launches in this
+   category since Jan 2025 drew ≤1 comment. Distribution is the bottleneck, not price. Any price
+   set before real users exist is a guess with a payment form attached.
+
+**Order of work that follows from this** *(2026-08-09)*: Codex CLI support → revoke-device button
+→ relay onto its own account → ten strangers install it → the demo video → launch.
+
+**Revoke-device is a security gap, not a feature** *(2026-08-09)*
+A paired phone can approve indefinitely and there is currently no way to un-pair it from the
+laptop. REASON: a stolen phone keeps its approval power. This is the only outstanding hole in an
+otherwise sound trust story and it must ship before strangers are told to install LongLeash.
 
 **Relay ownership** *(decided 2026-08-08, action pending)*
 Every installed copy currently points at Sahith's personal Cloudflare Worker. Only routes
@@ -172,8 +281,16 @@ bundled with SQLite prebuilds, and then as `npm i -g`, not `npx`.
 
 ## 6. Open questions
 
-- Relay at scale: who pays when there are thousands of users?
-- Is there a paid tier that does not require closing the source?
+- ~~Relay at scale: who pays when there are thousands of users?~~ **Answered §5**: subscribers do,
+  at $7/mo. Still unmeasured: what one relay user actually costs us. Measure at 50 users before
+  promising a free hosted tier forever.
+- ~~Is there a paid tier that does not require closing the source?~~ **Answered §5**: yes — the
+  relay and billing layer stay ours, everything shipped stays open.
+- Billing implies identity, which §1 deliberately closed. Reopen it *on purpose* when billing
+  arrives. Probable shape: the paid account lives entirely relay-side; the daemon still knows
+  nothing about a user.
+- Do developers run more than one agent CLI concurrently? Surveys show 70% use 2–4 AI tools, but
+  that counts chatbots and editor plugins. **Directionally supported, not proven.**
 - VS Code extension: nice-to-have, would not have prevented any bug so far.
 
 ---

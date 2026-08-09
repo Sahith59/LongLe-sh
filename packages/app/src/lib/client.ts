@@ -551,8 +551,8 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
 
   return {
     subscribe,
-    startSession: (root: string, prompt: string) => {
-      const sent = send({ v: PROTOCOL_VERSION, type: 'startSession', agent: 'claude', root, prompt })
+    startSession: (root: string, prompt: string, agent: 'claude' | 'codex' = 'claude') => {
+      const sent = send({ v: PROTOCOL_VERSION, type: 'startSession', agent, root, prompt })
       if (!sent) callbacks.onError('Not connected to your laptop — the task was not sent.')
       return sent
     },

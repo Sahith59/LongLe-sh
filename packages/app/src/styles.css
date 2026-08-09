@@ -577,6 +577,14 @@ body {
 .session .meta .dot {
   opacity: 0.45;
 }
+/* Which agent this is. Engraved, not badged: the interface speaks in luminance, and a
+   coloured pill per vendor would make a list of sessions read as a chart. Slightly
+   brighter than the rest of the meta line because it is the first thing you scan for
+   when three different agents are running at once. */
+.session .meta .agent {
+  color: var(--ink-2);
+  letter-spacing: 0.02em;
+}
 .session .preview {
   margin: 8px 0 0;
   font-size: 13.5px;
@@ -1691,4 +1699,23 @@ body {
   .dock {
     background: var(--ground);
   }
+}
+
+/* Which agent a new session runs. Two keys side by side: with only two choices, a dropdown
+   would hide one behind a tap, and this product is built on seeing what is about to happen.
+   The chosen one is BRIGHTER, not tinted — luminance is how this interface says "this one". */
+.agentpick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 14px;
+}
+.agentpick .key {
+  justify-content: center;
+  font: 500 13.5px/1 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink-3);
+}
+.agentpick .key.picked {
+  color: var(--ink-0);
+  box-shadow: var(--raise), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
 }

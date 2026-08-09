@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { detectSurface } from './surface.mjs'
 
 /**
  * The claude process this hook belongs to, found by walking up the process tree.
@@ -159,7 +160,13 @@ async function main() {
   let body = raw
   if (name === 'SessionStart') {
     const pid = findClaudePid()
-    if (pid !== null) body = JSON.stringify({ ...event, ll_pid: pid })
+    // Where this session lives — a terminal or an editor — so the phone can tell four
+    // otherwise-identical sessions apart.
+    body = JSON.stringify({
+      ...event,
+      ...(pid === null ? {} : { ll_pid: pid }),
+      ll_surface: detectSurface(process.env),
+    })
   }
 
   let response

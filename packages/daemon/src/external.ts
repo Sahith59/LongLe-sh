@@ -2,7 +2,7 @@ import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { basename } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { AskedQuestion, type SessionEvent, type SessionGate } from '@longleash/protocol'
+import { AskedQuestion, type AgentKind, type SessionEvent, type SessionGate } from '@longleash/protocol'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { ApprovalStore } from './approvals.js'
 import type { DecisionOutcome, SessionStatus } from './sessions.js'
@@ -27,6 +27,27 @@ export interface HookDecision {
   decision: 'allow' | 'deny' | 'ask'
   reason: string
 }
+
+/**
+ * The agent CLIs that report through the hook endpoint. Both speak the same three-way
+ * contract — allow, deny, or stay out — which is why one manager serves both.
+ */
+export type TerminalAgent = Extract<AgentKind, 'claude' | 'codex'>
+
+/** Where the person is driving a session from. Reported by the hook, never inferred here. */
+export type Surface = 'terminal' | 'vscode'
+
+/** Unknown or absent means a plain terminal — the assumption that is right most often. */
+export function surfaceOf(raw: unknown): Surface {
+  return raw === 'vscode' ? 'vscode' : 'terminal'
+}
+
+/** Anything unrecognised is treated as Claude Code, the original and still the default. */
+export function terminalAgentOf(raw: unknown): TerminalAgent {
+  return raw === 'codex' ? 'codex' : 'claude'
+}
+
+const AGENT_LABEL: Record<TerminalAgent, string> = { claude: 'terminal', codex: 'codex' }
 
 export interface ExternalSessionsOptions {
   eventLog: EventLog
@@ -61,6 +82,10 @@ export interface ExternalSessionsOptions {
 
 interface ExternalSession {
   sessionId: string
+  /** Which CLI this session belongs to — a person running several must be able to tell. */
+  agent: TerminalAgent
+  /** Terminal or editor. The other half of telling four identical-looking sessions apart. */
+  surface: Surface
   cwd: string
   transcriptPath: string
   status: SessionStatus
@@ -81,9 +106,32 @@ interface ExternalSession {
   timer: ReturnType<typeof setInterval> | null
 }
 
+/** Everything about a permission question beyond the tool itself. */
+export interface PermissionContext {
+  /**
+   * The agent's own id for this exact tool call, when it provides one. Codex can fire the
+   * same hook more than once with byte-identical payloads, so without this the phone would
+   * show two cards for one decision — and a person who learns their inbox double-counts
+   * stops trusting it, which is the same harm as asking about things that cannot matter.
+   * Both callers join one approval and receive the same answer.
+   */
+  dedupeKey?: string
+  /** Which CLI is asking. Defaults to Claude Code, the original caller. */
+  agent?: TerminalAgent
+  /** Terminal or editor, as reported by the hook. */
+  surface?: Surface
+  /**
+   * Fires when the asking process goes away — which is how we learn the person answered
+   * at their keyboard instead of on their phone.
+   */
+  abandoned?: AbortSignal
+}
+
 interface Waiting {
   resolve: (decision: HookDecision) => void
   timer: ReturnType<typeof setTimeout>
+  /** So a session ending can clear whatever it left outstanding. */
+  sessionId: string
   /** Set when this is a question: answering it is not the same act as allowing it. */
   questions?: AskedQuestion[]
 }
@@ -160,6 +208,9 @@ export class ExternalSessions {
   private readonly pollMs: number
   private readonly sessions = new Map<string, ExternalSession>()
   private readonly waiting = new Map<string, Waiting>()
+  /** Tool calls currently awaiting a phone, keyed by session + the agent's tool-call id. */
+  private readonly inFlight = new Map<string, Promise<HookDecision>>()
+  private sweepTimer: ReturnType<typeof setInterval> | null = null
   private readonly isClaudeProcess: (pid: number) => boolean
   private readonly kill: (pid: number) => void
   private readonly onEnded: ExternalSessionsOptions['onEnded']
@@ -181,8 +232,15 @@ export class ExternalSessions {
   }
 
   /** Register (or re-adopt after a daemon restart) a terminal session. */
-  sessionStart(claudeSessionId: string, cwd: string, transcriptPath: string, pid?: number): void {
-    const session = this.ensure(claudeSessionId, cwd, transcriptPath)
+  sessionStart(
+    claudeSessionId: string,
+    cwd: string,
+    transcriptPath: string,
+    pid?: number,
+    agent: TerminalAgent = 'claude',
+    surface: Surface = 'terminal',
+  ): void {
+    const session = this.ensure(claudeSessionId, cwd, transcriptPath, agent, surface)
     if (pid !== undefined && Number.isInteger(pid) && pid > 1) session.pid = pid
   }
 
@@ -222,8 +280,16 @@ export class ExternalSessions {
     toolName: string,
     toolInput: unknown,
     permissionMode?: string,
+    opts: PermissionContext = {},
   ): Promise<HookDecision> {
-    const session = this.ensure(claudeSessionId, cwd, transcriptPath)
+    const { dedupeKey, agent = 'claude', surface = 'terminal', abandoned } = opts
+    const session = this.ensure(claudeSessionId, cwd, transcriptPath, agent, surface)
+
+    const joinKey = dedupeKey === undefined ? null : `${session.sessionId}:${dedupeKey}`
+    if (joinKey !== null) {
+      const already = this.inFlight.get(joinKey)
+      if (already !== undefined) return already
+    }
 
     // Muted by the person: approve without asking. This exists because a session whose
     // permission mode auto-approves ignores a refusal from anyone — so paging a phone
@@ -277,7 +343,7 @@ export class ExternalSessions {
       },
     })
 
-    return new Promise<HookDecision>((resolve) => {
+    const pending = new Promise<HookDecision>((resolve) => {
       const timer = setTimeout(() => {
         this.waiting.delete(approvalId)
         this.approvals.decide(
@@ -301,9 +367,87 @@ export class ExternalSessions {
       this.waiting.set(approvalId, {
         resolve,
         timer,
+        sessionId: session.sessionId,
         ...(questions === null ? {} : { questions }),
       })
+
+      /**
+       * The person answered at the keyboard instead.
+       *
+       * When they do, the agent moves straight on and the hook process exits — so its
+       * request dies. Nothing else tells us: the phone would otherwise keep showing a
+       * card for a decision that was made minutes ago, and an inbox that shows things
+       * which are no longer true is worse than no inbox at all.
+       */
+      if (abandoned !== undefined) {
+        const onAbandon = () => this.abandon(approvalId, 'answered-at-keyboard')
+        if (abandoned.aborted) onAbandon()
+        else abandoned.addEventListener('abort', onAbandon, { once: true })
+      }
     })
+
+    if (joinKey !== null) {
+      this.inFlight.set(joinKey, pending)
+      // Release the key however this settles, so a later identical call asks again
+      // rather than replaying a stale verdict.
+      void pending.finally(() => {
+        this.inFlight.delete(joinKey)
+      })
+    }
+    return pending
+  }
+
+  /**
+   * Stop waiting on an approval nobody will ever answer, and tell the phone so.
+   *
+   * Three things can strand a question, and all three used to leave a card on the phone
+   * that stayed there forever:
+   *   - the person answered at their keyboard, so the asking process exited;
+   *   - the session ended while a question was outstanding;
+   *   - the deadline passed with no in-memory waiter to notice (after a restart).
+   *
+   * All of them resolve to `ask`, which is the same thing LongLeash says whenever it has
+   * no opinion: the terminal decides, exactly as if we were not installed.
+   */
+  private abandon(approvalId: string, why: 'answered-at-keyboard' | 'session-ended' | 'expired'): boolean {
+    const record = this.approvals.get(approvalId)
+    if (record === null || record.status !== 'pending') return false
+
+    const waiter = this.waiting.get(approvalId)
+    const sessionId = waiter?.sessionId ?? record.sessionId
+    if (waiter !== undefined) {
+      clearTimeout(waiter.timer)
+      this.waiting.delete(approvalId)
+    }
+
+    const reply = {
+      'answered-at-keyboard': 'Answered at the keyboard.',
+      'session-ended': 'The session ended before this was answered.',
+      expired: 'No answer in time; the terminal decided.',
+    }[why]
+
+    this.approvals.decide(approvalId, 'denied', `system:${why}`, reply)
+    this.emit(sessionId, {
+      type: 'approval.decided',
+      payload: { approvalId, verdict: 'deny', decidedBy: `system:${why}`, reply },
+    })
+    // Resolving to "ask" is what hands the decision back; the hook is usually gone by now,
+    // and a resolved promise it never reads is harmless.
+    waiter?.resolve({ decision: 'ask', reason: reply })
+    return true
+  }
+
+  /**
+   * Clear anything whose deadline has passed. `ApprovalStore.findExpired()` existed with a
+   * comment saying the caller denies them — and had no caller, so an approval that outlived
+   * its deadline stayed pending forever. This is that caller.
+   */
+  sweepExpired(): number {
+    let cleared = 0
+    for (const approval of this.approvals.findExpired()) {
+      if (this.abandon(approval.approvalId, 'expired')) cleared += 1
+    }
+    return cleared
   }
 
   /** The phone answered. Mirrors SessionManager.decide, for this manager's approvals only. */
@@ -386,6 +530,13 @@ export class ExternalSessions {
     session.status = 'ended'
     this.sessions.delete(claudeSessionId)
 
+    // Anything it was still asking about can never be answered now: the process that would
+    // have received the verdict is gone. Clearing them here is what stops a finished session
+    // leaving permanent cards behind on the phone.
+    for (const [approvalId, waiting] of [...this.waiting.entries()]) {
+      if (waiting.sessionId === session.sessionId) this.abandon(approvalId, 'session-ended')
+    }
+
     // Pass the baton BEFORE announcing the end: the adoption is what makes this
     // conversation reopenable, and the event that reports the ending must be able
     // to tell the phone so in the same breath. Announcing first would leave every
@@ -409,11 +560,11 @@ export class ExternalSessions {
 
   listSessions(): {
     sessionId: string
-    agent: 'claude'
+    agent: TerminalAgent
     cwd: string
     status: SessionStatus
     startedAt: number
-    origin: 'terminal'
+    origin: Surface
     title: string
     resumable: boolean
     resumeId: string
@@ -421,11 +572,11 @@ export class ExternalSessions {
   }[] {
     return [...this.sessions.entries()].map(([claudeSessionId, session]) => ({
       sessionId: session.sessionId,
-      agent: 'claude',
+      agent: session.agent,
       cwd: session.cwd,
       status: session.status,
       startedAt: session.startedAt,
-      origin: 'terminal',
+      origin: session.surface,
       title: session.title,
       // Live: it cannot be reopened while it is still running at the keyboard…
       resumable: false,
@@ -436,7 +587,17 @@ export class ExternalSessions {
     }))
   }
 
+  /** Start the periodic expiry sweep. Returns a stop function. */
+  startSweeping(everyMs = 15_000): () => void {
+    const timer = setInterval(() => this.sweepExpired(), everyMs)
+    timer.unref?.()
+    this.sweepTimer = timer
+    return () => clearInterval(timer)
+  }
+
   shutdown(): void {
+    if (this.sweepTimer !== null) clearInterval(this.sweepTimer)
+    this.sweepTimer = null
     for (const [approvalId, waiter] of this.waiting) {
       clearTimeout(waiter.timer)
       waiter.resolve({ decision: 'ask', reason: 'The daemon is shutting down.' })
@@ -450,7 +611,13 @@ export class ExternalSessions {
 
   /* ------------------------------------------------------------------ internals */
 
-  private ensure(claudeSessionId: string, cwd: string, transcriptPath: string): ExternalSession {
+  private ensure(
+    claudeSessionId: string,
+    cwd: string,
+    transcriptPath: string,
+    agent: TerminalAgent = 'claude',
+    surface: Surface = 'terminal',
+  ): ExternalSession {
     const existing = this.sessions.get(claudeSessionId)
     if (existing) return existing
 
@@ -461,11 +628,13 @@ export class ExternalSessions {
     const hasHistory = replay.gap === false ? replay.events.length > 0 : true
     const session: ExternalSession = {
       sessionId,
+      agent,
+      surface,
       cwd,
       transcriptPath,
       status: 'running',
       startedAt: this.now(),
-      title: `${basename(cwd)} — terminal`,
+      title: `${basename(cwd)} — ${surface === 'vscode' ? 'VS Code' : AGENT_LABEL[agent]}`,
       pid: null,
       named: false,
       permissionMode: null,
@@ -480,10 +649,10 @@ export class ExternalSessions {
       this.emit(sessionId, {
         type: 'session.started',
         payload: {
-          agent: 'claude',
+          agent,
           cwd,
           title: session.title,
-          origin: 'terminal',
+          origin: surface,
           resumeId: claudeSessionId,
         },
       })
@@ -567,14 +736,59 @@ export class ExternalSessions {
  * (`<command-name>/exit</command-name>…`) in the same place as real messages; rendering
  * that verbatim on a phone shows plumbing where speech should be.
  */
+/**
+ * Tags the harness and the IDE inject into the conversation as if the person had typed
+ * them. Named explicitly so the common ones are unambiguous — but the general rule below
+ * is what actually carries the weight, because this list will keep growing and the next
+ * tag must not need a release to stop leaking onto someone's phone.
+ */
+const MACHINE_TAGS = [
+  'ide_opened_file',
+  'ide_selection',
+  'task-notification',
+  'system-reminder',
+  'local-command-stdout',
+  'local-command-stderr',
+  'command-message',
+  'command-args',
+  'command-name',
+]
+
+/** A whole block of `<tag>…</tag>`, with nothing else around it. */
+const ONLY_TAGS = /^(?:\s*<([a-zA-Z][\w-]*)\b[^>]*>[\s\S]*?<\/\1>\s*)+$/
+
+/**
+ * What a person actually said, out of a transcript entry recorded as coming from them.
+ *
+ * Agents receive a lot of machinery on the user's turn — files opened in the IDE, background
+ * task notifications, system reminders — and none of it is speech. Showing it as speech makes
+ * the phone look like it is quoting you saying things you never said, which is both confusing
+ * and the kind of small wrongness that makes people stop trusting the whole view.
+ *
+ * Returns '' for anything that is purely machinery.
+ */
 export function humanSaid(text: string): string {
+  // Slash commands are the one case where markup wraps something the person genuinely did.
   if (/<command-(name|message|args)>/.test(text)) {
     const name = text.match(/<command-name>([^<]*)<\/command-name>/)?.[1]?.trim()
     const args = text.match(/<command-args>([^<]*)<\/command-args>/)?.[1]?.trim()
     if (name === undefined || name === '') return ''
     return args ? `${name} ${args}` : name
   }
-  return text
+
+  // Strip known machine blocks wherever they sit, so a real message that merely arrived
+  // alongside one still reaches the phone intact.
+  let remaining = text
+  for (const tag of MACHINE_TAGS) {
+    remaining = remaining.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, 'gi'), '')
+    // Unclosed variants appear when a block is truncated mid-write.
+    remaining = remaining.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*$`, 'i'), '')
+  }
+
+  // Anything still made entirely of tags is machinery we have not met before.
+  if (ONLY_TAGS.test(remaining.trim())) return ''
+
+  return remaining.trim()
 }
 
 /**
