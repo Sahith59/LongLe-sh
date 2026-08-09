@@ -59,24 +59,48 @@ pay this way.
 
 ---
 
-## 4. Candidate models under evaluation
+## 4. Candidate models — judged against the evidence
 
-*(filled in from research — see §6 for evidence)*
-
-| Model | Charge for | Survives constraints? |
-| --- | --- | --- |
-| Hosted relay + push | infrastructure we run | TBD |
-| Machines / devices | linear with real value | TBD |
-| History retention | storage we pay for | TBD |
-| Teams / audit | multi-user, org needs | TBD |
-| One-time purchase | no recurring cost | TBD |
+| Model | Verdict |
+| --- | --- |
+| **Concurrent agents** | **Rejected.** No precedent in the market (§6.2). Value is binary. |
+| **Hosted relay + push** | **Viable, occupied.** ClawTab does exactly this at $4.99. Costs us real money, so it satisfies constraint 3. Low ceiling. |
+| **Machines / devices** | Weak. Port22 sells unlimited machines for $19.99/**year** — the anchor is on the floor. |
+| **History retention** | Weak. Storage is cheap; nobody in this category meters it. |
+| **Teams / audit** | **Strongest.** Conductor sustains $60/user/mo. Team budgets are $63–100/mo (§6.3) and are *employer* money, which is the only wallet with room. |
+| **One-time purchase** | Possible (Pushover's model). Removes churn risk but caps revenue and does not fund a relay that runs forever. |
 
 ---
 
-## 5. THE DECISION
+## 5. THE DECISION *(provisional, 2026-08-08 — awaiting Nabu Casa precedent)*
 
-> **Not yet made.** Do not implement billing until this section names a model, a price, and the
-> evidence behind both.
+**Price is not the bottleneck. Distribution is.** 72% of launches in this category drew ≤1
+comment (§6.4). The likely failure is not mispricing; it is that nobody ever hears about it.
+Therefore: **do not build billing until 100 people use LongLeash for free.** Until that number
+exists, any price is a guess with a payment form attached.
+
+**When billing is built, the recommended shape:**
+
+| Tier | Price | What it is |
+| --- | --- | --- |
+| **Free, forever** | $0 | Everything. Self-hosted relay. No feature withheld. Non-negotiable — it is the trust and the differentiation. |
+| **LongLeash Cloud** | ~$6/mo | Our relay + push. Zero setup, no Cloudflare account. Sits between ClawTab's $4.99 and the $9 Omnara could not sustain. |
+| **Teams** | ~$12/user/mo | Shared visibility across a team's agents, audit of who approved what, SSO later. Far under Conductor's $60, inside the $63–100 team budget, and paid with employer money. |
+
+**Do not choose $9 over $10 believing evidence supports it — none does (§6.3).**
+
+**Positioning, which matters more than the number:** do not sell "control your agents from your
+phone." That is free from Anthropic, free from Happy, and bundled into Warp at $20. Sell **"the
+one that does not drop when you have actually left the house"** — the single complaint users
+voice about every incumbent (§6.4), and the thing LongLeash spent a week of field testing
+fixing.
+
+**Honest revenue expectation.** At the category-realistic 1–3% conversion, 1,000 paying
+individuals requires 33k–100k free users — implausible for a solo project in a market where
+most launches go unnoticed. **$10k/month from individual developers is not supported by any
+evidence gathered.** A realistic individual-tier outcome is tens to low hundreds of dollars per
+month. Teams is the only path evidenced to reach four figures, and it is a different sales
+motion, not a different price tag.
 
 ---
 
