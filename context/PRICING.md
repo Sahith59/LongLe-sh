@@ -252,6 +252,31 @@ the price_
 
 ---
 
+## 6.5 Provenance of the evidence *(recorded 2026-08-08)*
+
+Kept so a later reader can weigh each claim rather than trusting the file wholesale.
+
+**Verified first-hand against vendor pages:** GitHub Copilot, Claude, Cursor Pro, Raycast, Zed,
+Setapp, TablePlus, 1Password, Google AI plans, Cline — and every load-bearing figure below.
+
+**The conclusion rests only on first-hand verified facts:** Anthropic Remote Control and Warp
+bundle this free with subscriptions developers already hold; Happy Coder gives it away MIT at
+23.2k stars for both Claude Code and Codex; Omnara — the only venture-backed paid entrant, YC
+S25, 310 HN points — went $9/mo → free → pivoted out entirely; 130 category launches on HN since
+Jan 2025 with 72% drawing ≤1 comment; the ~$20/mo personal-wallet ceiling.
+
+**Verified via secondary sources only:** ChatGPT tiers, Cursor Pro+/Ultra, Warp tiers,
+Windsurf→Devin Desktop, Fig→Amazon Q, JetBrains All Products, Dash.
+
+**Unresolved, do not cite:** WebStorm individual price, Google AI Ultra price.
+
+**Never corroborated:** Reddit (r/ClaudeAI, r/cursor) — reddit.com blocks automated fetching.
+Stack Overflow's 2026 survey is unpublished; any circulating "SO 2026" figure is recycled 2025
+data. And no rigorous evidence exists that $5 converts better than $10 for developer tools —
+that remains a **negative finding**, not a gap to fill with intuition.
+
+---
+
 ## 7. Open questions that pricing depends on
 
 - Do developers run more than one agent CLI? (If no, the cross-vendor moat is theoretical.)
