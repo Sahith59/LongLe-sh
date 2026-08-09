@@ -145,9 +145,81 @@ Sources: [Claude Code Remote Control](https://code.claude.com/docs/en/remote-con
 [Sculptor](https://imbue.com/product/sculptor) · [Paseo](https://paseo.sh) ·
 [Product Hunt alternatives](https://www.producthunt.com/products/claude-code-remote-access/alternatives)
 
-### 6.3 Developer willingness to pay
+### 6.3 Developer willingness to pay *(researched 2026-08-08)*
 
-_pending_
+**The solo developer's discretionary wallet is ~$20/month, and it is already spent.**
+Pragmatic Engineer survey (n=906, Jan–Feb 2026): employer-paid exceeds self-paid; personally
+funded developers cluster at **$20/mo or free tiers**, while employers fund the $100–200 tiers.
+Only ~5% keep separate work and personal subscriptions. Team spend medians: **$63/mo (agencies),
+$100/mo (in-house)**.
+
+A LongLeash subscription is therefore a *second* discretionary purchase from a budget already
+consumed by Claude Pro ($20) or ChatGPT Plus ($20).
+
+**Free→paid conversion for developer tools: 1–3%** (the low end of the 2–5% SaaS median).
+Disclosed: GitLab ~5%, Postman ~3%, MongoDB Atlas ~2%. **Caveat recorded honestly:** nearly every
+"devtools 1–3%" citation traces to one OpenView report, and no primary open-source-specific
+conversion study was found.
+
+**$5 vs $10 "psychological threshold" is folklore, not evidence.** No published A/B test, van
+Westendorp study, or elasticity dataset for indie dev tools compares those points. The nearest
+real datum points the other way (Appcues: +25% ARPU for −5% conversion). **Do not choose $9 over
+$10 believing research supports it — it does not.**
+
+### 6.4 Does the core assumption hold? *(researched 2026-08-08)*
+
+**The pain is real and loudly voiced — this is settled.** High-engagement Hacker News threads:
+[Omnara launch, 310 pts / 168 comments](https://news.ycombinator.com/item?id=44878650) ·
+["Stop Doom Scrolling, Start Doom Coding", 577 pts / 405 comments](https://news.ycombinator.com/item?id=46517458) ·
+[Anthropic Remote Control launch, 544 pts / 313 comments](https://news.ycombinator.com/item?id=47154391).
+Boris Cherny (Claude Code's creator) describes running 5 Claudes in parallel and using
+notifications to know when one needs input.
+
+**Multi-tool usage holds, directionally.** Pragmatic Engineer (n=906): **"70% use between two and
+four tools simultaneously, while 15% use five or more."** Median 2.4–3.1 tools/dev (n=2,847).
+**Honest caveat:** "multiple tools" includes chatbots and IDE plugins — *no survey measures
+"multiple agentic CLIs concurrently" directly.* Directionally supported, not proven.
+
+**THE FINDING THAT MATTERS MOST — the market is saturated and clears at zero.**
+**130 distinct Hacker News launches in this exact category since Jan 2025. 94 of them (72%)
+received ≤1 comment. Only 8 broke 50 points.** The two that got real traction were Anthropic's
+own feature and Omnara — which has since pivoted away.
+
+The top comment on the Omnara launch is the whole business problem in one line:
+> *"if I can whittle away at a free and open source version, why should I ever consider paying
+> for this?"*
+
+And the accepted DIY answer in these threads is Tailscale + tmux + Termius — free, already owned.
+
+**Also: Warp already ships the cross-vendor answer.** Claude Code, Codex, Gemini CLI and OpenCode
+in one pane, **with mobile remote control, bundled at $20/mo** — a price developers already pay.
+The multi-vendor thesis is real but it is *not unoccupied*.
+
+**THE LIVE WEDGE — what users actively complain about:** the official feature is unreliable.
+> *"its really buggy though, and often doesnt actually trigger the change"*
+> *"Connections drop so fast and flakily. So many times I stepped out of the house in a rush
+> hoping remote control would help… every time i've been sorely disappointed"*
+> *"stopped sending me notifications on Android"*
+
+**This is precisely what LongLeash spent 2026-08-04→08 fixing**: 30s keepalives both sides,
+instant reconnect on network change and app foreground, listener rebinding when the laptop
+changes network, a self-diagnosing Alerts panel, a test-alert button, relay-only operation when
+tethered. That alignment is not a coincidence — it came from real field testing.
+
+**And the best design principle found in the wild validates an existing invariant:**
+> *"agents run on their own, phone only pings when something's irreversible and actually needs a
+> human. per-call approval you stop reading by day two."*
+
+Which is `DECISIONS.md` §2 "never ask about something whose answer cannot matter," arrived at
+independently.
+
+Sources: [Pragmatic Engineer AI tooling 2026](https://newsletter.pragmaticengineer.com/p/ai-tooling-2026) ·
+[devtools conversion benchmarks](https://www.getmonetizely.com/articles/whats-the-right-ratio-of-free-to-paid-users-in-developer-saas) ·
+[Happy](https://github.com/slopus/happy) · HN threads linked above.
+
+**Not verifiable:** reddit.com blocks automated fetching, so r/ClaudeAI and r/cursor sentiment
+could not be checked. Stack Overflow's 2026 survey is unpublished — any "SO 2026" figure
+circulating is recycled 2025 data.
 
 ### 6.4 Does the core assumption hold? (do developers run multiple agents; is the pain real)
 
