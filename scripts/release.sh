@@ -60,5 +60,17 @@ else
     || die "The relay is serving $SERVED_BUILD but this release is $BUILD. The phone would NOT get this."
 fi
 
-printf '\n\033[1mReleased %s.\033[0m\n' "$BUILD"
-printf 'On the phone: pull down to refresh, or tap Update if the app offers it.\n\n'
+printf '\n\033[1mReleased %s.\033[0m\n\n' "$BUILD"
+
+# The daemon is a long-running process: it keeps executing whatever code it was STARTED with.
+# Releasing while it runs updates the relay and the files on disk and changes nothing about the
+# daemon's behaviour — which on 2026-08-09 wasted an entire test round, because every fix was
+# on disk and none of it was in the process being tested. Say so loudly rather than assume.
+if pgrep -f 'longleashd|packages/daemon' >/dev/null 2>&1; then
+  printf '\033[33m  ! A daemon is still RUNNING the old code.\033[0m\n'
+  printf '    Nothing in this release applies to it until you restart it:\n\n'
+  printf '        stop it with Ctrl-C in its terminal, then:  longleash\n\n'
+else
+  printf '  Start it with:  longleash\n\n'
+fi
+printf '  On the phone: pull down to refresh, or tap Update if the app offers it.\n\n'
