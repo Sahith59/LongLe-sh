@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyStatic from '@fastify/static'
@@ -563,6 +563,15 @@ export class LongLeashServer {
       relay: this.relayUrl === undefined ? null : { url: this.relayUrl },
       // The VAPID public key a phone needs to subscribe for lock-screen alerts.
       push: this.push === null ? null : { publicKey: this.push.publicKey },
+      /**
+       * Which build of the web app this daemon was released with.
+       *
+       * The phone usually loads the app from the RELAY, not from here, so updating the laptop
+       * changes nothing the phone sees. That gap is invisible: every new feature simply appears
+       * missing, and the product looks broken rather than out of date. The app compares this to
+       * its own stamp and says so.
+       */
+      expectsApp: expectedAppBuild(this.staticRoot),
     })
   }
 
@@ -887,5 +896,20 @@ export class LongLeashServer {
       // A transport that died between the check and the write is not an error worth
       // propagating: its close path will clean it up.
     }
+  }
+}
+
+/**
+ * The app build this daemon shipped with, read from the built bundle beside it. Returns null
+ * when running headless or before a build, in which case the phone is told nothing and shows
+ * nothing — silence is correct when we genuinely do not know.
+ */
+function expectedAppBuild(staticRoot: string | undefined): string | null {
+  if (staticRoot === undefined) return null
+  try {
+    return (JSON.parse(readFileSync(join(staticRoot, 'build.json'), 'utf8')) as { build?: string })
+      .build ?? null
+  } catch {
+    return null
   }
 }

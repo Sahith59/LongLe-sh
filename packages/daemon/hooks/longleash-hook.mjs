@@ -9,37 +9,11 @@
  * reads as "no opinion", and the session behaves as if LongLeash were not
  * installed.
  */
-import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { detectSurface } from './surface.mjs'
-
-/**
- * The claude process this hook belongs to, found by walking up the process tree.
- * Hooks are spawned through a shell, so the parent may be sh — climb a few
- * levels and take the first ancestor that is actually claude. This is what lets
- * a phone STOP a terminal session for real.
- */
-function findClaudePid() {
-  let pid = process.ppid
-  for (let hop = 0; hop < 5 && pid > 1; hop += 1) {
-    let line
-    try {
-      line = execFileSync('ps', ['-o', 'ppid=,command=', '-p', String(pid)], {
-        encoding: 'utf8',
-        timeout: 1500,
-      }).trim()
-    } catch {
-      return null
-    }
-    const match = line.match(/^\s*(\d+)\s+(.*)$/)
-    if (!match) return null
-    if (/\bclaude\b/.test(match[2])) return pid
-    pid = Number(match[1])
-  }
-  return null
-}
+import { findAgentPid } from './agent-pid.mjs'
 
 // These only read; the terminal's own permission flow covers them. Gating reads
 // from a phone would make the leash a choke chain.
@@ -159,7 +133,7 @@ async function main() {
   // phone's Stop key can end it for real rather than being decoration.
   let body = raw
   if (name === 'SessionStart') {
-    const pid = findClaudePid()
+    const pid = findAgentPid(/\bclaude\b/)
     // Where this session lives — a terminal or an editor — so the phone can tell four
     // otherwise-identical sessions apart.
     body = JSON.stringify({

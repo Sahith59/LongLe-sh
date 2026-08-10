@@ -184,7 +184,11 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     eventLog,
     approvals: externalApprovals,
     onEvent: mirror,
-    hasAudience: () => server.connectionCount() > 0 || push.count() > 0,
+    // A live socket means the app is open and can answer in seconds. A push REGISTRATION is
+    // permanent and proves nothing about whether anyone is looking — treating it as presence
+    // is what froze the keyboard for two minutes with the phone in a drawer.
+    audience: () =>
+      server.connectionCount() > 0 ? 'connected' : push.count() > 0 ? 'push' : 'none',
     // The baton pass: a finished terminal conversation becomes reopenable from the
     // phone, waking through the SDK under the same resume id.
     onEnded: (info) =>

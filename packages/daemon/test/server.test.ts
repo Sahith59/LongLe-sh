@@ -715,7 +715,7 @@ describe('terminal sessions over the wire — hooks in, verdicts out', () => {
     const external = new ExternalSessions({
       eventLog: h.log,
       approvals: new ApprovalStore(':memory:'),
-      hasAudience: () => true,
+      audience: () => 'connected' as const,
     })
     h.server.attachExternal(external, 'the-real-secret')
 
@@ -735,7 +735,7 @@ describe('terminal sessions over the wire — hooks in, verdicts out', () => {
       eventLog: h.log,
       approvals: new ApprovalStore(':memory:'),
       onEvent: (event) => h.server.broadcastEvent(event),
-      hasAudience: () => true,
+      audience: () => 'connected' as const,
       waitMs: 5000,
     })
     h.server.attachExternal(external, 'hook-secret')
@@ -812,7 +812,7 @@ describe('take over: the baton passes from terminal to phone', () => {
       eventLog: h.log,
       approvals: new ApprovalStore(':memory:'),
       onEvent: (event) => h.server.broadcastEvent(event),
-      hasAudience: () => true,
+      audience: () => 'connected' as const,
       isClaudeProcess: () => true,
       kill: (pid) => killed.push(pid),
       onEnded: (info) =>

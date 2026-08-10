@@ -142,6 +142,74 @@ and a code block full of angle brackets. Dropping real speech is worse than show
 
 ---
 
+## 1b. FIELD TEST 2026-08-09 (evening) — what actually broke, with root causes
+
+Sahith ran the checklist on his phone. Most of it failed. The verdict he gave is correct and is
+recorded here verbatim so it is not softened later: *"you're just taking the conventional easy
+path… telling me everything is done from your end but when I see the actual things nothing is
+even working."*
+
+**What I did wrong, precisely:** I verified components — unit tests, a local live run of one
+adapter, a hook firing on this machine — and then called the PRODUCT done. I never once loaded
+the app on the phone that was going to be tested. Every gate I built tested the code; none tested
+the thing a person actually holds.
+
+### ROOT CAUSE A — the phone was never running any of the new code *(explains bugs 3 and 5)*
+
+**The relay serves the web app.** `packages/relay/wrangler.jsonc` binds `ASSETS`, and the phone
+loads the PWA from `longleash-relay.tsahith59.workers.dev`, not from the laptop.
+
+Measured 2026-08-09:
+
+| | bundle |
+| --- | --- |
+| what the phone was served | `assets/app-CMkblIa3.js` |
+| what the laptop had built | `assets/app-DKiRsnYx.js` |
+
+So `git pull` + `pnpm build` + `longleash update` update the LAPTOP and change nothing the phone
+sees. The agent picker, the vendor labels, the VS Code labelling — all shipped, none reachable.
+**Every user hits this**, and nothing announces it.
+
+**Fix required (not yet done):** deploying the relay must be part of releasing, and the app must
+be able to tell the user it is running an old build rather than looking merely broken. A version
+stamp the daemon compares against the served bundle, surfaced in the UI.
+
+### ROOT CAUSE B — the hook holds the terminal hostage for two minutes *(bug 1, the worst one)*
+
+`waitMs` defaults to **120_000**. While the hook blocks, Claude Code shows no prompt at all — the
+person at the keyboard has NO way to answer, and the screenshot shows exactly that: a question,
+then `Hatching… 42s`, and no options.
+
+This violates the invariant in `DECISIONS.md` §2 — *"graceful degradation, never obstruction"*.
+A two-minute block IS obstruction. It is worse than the over-asking bug, because over-asking
+merely annoyed; this removes the person's ability to answer their own terminal.
+
+**Fix required:** the wait must be short enough that the keyboard is never meaningfully blocked.
+The trade-off is real and must be chosen deliberately, not defaulted into.
+
+### Confirmed but unfixed
+
+- **Bug 2 — a notification does not open the thing it is about.** `sw.js` `notificationclick`
+  focuses any existing window or opens `/`. It never routes to the session or approval. Confirmed
+  by reading the handler.
+- **Bug 7 — sessions that ended long ago still appear as active.**
+- **Bug 8 — an approval from a closed session still shows.** `closeOrphans` IS called for
+  external sessions (`external.ts`), so the startup path is not the gap; something else keeps or
+  re-announces them. **Not yet diagnosed — do not guess.**
+- **Bug 6/7 — Stop does nothing; "connection refused" in the terminal; a Codex session shows
+  nothing when its turn finishes.** The daemon WAS listening at the advertised address when
+  checked, so "connection refused" is not a dead daemon. **Not yet diagnosed.**
+- **VS Code sessions never appear at all** — separate from the labelling work, which was only
+  ever about naming them once they arrive.
+
+### The process change that follows
+
+**No feature is "done" until it has been used on the phone through the relay.** Unit tests, a
+local adapter run and a hook firing on the dev machine are necessary and have now been proven
+insufficient — three times. The gate is the product, not the code.
+
+---
+
 ## 2. FEATURE — Agent-to-agent: make any agent work with any other
 
 Sahith's idea, and the strongest one in this round: *"if there are multiple agent sessions going

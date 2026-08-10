@@ -68,6 +68,9 @@ case "${1:-}" in
     fi
     printf '\n'
     exit 0 ;;
+  release)
+    # Ships to the relay too — the phone loads the app from there, not from this laptop.
+    exec bash "$DIR/scripts/release.sh" ;;
   where)
     echo "$DIR"; exit 0 ;;
   -h|--help|help)
@@ -77,6 +80,7 @@ case "${1:-}" in
     echo "longleash revoke <id>    cut off a lost or stolen device, immediately"
     echo "longleash update         pull the newest version, rebuild, re-apply hooks"
     echo "longleash hooks          install the agent hooks (--remove to undo)"
+    echo "longleash release        build, test, and deploy the app the PHONE loads"
     echo "longleash where          print where LongLeash is installed"
     exit 0 ;;
 esac

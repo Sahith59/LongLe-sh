@@ -34,8 +34,9 @@ afterEach(() => {
 
 function manager(
   opts: {
-    audience?: boolean
+    audience?: 'connected' | 'push' | 'none'
     waitMs?: number
+    pushWaitMs?: number
     isClaude?: (pid: number) => boolean
     kill?: (pid: number) => void
   } = {},
@@ -44,8 +45,9 @@ function manager(
     eventLog,
     approvals,
     onEvent: (event) => seen.push(event),
-    hasAudience: () => opts.audience ?? true,
+    audience: () => opts.audience ?? 'connected',
     waitMs: opts.waitMs ?? 100,
+    pushWaitMs: opts.pushWaitMs ?? 50,
     pollMs: 25,
     isClaudeProcess: opts.isClaude ?? (() => true),
     kill: opts.kill ?? (() => {}),
@@ -164,7 +166,7 @@ describe('terminal sessions, adopted through hooks', () => {
   })
 
   it('with nobody to answer, it steps aside immediately', async () => {
-    const external = manager({ audience: false })
+    const external = manager({ audience: 'none' })
     const verdict = await external.preToolUse('abc', '/x', join(dir, 'n.jsonl'), 'Bash', {})
     expect(verdict.decision).toBe('ask')
     expect(seen.some((e) => e.type === 'approval.requested')).toBe(false)
@@ -199,20 +201,46 @@ describe('terminal sessions, adopted through hooks', () => {
     external.shutdown()
   })
 
-  it('refuses to kill a recycled pid — the process is no longer claude', () => {
+  it('NEVER kills a recycled pid — but clears the session instead of refusing forever', () => {
+    // The safety property is unchanged and non-negotiable: the pid is no longer our agent, so
+    // nothing may be killed. What changed is the aftermath. Refusing left the session listed as
+    // running for the rest of time and made Stop look broken; the process is plainly gone, so
+    // the honest thing is to end the session and say so.
     const killed: number[] = []
     const external = manager({ isClaude: () => false, kill: (pid) => killed.push(pid) })
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 4242)
-    expect(external.stop('ext_abc', 'dev_phone')).toBe(false)
-    expect(killed).toEqual([])
+
+    expect(external.stop('ext_abc', 'dev_phone')).toBe(true)
+    expect(killed).toEqual([]) // ← the thing that must never regress
+    expect(external.listSessions()).toHaveLength(0)
+    expect(seen.some((e) => e.type === 'session.ended')).toBe(true)
     external.shutdown()
   })
 
-  it('refuses to stop a session it never knew, or one without a pid', () => {
+  it('still refuses a session it never knew — there is nothing to end', () => {
     const external = manager()
     expect(external.stop('ext_nope', 'dev_phone')).toBe(false)
+    external.shutdown()
+  })
+
+  it('clears a session whose pid the hook never found, rather than stranding it', () => {
+    // Codex sessions had exactly this shape: no pid reported, so Stop refused every time and
+    // the session stayed in the list forever. Seen in the field 2026-08-09.
+    const killed: number[] = []
+    const external = manager({ kill: (pid) => killed.push(pid) })
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl')) // hook could not find the pid
-    expect(external.stop('ext_abc', 'dev_phone')).toBe(false)
+    expect(external.stop('ext_abc', 'dev_phone')).toBe(true)
+    expect(killed).toEqual([])
+    expect(external.listSessions()).toHaveLength(0)
+    external.shutdown()
+  })
+
+  it('a live session is still killed for real', () => {
+    const killed: number[] = []
+    const external = manager({ isClaude: () => true, kill: (pid) => killed.push(pid) })
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 4242)
+    expect(external.stop('ext_abc', 'dev_phone')).toBe(true)
+    expect(killed).toEqual([4242])
     external.shutdown()
   })
 
@@ -222,7 +250,7 @@ describe('terminal sessions, adopted through hooks', () => {
       eventLog,
       approvals,
       onEvent: (event) => seen.push(event),
-      hasAudience: () => true,
+      audience: () => 'connected' as const,
       isClaudeProcess: () => true,
       kill: () => {},
       onEnded: (info) => batons.push(`${info.sessionId}:${info.claudeSessionId}`),
@@ -242,7 +270,7 @@ describe('terminal sessions, adopted through hooks', () => {
       eventLog,
       approvals,
       onEvent: (event) => seen.push(event),
-      hasAudience: () => true,
+      audience: () => 'connected' as const,
       isClaudeProcess: () => true,
       kill: () => {},
       onEnded: () => {},
@@ -472,7 +500,7 @@ describe('a terminal session earns a name', () => {
   })
 
   it('reports the permission mode, and only when it changes', async () => {
-    const external = manager({ audience: false })
+    const external = manager({ audience: 'none' })
     await external.preToolUse('abc', '/x', join(dir, 'n.jsonl'), 'Bash', {}, 'bypassPermissions')
     await external.preToolUse('abc', '/x', join(dir, 'n.jsonl'), 'Bash', {}, 'bypassPermissions')
     const modeEvents = seen.filter(
@@ -825,5 +853,59 @@ describe('the phone must never quote you saying something a machine wrote', () =
       message: { content: [{ type: 'text', text: '<ide_opened_file>x.ts</ide_opened_file>' }] },
     })
     expect(deltas).toHaveLength(0)
+  })
+})
+
+describe('the keyboard must never be locked out — who can answer decides how long we hold', () => {
+  it('with nobody reachable, the terminal is not held at all', async () => {
+    const m = manager({ audience: 'none' })
+    const decision = await m.preToolUse('a-1', dir, '', 'Bash', { command: 'ls' }, 'default')
+    expect(decision.decision).toBe('ask')
+    expect(seen.filter((e) => e.type === 'approval.requested')).toHaveLength(0)
+    m.shutdown()
+  })
+
+  it('holds only briefly when a push is the only way to reach them', async () => {
+    // The app is closed. They must feel an alert and open it — but the person AT the keyboard
+    // is the one paying for that wait, so it has to be short.
+    const m = manager({ audience: 'push', waitMs: 5_000, pushWaitMs: 60 })
+    const started = Date.now()
+    const decision = await m.preToolUse('a-2', dir, '', 'Bash', { command: 'ls' }, 'default')
+    const waited = Date.now() - started
+    expect(decision.decision).toBe('ask')
+    expect(waited).toBeLessThan(2_000) // the short hold, not the long one
+    m.shutdown()
+  })
+
+  it('holds longer when the app is actually open', async () => {
+    const m = manager({ audience: 'connected', waitMs: 120, pushWaitMs: 10 })
+    const started = Date.now()
+    await m.preToolUse('a-3', dir, '', 'Bash', { command: 'ls' }, 'default')
+    expect(Date.now() - started).toBeGreaterThanOrEqual(100)
+    m.shutdown()
+  })
+
+  it('a permanent push registration can never masquerade as someone watching', async () => {
+    // The bug that froze the terminal for two minutes with the phone face-down in a drawer:
+    // presence was "is there an audience?", and a push registration answered yes forever.
+    const m = manager({ audience: 'push', waitMs: 10_000, pushWaitMs: 50 })
+    const started = Date.now()
+    await m.preToolUse('a-4', dir, '', 'Bash', { command: 'ls' }, 'default')
+    expect(Date.now() - started).toBeLessThan(2_000)
+    m.shutdown()
+  })
+
+  it('the default hold is short enough to sit through', () => {
+    // Built WITHOUT the test helper, which injects tiny waits — this asserts the real shipped
+    // defaults. Pinned because they are a promise to whoever is sitting at the keyboard, and
+    // 120s was what made a person unable to answer their own terminal.
+    const m = new ExternalSessions({
+      eventLog,
+      approvals,
+      audience: () => 'connected' as const,
+    })
+    expect((m as unknown as { waitMs: number }).waitMs).toBe(45_000)
+    expect((m as unknown as { pushWaitMs: number }).pushWaitMs).toBe(20_000)
+    m.shutdown()
   })
 })

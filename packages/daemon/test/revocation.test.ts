@@ -51,7 +51,7 @@ async function harness(): Promise<Harness> {
     deviceName: 'the phone that gets stolen',
   })
   const server = new LongLeashServer({ eventLog: log, registry, host: HOST, port: 0 })
-  const external = new ExternalSessions({ eventLog: log, approvals, hasAudience: () => true })
+  const external = new ExternalSessions({ eventLog: log, approvals, audience: () => 'connected' as const })
   server.attachExternal(external, SECRET)
   const { port } = await server.listen()
   const h = { server, registry, log, approvals, external, port, token, deviceId: device.deviceId }

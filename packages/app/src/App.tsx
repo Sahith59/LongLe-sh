@@ -64,11 +64,41 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [roots, setRoots] = useState<string[]>([])
   const [folders, setFolders] = useState<FolderHit[]>([])
-  const [openSessionId, setOpenSessionId] = useState<string | null>(null)
+  const [openSessionId, setOpenSessionId] = useState<string | null>(
+    // A cold start FROM a notification: the service worker put the session in the URL, so the
+    // app opens on the thing that interrupted you instead of the home screen.
+    () => new URLSearchParams(window.location.search).get('s'),
+  )
   const [sheetOpen, setSheetOpen] = useState(false)
   const [pushKey, setPushKey] = useState<string | null>(null)
   const [alerts, setAlerts] = useState<AlertsState | null>(null)
+  /** Set when the laptop is running a newer release than this app bundle. */
+  const [staleApp, setStaleApp] = useState<string | null>(null)
   const clientRef = useRef<Client | null>(null)
+
+  /**
+   * A notification tapped while the app is ALREADY open. The service worker cannot navigate a
+   * live client, so it posts the session id instead — no reload, no lost place.
+   */
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; sessionId?: string } | null
+      if (data?.type === 'longleash:open-session' && typeof data.sessionId === 'string') {
+        setOpenSessionId(data.sessionId)
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', onMessage)
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage)
+  }, [])
+
+  // Once the deep link has been consumed, take it out of the address bar: a reload later
+  // should show where you are, not reopen where a notification once sent you.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('s')) {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
 
   useEffect(() => {
     return store.subscribe(() => forceRender((n) => n + 1))
@@ -95,6 +125,11 @@ export default function App() {
       onState: setState,
       onHello: (hello: Hello) => {
         setRoots(hello.roots)
+        // The laptop was released with a different build than this app. Almost always means
+        // the phone is loading an old bundle from the relay, which otherwise presents itself
+        // as features that simply do not exist.
+        const expected = hello.expectsApp ?? null
+        setStaleApp(expected !== null && expected !== __BUILD__ ? expected : null)
         const key = hello.push?.publicKey ?? null
         setPushKey(key)
         const permission = pushPermission()
@@ -251,6 +286,36 @@ export default function App() {
           they overlap instead of stacking — the outgoing one can never push the
           incoming one down the page. That, plus transform-free screen fades, is what
           lets the shared title measure an honest flight path between them. */}
+      {/* A stale bundle used to be invisible: the phone loads the app from the RELAY, so a
+          laptop update changed nothing here and every new feature simply appeared missing.
+          Now it announces itself, because "out of date" and "broken" must never look alike. */}
+      {staleApp !== null ? (
+        <div className="stalebar" role="status">
+          <span>
+            This app is out of date — your laptop is on <span className="mono">{staleApp}</span>,
+            this is <span className="mono">{__BUILD__}</span>.
+          </span>
+          <Key
+            onClick={() => {
+              // Drop the cached shell before reloading, or the service worker hands back the
+              // very bundle we are trying to leave.
+              void (async () => {
+                try {
+                  for (const name of await caches.keys()) await caches.delete(name)
+                  const registrations = await navigator.serviceWorker?.getRegistrations?.()
+                  for (const r of registrations ?? []) await r.update()
+                } catch {
+                  // Cache eviction is best effort; the reload is what matters.
+                }
+                window.location.reload()
+              })()
+            }}
+          >
+            Update
+          </Key>
+        </div>
+      ) : null}
+
       <div className="screens">
       <AnimatePresence initial={false}>
         {openSession ? (

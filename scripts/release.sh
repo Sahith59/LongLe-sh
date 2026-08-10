@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#
+# Ship a release everywhere it has to land.
+#
+#   bash scripts/release.sh
+#
+# WHY THIS EXISTS. The phone loads the web app from the RELAY (`packages/relay/wrangler.jsonc`
+# binds `../app/dist` as ASSETS), not from the laptop. So `git pull` + build + restart updates
+# the daemon and changes NOTHING a phone sees. On 2026-08-09 that shipped a whole release —
+# agent picker, vendor labels, VS Code labelling — that no phone could ever load, and the
+# product simply looked broken. There was nothing to notice, because nothing said anything.
+#
+# Two guards now exist and this script is the first:
+#   1. releasing deploys the relay together with the app it was built from, and
+#   2. the daemon reports the build it expects, so a stale phone announces itself.
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+bold() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
+die()  { printf '\n\033[31m✗ %s\033[0m\n\n' "$1" >&2; exit 1; }
+
+BUILD="$(git rev-parse --short HEAD)"
+
+if [ -n "$(git status --porcelain -- packages scripts)" ]; then
+  die "There are uncommitted changes under packages/ or scripts/.
+  The build is stamped with the git commit, so an uncommitted release would claim to be
+  something it is not. Commit first, then release."
+fi
+
+bold "Checking the code holds up"
+pnpm --filter @longleash/daemon exec tsc --noEmit || die "The daemon does not typecheck."
+ok "daemon typechecks"
+pnpm --filter @longleash/app exec tsc --noEmit || die "The web app does not typecheck."
+ok "web app typechecks"
+pnpm --filter @longleash/daemon test || die "Tests failed. Nothing was deployed."
+ok "tests pass"
+
+bold "Building the web app"
+pnpm --filter @longleash/app build >/dev/null || die "The web app did not build."
+[ -f packages/app/dist/build.json ] || die "dist/build.json is missing — the daemon cannot tell a phone which build to expect."
+STAMPED="$(node -p "require('./packages/app/dist/build.json').build")"
+[ "$STAMPED" = "$BUILD" ] || die "The bundle is stamped $STAMPED but HEAD is $BUILD."
+ok "built and stamped $BUILD"
+
+bold "Deploying the relay — this is what the phone actually loads"
+pnpm --filter @longleash/relay deploy:worker || die "The relay did not deploy. The phone is still on the OLD app."
+ok "relay deployed with build $BUILD"
+
+bold "Verifying the phone would really get it"
+sleep 3
+SERVED="$(curl -fsS https://longleash-relay.tsahith59.workers.dev/build.json 2>/dev/null || echo '')"
+if [ -z "$SERVED" ]; then
+  printf '  \033[33m!\033[0m Could not read build.json from the relay. Check it by hand before trusting this release.\n'
+else
+  SERVED_BUILD="$(printf '%s' "$SERVED" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).build" 2>/dev/null || echo '?')"
+  [ "$SERVED_BUILD" = "$BUILD" ] \
+    && ok "the relay is serving $SERVED_BUILD" \
+    || die "The relay is serving $SERVED_BUILD but this release is $BUILD. The phone would NOT get this."
+fi
+
+printf '\n\033[1mReleased %s.\033[0m\n' "$BUILD"
+printf 'On the phone: pull down to refresh, or tap Update if the app offers it.\n\n'

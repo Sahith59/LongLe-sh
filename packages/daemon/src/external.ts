@@ -57,11 +57,23 @@ export interface ExternalSessionsOptions {
    */
   approvals: ApprovalStore
   onEvent?: (event: SessionEvent) => void
-  /** Could anyone plausibly answer a phone approval right now? */
-  hasAudience: () => boolean
+  /**
+   * Who could answer right now, which decides how long the terminal may be held.
+   *
+   *   'connected' — the app is OPEN on a phone; an answer can arrive in seconds
+   *   'push'      — reachable, but the app is closed; they must see an alert and open it
+   *   'none'      — nobody. Never hold the terminal at all.
+   *
+   * The first version asked only "is there an audience?" and counted a push REGISTRATION as
+   * one. A registration is permanent, so it always said yes — and every question froze the
+   * keyboard for two minutes even with the phone face-down in a drawer.
+   */
+  audience: () => 'connected' | 'push' | 'none'
   now?: () => number
-  /** How long a PreToolUse question may hold the terminal before falling back to it. */
+  /** How long a question may hold the terminal when the app is open on a phone. */
   waitMs?: number
+  /** How long to hold when only a push can reach them — time to feel it and open the app. */
+  pushWaitMs?: number
   /** Transcript poll cadence. */
   pollMs?: number
   /** Test seams for the stop path: process verification and the kill itself. */
@@ -202,7 +214,8 @@ export class ExternalSessions {
   private readonly eventLog: EventLog
   private readonly approvals: ApprovalStore
   private readonly onEvent: ((event: SessionEvent) => void) | undefined
-  private readonly hasAudience: () => boolean
+  private readonly audience: () => 'connected' | 'push' | 'none'
+  private readonly pushWaitMs: number
   private readonly now: () => number
   private readonly waitMs: number
   private readonly pollMs: number
@@ -219,11 +232,14 @@ export class ExternalSessions {
     this.eventLog = opts.eventLog
     this.approvals = opts.approvals
     this.onEvent = opts.onEvent
-    this.hasAudience = opts.hasAudience
+    this.audience = opts.audience
     this.now = opts.now ?? Date.now
-    this.waitMs = opts.waitMs ?? 120_000
+    // 45s with the app open, 20s on a push alone. Long enough to answer from a pocket,
+    // short enough that a person AT the keyboard is never meaningfully locked out.
+    this.waitMs = opts.waitMs ?? 45_000
+    this.pushWaitMs = opts.pushWaitMs ?? 20_000
     this.pollMs = opts.pollMs ?? 800
-    this.isClaudeProcess = opts.isClaudeProcess ?? claudeProcessCheck
+    this.isClaudeProcess = opts.isClaudeProcess ?? agentProcessCheck
     this.kill = opts.kill ?? ((pid) => process.kill(pid, 'SIGTERM'))
     this.onEnded = opts.onEnded
     // A crashed daemon takes its hook waiters with it; those questions were
@@ -253,7 +269,23 @@ export class ExternalSessions {
     const entry = [...this.sessions.entries()].find(([, s]) => s.sessionId === externalSessionId)
     if (!entry) return false
     const [claudeSessionId, session] = entry
-    if (session.pid === null || !this.isClaudeProcess(session.pid)) return false
+
+    /**
+     * The process is gone, or we never learned what it was.
+     *
+     * Refusing was wrong in both directions: the session stayed listed as running forever, and
+     * pressing Stop did nothing with no explanation — which is exactly what a person reads as
+     * "this product does not work". A session whose process is not there IS over, so say so and
+     * clear it. This is also what kept ghost sessions from previous runs in the list.
+     */
+    if (session.pid === null || !this.isClaudeProcess(session.pid)) {
+      this.emit(session.sessionId, {
+        type: 'stream.delta',
+        payload: { kind: 'text', text: '— this session is no longer running —' },
+      })
+      this.sessionEnd(claudeSessionId)
+      return true
+    }
     try {
       this.kill(session.pid)
     } catch {
@@ -308,12 +340,16 @@ export class ExternalSessions {
       })
     }
 
-    if (!this.hasAudience()) {
+    const who = this.audience()
+    if (who === 'none') {
       return Promise.resolve({
         decision: 'ask',
         reason: 'No phone is reachable; deciding in the terminal.',
       })
     }
+    // Holding the keyboard is a cost paid by whoever is sitting at it. Pay less of it when the
+    // app is not even open, because then the answer cannot arrive quickly anyway.
+    const holdMs = who === 'connected' ? this.waitMs : this.pushWaitMs
 
     const questions = readQuestions(toolName, toolInput)
     const approvalId = newId('apr')
@@ -321,7 +357,7 @@ export class ExternalSessions {
     const inputSummary = questions
       ? questions.map((q) => q.question).join(' · ').slice(0, 300)
       : summarize(toolName, toolInput)
-    const expiresAt = this.now() + this.waitMs
+    const expiresAt = this.now() + holdMs
     this.approvals.create({
       approvalId,
       sessionId: session.sessionId,
@@ -362,7 +398,7 @@ export class ExternalSessions {
           },
         })
         resolve({ decision: 'ask', reason: 'No answer from the phone; deciding in the terminal.' })
-      }, this.waitMs)
+      }, holdMs)
       timer.unref?.()
       this.waiting.set(approvalId, {
         resolve,
@@ -804,14 +840,20 @@ export function titleFrom(text: string): string | null {
   return clean.length > 72 ? `${clean.slice(0, 71)}\u2026` : clean
 }
 
-/** Is this pid still a claude process? PIDs recycle; never kill on faith. */
-function claudeProcessCheck(pid: number): boolean {
+/**
+ * Is this pid still the agent we think it is? PIDs recycle; never kill on faith.
+ *
+ * Checks BOTH vendors because a Codex session's process is `codex`, not `claude`. The first
+ * version only matched claude, so Stop on a Codex session could never succeed even once its
+ * pid was reported — it simply refused, forever, with nothing on the phone to explain why.
+ */
+function agentProcessCheck(pid: number): boolean {
   try {
     const command = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], {
       encoding: 'utf8',
       timeout: 1500,
     }).trim()
-    return /\bclaude\b/.test(command)
+    return /\b(claude|codex)\b/.test(command)
   } catch {
     return false
   }

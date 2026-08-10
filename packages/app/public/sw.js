@@ -64,14 +64,33 @@ self.addEventListener('push', (event) => {
   )
 })
 
+/**
+ * Tapping an alert must land on the thing the alert was about.
+ *
+ * It used to focus any window, or open '/', which dropped you on the home screen to hunt for
+ * the session that had just interrupted you. The payload has carried the session id all along.
+ *
+ * Two paths, because both really happen: the app may already be open (postMessage, so no
+ * reload and no lost scroll position), or it may be cold (carry the id in the URL).
+ */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+  const data = event.notification.data ?? {}
+  const sessionId = typeof data.sessionId === 'string' ? data.sessionId : null
+
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       const existing = windows[0]
-      if (existing) return existing.focus()
-      return self.clients.openWindow('/')
+      if (existing) {
+        if (sessionId !== null) {
+          existing.postMessage({ type: 'longleash:open-session', sessionId })
+        }
+        return existing.focus()
+      }
+      // IDs only, exactly as the payload is — a session id names WHICH conversation, never
+      // anything about it.
+      return self.clients.openWindow(sessionId === null ? '/' : `/?s=${encodeURIComponent(sessionId)}`)
     })(),
   )
 })

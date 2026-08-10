@@ -201,6 +201,13 @@ export interface Hello {
   relay?: { url: string } | null
   /** VAPID public key for lock-screen alerts; null when the daemon has push disabled. */
   push?: { publicKey: string } | null
+  /**
+   * The app build this laptop expects. The phone usually loads the app from the RELAY, so a
+   * laptop update changes nothing here — and every new feature just appears missing. When this
+   * disagrees with our own stamp, the app is running old code and must say so rather than let
+   * the product look broken.
+   */
+  expectsApp?: string | null
 }
 
 export interface FolderHit {
