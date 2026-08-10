@@ -1135,3 +1135,4 @@ describe('a finishing agent must not speak for a conversation that moved on', ()
     expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)).toBeDefined()
   })
 })
+

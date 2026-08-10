@@ -186,6 +186,7 @@ export class SessionManager {
     }
     // A crashed daemon takes its agents with it; anything still pending can never be answered.
     this.orphansClosed = this.approvals.closeOrphans('Daemon restarted before this was answered').length
+
   }
 
   /** How many stale approvals were reconciled at startup; surfaced so restarts are visible. */
