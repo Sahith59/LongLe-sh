@@ -14,6 +14,7 @@ import { readPermissionPosture, type PermissionPosture } from './posture.js'
 import { FolderIndex } from './folders.js'
 import { PushNotifier } from './push.js'
 import { ExternalSessions } from './external.js'
+import { SessionRegistry } from './session-registry.js'
 import { StayAwake } from './awake.js'
 
 export interface DaemonOptions {
@@ -180,9 +181,11 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   // Terminal-started sessions, reported by Claude Code's own hooks. The secret is the
   // proof of same-machine: it lives in a 0600 file no phone can ever read.
   const externalApprovals = new ApprovalStore(join(dataDir, 'approvals-external.db'))
+  const sessionRegistry = new SessionRegistry(join(dataDir, 'live-sessions.db'))
   const external = new ExternalSessions({
     eventLog,
     approvals: externalApprovals,
+    registry: sessionRegistry,
     onEvent: mirror,
     // A live socket means the app is open and can answer in seconds. A push REGISTRATION is
     // permanent and proves nothing about whether anyone is looking — treating it as presence
@@ -245,6 +248,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       await sessions.shutdown()
       awake.release()
       external.shutdown()
+      sessionRegistry.close()
       await server.close()
       eventLog.close()
       registry.close()

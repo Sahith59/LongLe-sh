@@ -6,6 +6,7 @@ import { AskedQuestion, type AgentKind, type SessionEvent, type SessionGate } fr
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { ApprovalStore } from './approvals.js'
 import type { DecisionOutcome, SessionStatus } from './sessions.js'
+import type { SessionRegistry } from './session-registry.js'
 
 /**
  * Sessions the human started themselves — `claude` in a terminal, or the VS Code
@@ -69,6 +70,12 @@ export interface ExternalSessionsOptions {
    * keyboard for two minutes even with the phone face-down in a drawer.
    */
   audience: () => 'connected' | 'push' | 'none'
+  /**
+   * Survives a daemon restart. Without it, a session that is still RUNNING becomes invisible
+   * the moment the daemon restarts — and therefore unstoppable — until it happens to fire
+   * another hook. Optional so tests and demos need not carry one.
+   */
+  registry?: SessionRegistry
   now?: () => number
   /** How long a question may hold the terminal when the app is open on a phone. */
   waitMs?: number
@@ -224,6 +231,7 @@ export class ExternalSessions {
   /** Tool calls currently awaiting a phone, keyed by session + the agent's tool-call id. */
   private readonly inFlight = new Map<string, Promise<HookDecision>>()
   private sweepTimer: ReturnType<typeof setInterval> | null = null
+  private readonly registry: SessionRegistry | undefined
   private readonly isClaudeProcess: (pid: number) => boolean
   private readonly kill: (pid: number) => void
   private readonly onEnded: ExternalSessionsOptions['onEnded']
@@ -232,6 +240,7 @@ export class ExternalSessions {
     this.eventLog = opts.eventLog
     this.approvals = opts.approvals
     this.onEvent = opts.onEvent
+    this.registry = opts.registry
     this.audience = opts.audience
     this.now = opts.now ?? Date.now
     // 45s with the app open, 20s on a push alone. Long enough to answer from a pocket,
@@ -267,6 +276,55 @@ export class ExternalSessions {
         payload: { reason: 'the daemon restarted', resumable: false },
       })
     }
+
+    // Take back whatever is still genuinely running. Must come AFTER the orphan sweep so a
+    // re-adopted session does not inherit a question nobody can answer any more.
+    this.readopt()
+  }
+
+  /**
+   * Take back the sessions a previous run was watching.
+   *
+   * Anything whose process is still alive is re-adopted and stays stoppable. Anything whose
+   * process is gone is announced as ended, which is the only way the phone can ever stop
+   * showing it — the app clears a session on the event, never on silence.
+   */
+  private readopt(): void {
+    if (this.registry === undefined) return
+    for (const row of this.registry.all()) {
+      const alive = row.pid !== null && this.isClaudeProcess(row.pid)
+      if (!alive) {
+        this.registry.forget(row.agentSessionId)
+        this.emit(row.sessionId, { type: 'session.status', payload: { status: 'ended' } })
+        this.emit(row.sessionId, {
+          type: 'session.ended',
+          payload: { reason: 'this session is no longer running', resumable: false },
+        })
+        continue
+      }
+      const session: ExternalSession = {
+        sessionId: row.sessionId,
+        agent: terminalAgentOf(row.agent),
+        surface: surfaceOf(row.surface),
+        cwd: row.cwd,
+        transcriptPath: row.transcriptPath,
+        status: 'running',
+        startedAt: row.startedAt,
+        title: row.title,
+        pid: row.pid,
+        named: true,
+        permissionMode: null,
+        gate: 'ask',
+        // Everything already ingested stays ingested; only what grew since is new.
+        offset: existsSync(row.transcriptPath) ? statSync(row.transcriptPath).size : 0,
+        remainder: '',
+        timer: null,
+      }
+      this.sessions.set(row.agentSessionId, session)
+      session.timer = setInterval(() => this.drain(session), this.pollMs)
+      session.timer.unref?.()
+      this.emit(session.sessionId, { type: 'session.status', payload: { status: 'running' } })
+    }
   }
 
   /** Register (or re-adopt after a daemon restart) a terminal session. */
@@ -279,7 +337,10 @@ export class ExternalSessions {
     surface: Surface = 'terminal',
   ): void {
     const session = this.ensure(claudeSessionId, cwd, transcriptPath, agent, surface)
-    if (pid !== undefined && Number.isInteger(pid) && pid > 1) session.pid = pid
+    if (pid !== undefined && Number.isInteger(pid) && pid > 1) {
+      session.pid = pid
+      this.persist(claudeSessionId, session)
+    }
   }
 
   /**
@@ -587,6 +648,7 @@ export class ExternalSessions {
     if (session.timer !== null) clearInterval(session.timer)
     session.status = 'ended'
     this.sessions.delete(claudeSessionId)
+    this.registry?.forget(claudeSessionId)
 
     // Anything it was still asking about can never be answered now: the process that would
     // have received the verdict is gone. Clearing them here is what stops a finished session
@@ -643,6 +705,21 @@ export class ExternalSessions {
       resumeId: claudeSessionId,
       gate: session.gate,
     }))
+  }
+
+  /** Write this session down so a restart can take it back. */
+  private persist(agentSessionId: string, session: ExternalSession): void {
+    this.registry?.remember({
+      agentSessionId,
+      sessionId: session.sessionId,
+      agent: session.agent,
+      surface: session.surface,
+      cwd: session.cwd,
+      transcriptPath: session.transcriptPath,
+      pid: session.pid,
+      title: session.title,
+      startedAt: session.startedAt,
+    })
   }
 
   /** Start the periodic expiry sweep. Returns a stop function. */
@@ -721,6 +798,7 @@ export class ExternalSessions {
       timer: null,
     }
     this.sessions.set(claudeSessionId, session)
+    this.persist(claudeSessionId, session)
 
     if (!hasHistory) {
       this.emit(sessionId, {
@@ -944,3 +1022,4 @@ export function transcriptDeltas(line: unknown): AppendInput[] {
   }
   return out
 }
+
