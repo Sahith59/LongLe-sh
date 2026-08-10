@@ -16,6 +16,8 @@ export interface Block {
 }
 
 export interface SessionView {
+  /** A real agent process is behind this right now (as opposed to a dormant, reopenable one). */
+  live: boolean
   sessionId: string
   agent: string
   cwd: string
@@ -75,6 +77,8 @@ export interface SessionSeed {
   title: string
   origin: string
   status: SessionStatus
+  /** Whether a real agent process is behind this right now. Absent from older daemons. */
+  live?: boolean
   resumable?: boolean
   resumeId?: string
   gate?: 'ask' | 'auto'
@@ -119,6 +123,8 @@ export function createStore(options: StoreOptions = {}) {
     const created: SessionView = {
       sessionId,
       agent: 'claude',
+      // A session we learned about from a live event is, by definition, live.
+      live: true,
       cwd: '',
       title: '',
       origin: 'unknown',
@@ -262,6 +268,9 @@ export function createStore(options: StoreOptions = {}) {
       session.origin = seed.origin
       session.status = seed.status
       session.resumable = seed.resumable ?? false
+      // Absent means an older daemon that could not tell us; assume live so nothing that IS
+      // running is ever hidden. Being wrong here should show too much, never too little.
+      session.live = seed.live ?? true
       if (seed.resumeId) session.resumeId = seed.resumeId
       if (seed.gate) session.gate = seed.gate
     }

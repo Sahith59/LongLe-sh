@@ -503,3 +503,27 @@ describe('a session the daemon no longer knows about must stop looking alive', (
     expect(stateOf(store).sessions['ext_done']?.status).toBe('ended')
   })
 })
+
+describe('a dormant conversation is history, not something happening now', () => {
+  it('marks a session with no process behind it as not live', () => {
+    const store = createStore()
+    store.seedSessions([
+      // What a restart produces: parked as waiting so it can be reopened, but nothing running.
+      { sessionId: 'ses_old', agent: 'claude', cwd: '/x', title: 'SLURM account',
+        origin: 'terminal', status: 'waiting', live: false, resumable: true },
+      { sessionId: 'ses_now', agent: 'claude', cwd: '/x', title: 'today',
+        origin: 'terminal', status: 'waiting', live: true, resumable: true },
+    ] as never)
+    const s = stateOf(store).sessions
+    expect(s['ses_old']?.live).toBe(false)
+    expect(s['ses_now']?.live).toBe(true)
+  })
+
+  it('assumes live when an older daemon does not say — never hide something that IS running', () => {
+    const store = createStore()
+    store.seedSessions([
+      { sessionId: 'ses_x', agent: 'claude', cwd: '/x', title: 't', origin: 'terminal', status: 'waiting' },
+    ] as never)
+    expect(stateOf(store).sessions['ses_x']?.live).toBe(true)
+  })
+})

@@ -269,7 +269,17 @@ export default function App() {
   const snapshot = store.getState()
   const allSessions = Object.values(snapshot.sessions).reverse()
   // History persists across daemon restarts, so finished work must not look like running agents.
-  const active = allSessions.filter((s) => s.status === 'running' || s.status === 'waiting')
+  /**
+   * What is happening NOW, as opposed to what can be picked back up.
+   *
+   * `waiting` alone is not enough. A daemon restart parks every resumable conversation as
+   * `waiting` so it can be reopened — correct, but it meant every conversation ever had piled
+   * into this list saying "waiting for you", including ones from days earlier. A conversation
+   * with no process behind it is dormant: worth keeping, not worth announcing as live.
+   */
+  const active = allSessions.filter(
+    (s) => s.status === 'running' || (s.status === 'waiting' && s.live),
+  )
   const past = allSessions.filter((s) => s.status === 'ended' || s.status === 'errored')
   const openSession = openSessionId ? snapshot.sessions[openSessionId] : undefined
   const connected = state === 'connected'

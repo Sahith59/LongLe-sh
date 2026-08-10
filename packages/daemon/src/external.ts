@@ -693,6 +693,7 @@ export class ExternalSessions {
     return [...this.sessions.entries()].map(([claudeSessionId, session]) => ({
       sessionId: session.sessionId,
       agent: session.agent,
+      live: true,
       cwd: session.cwd,
       status: session.status,
       startedAt: session.startedAt,

@@ -40,6 +40,15 @@ export interface SessionSummary {
  * history a live session knows nothing about.
  */
 export interface SessionListing extends SessionSummary {
+  /**
+   * Is there a real agent process behind this right now?
+   *
+   * A restart parks every resumable conversation as `waiting` so it can be reopened — which is
+   * correct — but the phone treated `waiting` as "happening now", so every conversation ever
+   * had accumulated in the ACTIVE list saying "waiting for you". A two-day-old session was
+   * still asking for a decision. `waiting` alone cannot tell the two apart; this can.
+   */
+  live: boolean
   resumable: boolean
   /** The agent's conversation id, so the phone can offer `claude --resume <id>`. */
   resumeId?: string
@@ -324,6 +333,7 @@ export class SessionManager {
         title: row.title,
         // Trust the live process over the stored row while it is running.
         status: live ? live.status : (row.status as SessionStatus),
+        live: live !== undefined,
         startedAt: row.started_at,
         resumable: row.agent_session_id !== null,
         ...(row.agent_session_id === null ? {} : { resumeId: row.agent_session_id }),

@@ -18,6 +18,7 @@ import './styles.css'
 const sticknotes: SessionView = {
   sessionId: 's-1',
   agent: 'claude',
+  live: true,
   cwd: '/Users/sahith/Desktop/sticknotes',
   title: 'Add a delete button to each note',
   origin: 'phone',
@@ -56,6 +57,7 @@ const sticknotes: SessionView = {
 const resume: SessionView = {
   sessionId: 's-2',
   agent: 'claude',
+  live: true,
   cwd: '/Users/sahith/Documents/FD_Engineer',
   title: 'Tailor the resume for the Stripe posting',
   origin: 'phone',
@@ -69,6 +71,7 @@ const resume: SessionView = {
 const scraper: SessionView = {
   sessionId: 's-3',
   agent: 'claude',
+  live: true,
   cwd: '/Users/sahith/Desktop/scraper',
   title: 'Fix the flaky pagination test',
   origin: 'daemon',
@@ -82,6 +85,7 @@ const scraper: SessionView = {
 const migration: SessionView = {
   sessionId: 's-4',
   agent: 'claude',
+  live: true,
   cwd: '/Users/sahith/Desktop/longleash',
   title: 'Migrate the events table',
   origin: 'phone',
@@ -168,6 +172,7 @@ const folders: FolderHit[] = [
 const monster: SessionView = {
   sessionId: 's-9',
   agent: 'claude',
+  live: true,
   cwd: '/Users/sahith/Documents/Projects/2026/experiments/really-deeply-nested-thing/packages/core',
   title:
     'Refactor-the-entire-authentication-subsystem-including-the-token-refresh-path-and-migrate-every-caller',
@@ -206,6 +211,7 @@ const monsterApproval: PendingApproval = {
 const sticky: SessionView = {
   sessionId: 's-md',
   agent: 'claude',
+  live: true,
   cwd: '/Users/sahithreddythummala',
   title: 'Can you find the sticknotes app in this root directory.?',
   origin: 'phone',
