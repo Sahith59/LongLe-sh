@@ -154,7 +154,7 @@ adapter, a hook firing on this machine — and then called the PRODUCT done. I n
 the app on the phone that was going to be tested. Every gate I built tested the code; none tested
 the thing a person actually holds.
 
-### ROOT CAUSE A — the phone was never running any of the new code *(explains bugs 3 and 5)*
+### ROOT CAUSE A — the phone was never running any of the new code *(explains bugs 3 and 5)* — **FIXED 2026-08-09**
 
 **The relay serves the web app.** `packages/relay/wrangler.jsonc` binds `ASSETS`, and the phone
 loads the PWA from `longleash-relay.tsahith59.workers.dev`, not from the laptop.
@@ -170,11 +170,18 @@ So `git pull` + `pnpm build` + `longleash update` update the LAPTOP and change n
 sees. The agent picker, the vendor labels, the VS Code labelling — all shipped, none reachable.
 **Every user hits this**, and nothing announces it.
 
-**Fix required (not yet done):** deploying the relay must be part of releasing, and the app must
-be able to tell the user it is running an old build rather than looking merely broken. A version
-stamp the daemon compares against the served bundle, surfaced in the UI.
+**Fixed, two guards:**
+1. **`scripts/release.sh` (`longleash release`)** — typechecks, tests, builds, deploys the relay
+   with the app it was built from, then reads `build.json` back OFF the relay and refuses to
+   call it a release unless what is served matches HEAD. Deploying the laptop alone is no longer
+   a thing you can accidentally do.
+2. **A stale phone announces itself.** The build is stamped into the bundle and written to
+   `dist/build.json`; the daemon reports it in `hello` as `expectsApp`; the app compares it with
+   its own stamp and shows an Update bar that clears the service-worker cache before reloading.
+   *"Out of date" and "broken" must never look alike* — that confusion is what made an entire
+   working release read as a broken product.
 
-### ROOT CAUSE B — the hook holds the terminal hostage for two minutes *(bug 1, the worst one)*
+### ROOT CAUSE B — the hook holds the terminal hostage for two minutes *(bug 1, the worst one)* — **FIXED 2026-08-09**
 
 `waitMs` defaults to **120_000**. While the hook blocks, Claude Code shows no prompt at all — the
 person at the keyboard has NO way to answer, and the screenshot shows exactly that: a question,
@@ -184,8 +191,38 @@ This violates the invariant in `DECISIONS.md` §2 — *"graceful degradation, ne
 A two-minute block IS obstruction. It is worse than the over-asking bug, because over-asking
 merely annoyed; this removes the person's ability to answer their own terminal.
 
-**Fix required:** the wait must be short enough that the keyboard is never meaningfully blocked.
-The trade-off is real and must be chosen deliberately, not defaulted into.
+**There was a second fault underneath, and it was the real one.** Presence was
+`connectionCount() > 0 || push.count() > 0` — and a push REGISTRATION is permanent. So the daemon
+always believed someone was watching, and held the terminal the full two minutes even with the
+phone face-down in a drawer.
+
+**Fixed.** Presence is now three-valued, and the hold follows from it:
+
+| who can answer | hold |
+| --- | --- |
+| `connected` — the app is OPEN | 45s |
+| `push` — reachable, app closed | 20s |
+| `none` | **never held at all** |
+
+Pinned by a test asserting the shipped defaults, so nobody quietly raises them back.
+
+### Bug 6/7 — Stop refused forever *(root cause found in Sahith's own daemon log)* — **FIXED**
+
+The log showed `stop terminal ext_… -> refused`, over and over, for the same sessions. Two causes:
+**the Codex hook never reported a pid at all** (so `session.pid === null`), and the process check
+matched only `\bclaude\b`, so even a reported Codex pid would have failed.
+
+Both fixed via a shared `hooks/agent-pid.mjs`. And the aftermath changed: a session whose process
+is gone is now **ended** rather than refused. Refusing left it listed as running forever with a
+Stop button that did nothing — which is also **why dead sessions kept appearing (bug 7)**.
+
+The safety property is unchanged and tested: a recycled pid is still never killed.
+
+### Bug 2 — notification opened the home screen — **FIXED**
+
+The payload carried `sessionId` all along; `notificationclick` ignored it. Now it postMessages a
+live app (no reload, no lost place) or cold-starts with `?s=<id>`, which the app consumes and
+strips from the address bar.
 
 ### Confirmed but unfixed
 
