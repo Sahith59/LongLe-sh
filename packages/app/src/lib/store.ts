@@ -265,6 +265,29 @@ export function createStore(options: StoreOptions = {}) {
       if (seed.resumeId) session.resumeId = seed.resumeId
       if (seed.gate) session.gate = seed.gate
     }
+
+    /**
+     * Hello is the TRUTH about what is live, not merely an addition to it.
+     *
+     * This used to only upsert, so anything the daemon had forgotten — a session from a
+     * previous run, one whose process died while the daemon was down — stayed on screen as
+     * "working" forever. Pressing Stop on one was refused, because the daemon had no such
+     * session to stop, and the app had no way to ever learn that.
+     *
+     * A session the daemon does not list cannot be acted on, so calling it live is a lie.
+     * It is marked ended rather than deleted: the conversation is still worth reading.
+     */
+    const live = new Set(seeds.map((seed) => seed.sessionId))
+    for (const session of Object.values(sessions)) {
+      if (live.has(session.sessionId)) continue
+      if (session.status === 'running' || session.status === 'waiting') {
+        session.status = 'ended'
+      }
+      // Its questions died with it; nothing can answer them now.
+      for (const [id, approval] of approvals) {
+        if (approval.sessionId === session.sessionId) approvals.delete(id)
+      }
+    }
     notify()
   }
 

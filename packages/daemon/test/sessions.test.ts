@@ -1094,7 +1094,11 @@ describe('restart recovery', () => {
     expect(approvals.listPending()).toHaveLength(1)
 
     const orphans = approvals.closeOrphans('daemon restarted')
-    expect(orphans).toEqual(['apr_orphan'])
+    // Returns FULL records, not ids. The caller has to announce each one under its own
+    // session — closing the SQLite row alone left the card on the phone forever, because the
+    // app only removes it on an approval.decided event.
+    expect(orphans.map((o) => o.approvalId)).toEqual(['apr_orphan'])
+    expect(orphans[0]!.sessionId).toBe('ses_old')
     expect(approvals.listPending()).toHaveLength(0)
     approvals.close()
   })

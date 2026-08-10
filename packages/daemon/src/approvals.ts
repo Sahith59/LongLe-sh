@@ -173,12 +173,16 @@ export class ApprovalStore {
    * A crashed daemon takes its agent processes with it, so anything still pending on startup
    * can never be answered. Close them out rather than showing a phantom inbox forever.
    */
-  closeOrphans(reason: string): string[] {
+  closeOrphans(reason: string): ApprovalRecord[] {
     const orphans = this.listPending()
     for (const approval of orphans) {
       this.decide(approval.approvalId, 'denied', 'system:orphaned', reason)
     }
-    return orphans.map((approval) => approval.approvalId)
+    // Returns the FULL records, not just ids: the caller has to announce each one under its
+    // own session, and this store deliberately cannot emit events itself. Returning ids alone
+    // meant a closed approval was closed only in SQLite — the card stayed on the phone forever
+    // because nothing ever told it. (Found by adversarial review, 2026-08-09.)
+    return orphans
   }
 
   close(): void {

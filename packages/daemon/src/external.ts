@@ -244,7 +244,29 @@ export class ExternalSessions {
     this.onEnded = opts.onEnded
     // A crashed daemon takes its hook waiters with it; those questions were
     // answered at the terminal long ago. Never resurrect them as a phantom inbox.
-    this.approvals.closeOrphans('The daemon restarted; this was answered in the terminal.')
+    /**
+     * A previous run died holding these. Closing the SQLite row is not enough: a phone that is
+     * still showing the card only ever removes it on an `approval.decided` EVENT, so the row
+     * and the screen have to be closed together or the card is immortal.
+     */
+    for (const orphan of this.approvals.closeOrphans(
+      'The daemon restarted; this was answered in the terminal.',
+    )) {
+      this.emit(orphan.sessionId, {
+        type: 'approval.decided',
+        payload: {
+          approvalId: orphan.approvalId,
+          verdict: 'deny',
+          decidedBy: 'system:orphaned',
+          reply: 'The daemon restarted; this was answered in the terminal.',
+        },
+      })
+      // The session that owned it is gone with the process that was running it.
+      this.emit(orphan.sessionId, {
+        type: 'session.ended',
+        payload: { reason: 'the daemon restarted', resumable: false },
+      })
+    }
   }
 
   /** Register (or re-adopt after a daemon restart) a terminal session. */
@@ -634,6 +656,25 @@ export class ExternalSessions {
   shutdown(): void {
     if (this.sweepTimer !== null) clearInterval(this.sweepTimer)
     this.sweepTimer = null
+
+    /**
+     * Say that these sessions are over BEFORE going away.
+     *
+     * Clearing the map silently left the last persisted event saying `running`, so every phone
+     * kept them listed as live forever and Stop on them was refused — the daemon no longer had
+     * them to stop. Even a clean Ctrl-C did this, not just a crash.
+     *
+     * This says "we can no longer see it", which is true and is the honest thing a phone needs;
+     * it does not touch the terminal process, which may legitimately outlive us and be adopted
+     * again on the next start.
+     */
+    for (const [, session] of this.sessions) {
+      this.emit(session.sessionId, { type: 'session.status', payload: { status: 'ended' } })
+      this.emit(session.sessionId, {
+        type: 'session.ended',
+        payload: { reason: 'LongLeash stopped watching', resumable: false },
+      })
+    }
     for (const [approvalId, waiter] of this.waiting) {
       clearTimeout(waiter.timer)
       waiter.resolve({ decision: 'ask', reason: 'The daemon is shutting down.' })

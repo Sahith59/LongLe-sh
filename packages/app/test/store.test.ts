@@ -463,3 +463,43 @@ describe('activity', () => {
     expect(users[0]?.text.trim()).toBe('— reopened —')
     expect(users[1]?.text.trim()).toBe('— reopened —')
   })
+
+describe('a session the daemon no longer knows about must stop looking alive', () => {
+  it('clears ghosts left by a previous daemon run, and their approvals', () => {
+    const store = createStore()
+    // How it happens in the field: the daemon died holding these, so no session.ended was
+    // ever written and the phone kept showing them as working for days.
+    store.seedSessions([
+      { sessionId: 'ext_ghost', agent: 'claude', cwd: '/x', title: 'old', origin: 'terminal', status: 'running' },
+      { sessionId: 'ext_live', agent: 'claude', cwd: '/x', title: 'now', origin: 'terminal', status: 'running' },
+    ] as never)
+    store.apply({
+      sessionId: 'ext_ghost',
+      seq: 1,
+      type: 'approval.requested',
+      payload: { approvalId: 'apr_old', toolName: 'Bash', inputSummary: 'rm -rf', expiresAt: Date.now() + 1e6 },
+    } as never)
+    expect(stateOf(store).sessions['ext_ghost']?.status).toBe('running')
+
+    // The daemon reconnects and lists only what it actually has.
+    store.seedSessions([
+      { sessionId: 'ext_live', agent: 'claude', cwd: '/x', title: 'now', origin: 'terminal', status: 'running' },
+    ] as never)
+
+    const after = stateOf(store)
+    expect(after.sessions['ext_ghost']?.status).toBe('ended')
+    expect(after.sessions['ext_live']?.status).toBe('running')
+    // Its approval died with it — nothing could ever answer it.
+    expect([...after.approvals.values()].some((a) => a.sessionId === 'ext_ghost')).toBe(false)
+  })
+
+  it('does not resurrect or discard a session that legitimately finished', () => {
+    const store = createStore()
+    store.seedSessions([
+      { sessionId: 'ext_done', agent: 'claude', cwd: '/x', title: 'done', origin: 'terminal', status: 'ended' },
+    ] as never)
+    store.seedSessions([] as never)
+    // Still present to read, still ended — the conversation is worth keeping.
+    expect(stateOf(store).sessions['ext_done']?.status).toBe('ended')
+  })
+})
