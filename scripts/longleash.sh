@@ -78,6 +78,7 @@ case "${1:-}" in
     echo "longleash doctor         show what is actually wired up right now"
     echo "longleash devices        list the phones paired with this laptop"
     echo "longleash revoke <id>    cut off a lost or stolen device, immediately"
+    echo "longleash revoke --all   cut off EVERY paired device and start fresh"
     echo "longleash update         pull the newest version, rebuild, re-apply hooks"
     echo "longleash hooks          install the agent hooks (--remove to undo)"
     echo "longleash release        build, test, and deploy the app the PHONE loads"

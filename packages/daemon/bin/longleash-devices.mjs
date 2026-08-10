@@ -98,6 +98,43 @@ async function list() {
   return devices
 }
 
+/**
+ * Cut every paired device loose at once, for when testing has left a pile of them and you
+ * want one clean phone again. Deliberately a separate, explicit flag: `revoke <id>` should
+ * never be one typo away from cutting off everything.
+ */
+async function revokeAll() {
+  const response = await call('/devices', { method: 'GET' })
+  const { devices } = await response.json()
+  const live = devices.filter((d) => d.revokedAt === null)
+  if (live.length === 0) {
+    console.log('Nothing is paired. Scan the QR from `longleash` to add your phone.')
+    return
+  }
+
+  console.log('')
+  console.log(`About to revoke ALL ${live.length} paired device(s).`)
+  console.log('Every one of them disconnects immediately and cannot reconnect.')
+  console.log('You will pair again by scanning the QR code that `longleash` prints.')
+  console.log('')
+
+  let done = 0
+  for (const device of live) {
+    const result = await call('/devices/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ deviceId: device.deviceId }),
+    })
+    if (result.ok) done += 1
+    else console.error(`  could not revoke ${device.deviceId}`)
+  }
+
+  console.log(`Revoked ${done} of ${live.length}.`)
+  console.log('Their relay rooms are shut and their notifications have stopped.')
+  console.log('')
+  console.log('Scan the QR code in the `longleash` terminal to pair your phone again.')
+  console.log('')
+}
+
 async function revoke(needle) {
   const response = await call('/devices', { method: 'GET' })
   const { devices } = await response.json()
@@ -147,10 +184,13 @@ async function revoke(needle) {
 
 const [command, argument] = process.argv.slice(2)
 try {
-  if (command === 'revoke') {
+  if (command === 'revoke' && (argument === '--all' || argument === 'all')) {
+    await revokeAll()
+  } else if (command === 'revoke') {
     if (!argument) {
       console.error('Which device? Run `longleash devices` to see them, then:')
-      console.error('  longleash revoke <device-id>')
+      console.error('  longleash revoke <device-id>      one device')
+      console.error('  longleash revoke --all           every device, to start fresh')
       process.exit(1)
     }
     await revoke(argument)
