@@ -38,6 +38,8 @@ const sessionStartedPayload = z
 const sessionStatusPayload = z
   .object({
     status: z.enum(['running', 'waiting', 'errored', 'ended']),
+    /** Whether a real agent process exists now; waiting can also mean dormant/reopenable. */
+    live: z.boolean().optional(),
     detail: z.string().optional(),
     /**
      * A better name, learned after the fact. A terminal session is born knowing only its

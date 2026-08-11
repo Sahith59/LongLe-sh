@@ -29,13 +29,25 @@ if [ -n "$(git status --porcelain -- packages scripts)" ]; then
   something it is not. Commit first, then release."
 fi
 
-bold "Checking the code holds up"
-pnpm --filter @longleash/daemon exec tsc --noEmit || die "The daemon does not typecheck."
-ok "daemon typechecks"
-pnpm --filter @longleash/app exec tsc --noEmit || die "The web app does not typecheck."
-ok "web app typechecks"
-pnpm --filter @longleash/daemon test || die "Tests failed. Nothing was deployed."
-ok "tests pass"
+# The relay and the laptop must come from the same checkout. Releasing from a development
+# checkout while `longleash` still points at an older installed clone creates the exact split
+# brain this command exists to prevent: the phone updates, but every local hook and daemon
+# restart keeps executing the old product.
+if command -v longleash >/dev/null 2>&1; then
+  INSTALLED_DIR="$(longleash where 2>/dev/null || true)"
+  if [ -n "$INSTALLED_DIR" ] && [ "$INSTALLED_DIR" != "$PWD" ]; then
+    INSTALLED_BUILD="$(git -C "$INSTALLED_DIR" rev-parse --short HEAD 2>/dev/null || true)"
+    [ "$INSTALLED_BUILD" = "$BUILD" ] || die "The phone release would be $BUILD, but the installed laptop copy is ${INSTALLED_BUILD:-unknown} at:
+  $INSTALLED_DIR
+  Update that copy first, then release from it. Refusing to create another relay/laptop split."
+  fi
+fi
+
+bold "Checking the whole product holds up"
+pnpm typecheck || die "Typechecking failed. Nothing was deployed."
+ok "every package typechecks"
+pnpm test || die "Tests failed. Nothing was deployed."
+ok "every package test passes"
 
 bold "Building the web app"
 pnpm --filter @longleash/app build >/dev/null || die "The web app did not build."

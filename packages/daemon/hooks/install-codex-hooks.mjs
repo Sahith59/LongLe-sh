@@ -67,9 +67,18 @@ function stripOurBlock(text) {
   if (begin === -1) return text
   const end = text.indexOf(END, begin)
   if (end === -1) return text
+  // Codex records hook-review state in a [hooks.state] table. Current Codex may insert
+  // that table before our closing comment. It belongs to Codex/the user, not to us, so
+  // an update or uninstall must never erase it with our managed lines.
+  const inside = text.slice(begin + BEGIN.length, end)
+  const stateAt = inside.search(/^\[hooks\.state\][ \t]*$/m)
+  const state = stateAt === -1 ? '' : inside.slice(stateAt).trim()
   const after = end + END.length
   const trailingNewline = text[after] === '\n' ? 1 : 0
-  return text.slice(0, begin) + text.slice(after + trailingNewline)
+  const stripped = text.slice(0, begin) + text.slice(after + trailingNewline)
+  if (state === '' || /^\[hooks\.state\][ \t]*$/m.test(stripped)) return stripped
+  const base = stripped.replace(/\s*$/, '')
+  return `${base}${base === '' ? '' : '\n\n'}${state}\n`
 }
 
 /**
@@ -85,6 +94,9 @@ function ourBlock(withHeader) {
     '# PermissionRequest is the decision itself — Codex fires it only when it has',
     '# already decided it needs a human, so LongLeash never has to guess.',
     'SessionStart = [{ hooks = [{ type = "command", command = ' + JSON.stringify(HOOK_COMMAND) + ', timeoutSec = 5 }] }]',
+    'SessionEnd = [{ hooks = [{ type = "command", command = ' + JSON.stringify(HOOK_COMMAND) + ', timeoutSec = 5 }] }]',
+    '# PreToolUse only observes activity, so already-running VS Code sessions are visible.',
+    'PreToolUse = [{ hooks = [{ type = "command", command = ' + JSON.stringify(`${HOOK_COMMAND} --observe`) + ', timeoutSec = 5 }] }]',
     'PermissionRequest = [{ hooks = [{ type = "command", command = ' + JSON.stringify(HOOK_COMMAND) + ', timeoutSec = 180 }] }]',
     END,
   ].join('\n')
@@ -136,7 +148,8 @@ if (removing) {
 // TOML forbids declaring the same table twice, so where our keys go depends on whether
 // the person already has a [hooks] table of their own.
 const hasHooksHeader = /^[ \t]*\[hooks\][ \t]*$/m.test(withoutOurs)
-const hasHooksSubtable = /^[ \t]*\[hooks\.[^\]]+\][ \t]*$/m.test(withoutOurs)
+const hasHooksSubtable = [...withoutOurs.matchAll(/^[ \t]*\[hooks\.([^\]]+)\][ \t]*$/gm)]
+  .some((match) => match[1] !== 'state')
 const hasDottedHooks = /^[ \t]*hooks\.[A-Za-z]/m.test(withoutOurs)
 
 if (hasHooksSubtable || hasDottedHooks) {
@@ -163,10 +176,9 @@ if (hasHooksHeader) {
 
 writeFileSync(CONFIG, next.endsWith('\n') ? next : `${next}\n`)
 
-console.log('LongLeash hooks installed for Codex (SessionStart, PermissionRequest).')
-console.log('New `codex` sessions will now appear on your phone, and anything Codex')
-console.log('would stop and ask you about waits up to three minutes for your answer there.')
-console.log('If no phone responds, the Codex prompt takes over exactly as before.')
+console.log('LongLeash hooks installed for Codex lifecycle, discovery, and permissions.')
+console.log('Terminal and VS Code sessions appear on your phone, including already-running sessions.')
+console.log('At a laptop prompt, press L to return immediately to Codex\'s native prompt.')
 console.log('')
 console.log('Two things Codex will ask you, both expected:')
 console.log('  1. "Hooks need review" — say yes, or the hook will not run.')

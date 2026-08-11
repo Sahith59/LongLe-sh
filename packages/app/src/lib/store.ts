@@ -117,6 +117,15 @@ export function createStore(options: StoreOptions = {}) {
     for (const listener of listeners) listener()
   }
 
+  const clearSessionApprovals = (sessionId: string): void => {
+    for (const [id, approval] of approvals) {
+      if (approval.sessionId === sessionId) approvals.delete(id)
+    }
+    for (const [id, approval] of deciding) {
+      if (approval.sessionId === sessionId) deciding.delete(id)
+    }
+  }
+
   const ensure = (sessionId: string): SessionView => {
     const existing = sessions[sessionId]
     if (existing) return existing
@@ -157,6 +166,7 @@ export function createStore(options: StoreOptions = {}) {
           resumeId?: string
         }
         session.agent = payload.agent
+        session.live = true
         session.cwd = payload.cwd
         session.title = payload.title ?? ''
         session.origin = payload.origin ?? 'unknown'
@@ -222,12 +232,14 @@ export function createStore(options: StoreOptions = {}) {
           title?: string
           permissionMode?: string
           gate?: 'ask' | 'auto'
+          live?: boolean
         }
         if (payload.status === 'waiting' || payload.status === 'running') {
           session.status = payload.status
           // The session is alive again, so a past failure is history rather than current state.
           delete session.error
         }
+        if (typeof payload.live === 'boolean') session.live = payload.live
         // A terminal session renames itself once it knows what it was asked to do.
         if (payload.title !== undefined && payload.title !== '') session.title = payload.title
         if (payload.permissionMode !== undefined) session.permissionMode = payload.permissionMode
@@ -236,6 +248,8 @@ export function createStore(options: StoreOptions = {}) {
       }
       case 'session.ended': {
         session.status = 'ended'
+        session.live = false
+        clearSessionApprovals(event.sessionId)
         // Whether this can be carried on flips exactly as it ends — a terminal session
         // adopted on stop, an agent that only just announced its resume id. Taking it
         // from the live event is what keeps Reopen honest without a reconnect.
@@ -246,6 +260,8 @@ export function createStore(options: StoreOptions = {}) {
       }
       case 'session.errored': {
         session.status = 'errored'
+        session.live = false
+        clearSessionApprovals(event.sessionId)
         session.error = (event.payload as { message: string }).message
         break
       }
@@ -273,6 +289,9 @@ export function createStore(options: StoreOptions = {}) {
       session.live = seed.live ?? true
       if (seed.resumeId) session.resumeId = seed.resumeId
       if (seed.gate) session.gate = seed.gate
+      if (session.status === 'ended' || session.status === 'errored' || !session.live) {
+        clearSessionApprovals(session.sessionId)
+      }
     }
 
     /**
@@ -289,13 +308,12 @@ export function createStore(options: StoreOptions = {}) {
     const live = new Set(seeds.map((seed) => seed.sessionId))
     for (const session of Object.values(sessions)) {
       if (live.has(session.sessionId)) continue
+      session.live = false
       if (session.status === 'running' || session.status === 'waiting') {
         session.status = 'ended'
       }
       // Its questions died with it; nothing can answer them now.
-      for (const [id, approval] of approvals) {
-        if (approval.sessionId === session.sessionId) approvals.delete(id)
-      }
+      clearSessionApprovals(session.sessionId)
     }
     notify()
   }
@@ -334,12 +352,24 @@ export function createStore(options: StoreOptions = {}) {
     notify()
   }
 
+  /** Reconcile a Stop acknowledgement even when the daemon had already lost the process. */
+  function settleSession(sessionId: string): void {
+    const session = sessions[sessionId]
+    if (session) {
+      session.status = 'ended'
+      session.live = false
+    }
+    clearSessionApprovals(sessionId)
+    notify()
+  }
+
   return {
     apply,
     seedSessions,
     applyGap,
     markDeciding,
     rollbackDecision,
+    settleSession,
     cursors: () => ({ ...cursors }),
     getState: (): StoreState => ({ sessions, approvals: [...approvals.values()] }),
     subscribe: (listener: () => void): (() => void) => {

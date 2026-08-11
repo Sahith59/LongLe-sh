@@ -54,7 +54,7 @@ self.addEventListener('push', (event) => {
       await self.registration.showNotification('LongLeash', {
         // The kind, never the content: "a question" tells you what KIND of thirty
         // seconds this will be, without putting a word of the question on a lock screen.
-        body: data.t === 'question' ? 'Claude has a question for you.' : 'A session needs you.',
+        body: data.t === 'question' ? 'An agent has a question for you.' : 'A session needs you.',
         tag: data.approvalId || 'longleash-approval',
         data,
         icon: '/icon-192.png',
@@ -81,7 +81,16 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      const existing = windows[0]
+      // Preview/welcome pages may also be controlled clients. Pick the actual app shell;
+      // focusing an arbitrary window is what made a notification appear to land on Home.
+      const existing = windows.find((client) => {
+        try {
+          const url = new URL(client.url)
+          return url.origin === self.location.origin && (url.pathname === '/' || url.pathname === '/index.html')
+        } catch {
+          return false
+        }
+      })
       if (existing) {
         if (sessionId !== null) {
           existing.postMessage({ type: 'longleash:open-session', sessionId })
@@ -90,7 +99,7 @@ self.addEventListener('notificationclick', (event) => {
       }
       // IDs only, exactly as the payload is — a session id names WHICH conversation, never
       // anything about it.
-      return self.clients.openWindow(sessionId === null ? '/' : `/?s=${encodeURIComponent(sessionId)}`)
+      return self.clients.openWindow(sessionId === null ? '/' : `/?session=${encodeURIComponent(sessionId)}`)
     })(),
   )
 })

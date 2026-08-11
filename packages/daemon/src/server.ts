@@ -117,7 +117,14 @@ export class LongLeashServer {
 
     // Unauthenticated on purpose: a phone must be able to tell "cannot reach the laptop"
     // apart from "not authorized", and this reveals nothing but liveness.
-    this.app.get('/health', async () => ({ ok: true, name: 'longleash', protocol: PROTOCOL_VERSION }))
+    this.app.get('/health', async () => ({
+      ok: true,
+      name: 'longleash',
+      protocol: PROTOCOL_VERSION,
+      // A version is not machine data. Exposing it turns "connection refused / is this old?"
+      // from guesswork into a doctor check and prevents testing a daemon that never restarted.
+      build: expectedAppBuild(this.staticRoot),
+    }))
 
     /**
      * Claude Code's hooks report terminal sessions here. Same-machine callers only,
@@ -159,7 +166,7 @@ export class LongLeashServer {
       const agent = terminalAgentOf(body.ll_agent)
       const surface = surfaceOf(body.ll_surface)
 
-      if (body.hook_event_name === 'SessionStart') {
+      if (body.hook_event_name === 'SessionStart' || body.hook_event_name === 'SessionObserved') {
         this.external.sessionStart(
           sessionId,
           cwd ?? '',
@@ -168,11 +175,23 @@ export class LongLeashServer {
           agent,
           surface,
         )
-        this.log(`${agent} session ${sessionId.slice(0, 8)} started in ${cwd ?? '?'} (${surface})`)
+        if (body.hook_event_name === 'SessionStart') {
+          this.log(`${agent} session ${sessionId.slice(0, 8)} started in ${cwd ?? '?'} (${surface})`)
+        }
         return {}
       }
-      if (body.hook_event_name === 'PreToolUse') {
+      if (body.hook_event_name === 'PreToolUse' || body.hook_event_name === 'PermissionRequest') {
         if (typeof body.tool_name !== 'string') return reply.code(400).send({ reason: 'missing tool_name' })
+        // A lifecycle hook can be missed when LongLeash starts after the agent or while the
+        // daemon is offline. Every actual interaction repairs discovery, PID, and surface.
+        this.external.sessionStart(
+          sessionId,
+          cwd ?? '',
+          transcript ?? '',
+          typeof body.ll_pid === 'number' ? body.ll_pid : undefined,
+          agent,
+          surface,
+        )
         /**
          * When the person answers at their keyboard instead, the agent moves straight on
          * and the hook process exits — killing this request. That is the ONLY signal we get

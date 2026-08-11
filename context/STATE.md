@@ -4,6 +4,17 @@ Update this file at the end of any session that changes project state. Newest en
 
 ## Where we are
 
+- **Field correction (2026-08-10): WORKSPACE FIXED AND GATED; NOT RELEASED.** The eight-item
+  terminal/VS Code/Codex/mobile report is implemented on top of `4159900`: 570 automated tests,
+  every typecheck, the production app build, and all 11 live-agent contracts pass (real Claude
+  allow/deny/side-effect/resume flows and real Codex app-server text/approval/Stop/resume). The active
+  laptop install and relay are still `e1b7f91`; their hooks point at that old clone and the
+  running daemon is old enough that `/health` cannot report a build. `longleash doctor` now
+  exposes all three mismatches. Do not describe this as shipped until the changes are committed,
+  the installed clone is updated, the relay is released, and the daemon is restarted. The
+  in-app browser runtime was unavailable in this environment; notification routing and mobile
+  UI were verified through service-worker execution and server-rendered interaction tests, not
+  falsely claimed as an eyes-on device pass.
 - **Phase (updated 2026-08-04): A, B, C DONE; D1 DONE.** Live deployment: `https://longleash-relay.tsahith59.workers.dev` (Cloudflare Worker + Durable Objects, free tier). Design system "Matte Graphite" (machined keys / engraved stamps / recessed wells; Instrument Sans/Serif + Geist Mono; robot-dog logo chosen by Sahith, wired everywhere). ~380 tests green workspace-wide.
   - **B DONE:** own E2E relay (ciphertext-only rooms, HKDF room tags, AES-GCM frames via noble), LAN-first with relay failover + come-home probe, 30s keepalives both sides, paste-to-pair + in-app QR scanner (jsQR — iOS camera app pairs the wrong browser), landing page at `/welcome`, daemon remembers relay URL in `~/.longleash/config.json` (`off` forgets).
   - **C DONE:** Web Push end to end — VAPID keys minted per daemon (`vapid.json` 0600), per-device subscriptions (`push.db`), fired on `approval.requested`, payload is IDs ONLY (test pins exact key set), pruned on 404/410, silenced on revocation; app has a self-diagnosing Alerts panel (every failure state names itself) + "Send a test alert" (4s delayed so you can lock the phone). Verified on Sahith's iPhone.
@@ -14,6 +25,44 @@ Update this file at the end of any session that changes project state. Newest en
 - **Done:** tmux 3.7b + mosh 1.4.0 installed (tmux is now an internal component; mosh harmless extra); `~/.tmux.conf` written (history-limit 50000, window-size largest, mouse on); caffeinate LaunchAgent installed + verified (machine previously slept after 1 minute); launchd plists in `scripts/launchd/` + `~/Library/LaunchAgents/`.
 - **Dropped from checklist (v2 pivot):** Tailscale install (stuck standalone app can just be trashed — no longer needed), Termius, Happy, Blink. Claude `/remote-control` stays available as Sahith's personal stopgap until Phase C.
 - **Next actions:** (1) slice A7 — the React+Vite PWA (Pair, Sessions, Inbox, session detail, New Task, Devices) served by the daemon, with a reachability check separate from pairing and VPN detection; (2) Sahith's kickoff list below. **No API key or paid API account is needed anywhere** — agents run on the user's Claude subscription (S0 + A6 confirmed). S0 PASSED; **A1 DONE** (protocol, 14 tests); **A2 DONE** (event log, 18 tests + eyes-on demo `pnpm demo`); **A3 DONE** (pairing + device auth, 19 tests: QR one-time challenge w/ TTL + sweep, tokens hashed + timing-safe, no-plaintext-in-DB proven, revocation w/ crash-safe listeners, restart durability — VERIFIED ON DEVICE, see below); **A4 DONE** (WS server, 19 tests: token auth on upgrade, live revocation drops sockets mid-connection, subscribe→replay→live tail, per-session isolation, gap signals, hostile input survivable, reconnect storms, backpressure watermark with resync-gap instead of unbounded buffering, heartbeat reaping half-open sockets — VERIFIED ON DEVICE); **A5 DONE** (session manager + agent adapter contract + approval store, 22 tests: allowlisted-root enforcement incl. traversal/prefix/symlink attacks, pinned cwd, streaming→events, crash→session.errored keeping partial output, approvals block the agent until decided, deny carries steering reply, duplicate decisions idempotent, expiry auto-denies so agents never hang, auto-approved tools land in the activity feed per spike S0, single-writer claim, orphan cleanup after daemon crash); **A7 DONE** (React+Vite PWA served by the daemon; hello/roots picker, visible errors, origin labels, stop, reachability + VPN diagnostics; daemon binary `pnpm start <dir>`; /health, POST-only pairing, permission-posture warning; 28 app+http tests); **A6 DONE** (real Claude adapter + 6 contract tests passing against the live SDK — see `agents/2026-08-01-slice-a6-contract.md`). 97 unit/integration tests green workspace-wide, plus 6 contract tests run on demand. `docs/ARCHITECTURE.md` added. Repo live: https://github.com/Sahith59/LongLe-sh (public).
+
+## Field correction (2026-08-10) — approvals, visibility, Codex, stale state, and version skew
+
+The report was not one bug. It was four interacting failures: Claude was gated from a
+`PreToolUse` approximation instead of its authoritative `PermissionRequest`; Codex's current
+app-server/JSONL shapes were only partially understood; the phone replayed historical status as
+live state; and the deployed relay/laptop/hooks were three commits behind this checkout.
+
+- Claude now uses `PermissionRequest` for real permission decisions and the documented
+  `PreToolUse.updatedInput` answer shape for `AskUserQuestion`. Every hook event carries agent,
+  origin, and PID. A raw `/dev/tty` one-key handoff lets the person press `L` and immediately use
+  Claude/Codex's native laptop prompt; verified in a real pseudo-terminal with a hanging daemon.
+- Terminal and VS Code lifecycle observers repair missed starts without creating duplicate
+  managed sessions. Session rows persist the actual agent/origin, and cards/detail views carry
+  explicit CLAUDE/CODEX and TERMINAL/VS CODE stamps.
+- Notification taps target `/?session=<id>` on a cold start and message the already-open app on
+  a warm start. The new-session sheet exposes the Claude/Codex selector before folder choice on
+  mobile.
+- Stop acknowledgements settle the phone immediately; session end/error clears pending approval
+  state; orphan cleanup emits decisions; `live` is now separate from status so old replay cannot
+  resurrect a dormant session. Dormant conversations show Reopen under Earlier, never a dead
+  Stop control.
+- Codex consumes current `response_item` transcripts and authoritative `item/completed` output,
+  parses nested turn/error payloads, answers permission requests with the requested permission
+  subset, and prevents app-server sessions from appearing twice as external sessions. Managed
+  app-server threads run from a hook-free configuration layer while sharing normal Codex auth and
+  session history; this prevents an old global hook from double-gating the command before the
+  app-server approval reaches the phone. A real contract exposed and verifies that exact freeze.
+- Release now runs the complete type/test gate and refuses a relay release from a checkout that
+  does not match the laptop's installed clone. Doctor checks endpoint reachability, daemon/app/
+  relay build identity, and exact hook paths.
+
+Verification: 32 protocol + 31 relay + 83 app + 424 daemon = **570 automated tests**; production
+build and all package typechecks pass. **11/11 live contracts** pass: six Claude adapter scenarios,
+two real Claude reopen sequences, plus Codex start/text/wait/Stop, blocked approval with an asserted
+file side effect, and stop/reopen/context-continuation sequences.
+The browser connector had no available runtime, so the mobile UI claim remains test-backed rather
+than device-eyeballed until the released build is opened on the phone.
 
 ## Sahith's kickoff list (v3 — after the PWA pivot)
 

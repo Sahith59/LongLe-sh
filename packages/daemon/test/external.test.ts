@@ -7,7 +7,6 @@ import { EventLog } from '../src/eventlog.js'
 import { ApprovalStore } from '../src/approvals.js'
 import {
   ExternalSessions,
-  formatAnswers,
   humanSaid,
   readQuestions,
   titleFrom,
@@ -336,6 +335,36 @@ describe('transcript lines → deltas', () => {
     expect(transcriptDeltas({ type: 'assistant' })).toEqual([])
     expect(transcriptDeltas({ type: 'assistant', message: { content: 'weird-string' } })).toEqual([])
   })
+
+  it('reads Codex rollout messages without duplicating event_msg copies', () => {
+    expect(transcriptDeltas({
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'Done from Codex.' }],
+      },
+    })).toEqual([{ type: 'stream.delta', payload: { kind: 'text', text: 'Done from Codex.' } }])
+    expect(transcriptDeltas({
+      type: 'event_msg',
+      payload: { type: 'agent_message', message: 'Done from Codex.' },
+    })).toEqual([])
+  })
+
+  it('keeps Codex user speech but removes injected environment/plugin blocks', () => {
+    const deltas = transcriptDeltas({
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'user',
+        content: [{
+          type: 'input_text',
+          text: '<recommended_plugins>hidden</recommended_plugins>\nFix the stop button.\n<environment_context>hidden</environment_context>',
+        }],
+      },
+    })
+    expect(deltas).toEqual([{ type: 'stream.delta', payload: { kind: 'user', text: 'Fix the stop button.' } }])
+  })
 })
 
 
@@ -411,16 +440,14 @@ describe('questions — Claude asking, not asking permission', () => {
       approvalId: string
     }).approvalId
 
-    external.decide(approvalId, 'deny', 'dev_phone', undefined, {
+    external.decide(approvalId, 'allow', 'dev_phone', 'but start simple', {
       'Which trigger method?': 'Manual',
     })
     const verdict = await pending
-    // A PreToolUse hook cannot supply a tool result, so the answer rides the denial —
-    // verified against real Claude Code, which replied "Blue it is." to exactly this shape.
-    expect(verdict.decision).toBe('deny')
-    expect(verdict.reason).toContain('Which trigger method? \u2192 Manual')
-    expect(verdict.reason).toContain('Not an error')
-    expect(verdict.reason).toContain('do not ask the question again')
+    expect(verdict.decision).toBe('allow')
+    expect(verdict.answers).toEqual({ 'Which trigger method?': 'Manual' })
+    expect(verdict.reason).toContain('Answered from your phone')
+    expect(verdict.additionalContext).toBe('The user added: but start simple')
     external.shutdown()
   })
 
@@ -450,24 +477,6 @@ describe('questions — Claude asking, not asking permission', () => {
     external.shutdown()
   })
 
-  it('formats multi-select answers and typed words together', () => {
-    const questions = readQuestions('AskUserQuestion', {
-  questions: [
-    {
-      question: 'Which trigger method?',
-      header: 'Trigger',
-      multiSelect: false,
-      options: [
-        { label: 'Manual', description: 'Double-tap the stem.' },
-        { label: 'Always-on', description: 'Constantly listening.' },
-      ],
-    },
-  ],
-})!
-    const text = formatAnswers(questions, { 'Which trigger method?': 'Manual, Always-on' }, 'but start simple')
-    expect(text).toContain('Manual, Always-on')
-    expect(text).toContain('They also said: but start simple')
-  })
 })
 
 

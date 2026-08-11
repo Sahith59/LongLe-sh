@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { spawn } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,10 +21,14 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function run(stdin: unknown): Promise<{ stdout: string; code: number | null }> {
+function run(
+  stdin: unknown,
+  args: string[] = [],
+  env: Record<string, string> = {},
+): Promise<{ stdout: string; code: number | null }> {
   return new Promise((resolvePromise) => {
-    const child = spawn(process.execPath, [SCRIPT], {
-      env: { ...process.env, LONGLEASH_DATA: dir, HOME: dir },
+    const child = spawn(process.execPath, [SCRIPT, ...args], {
+      env: { ...process.env, LONGLEASH_DATA: dir, HOME: dir, LONGLEASH_LOCAL_HANDOFF: 'off', ...env },
     })
     let stdout = ''
     child.stdout.on('data', (chunk: Buffer) => {
@@ -69,7 +73,7 @@ describe('the hook script — the terminal must never notice a problem', () => {
     )
 
     const { stdout, code } = await run({
-      hook_event_name: 'PreToolUse',
+      hook_event_name: 'PermissionRequest',
       session_id: 'abc',
       tool_name: 'Bash',
       tool_input: { command: 'pnpm build' },
@@ -79,9 +83,10 @@ describe('the hook script — the terminal must never notice a problem', () => {
     expect(JSON.parse(received)).toMatchObject({ tool_name: 'Bash' })
     expect(JSON.parse(stdout)).toEqual({
       hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
-        permissionDecisionReason: 'Approved from your phone by dev_x',
+        hookEventName: 'PermissionRequest',
+        decision: {
+          behavior: 'allow',
+        },
       },
     })
   })
@@ -95,7 +100,7 @@ describe('the hook script — the terminal must never notice a problem', () => {
       JSON.stringify({ url: `http://127.0.0.1:${port}/hook`, secret: 's' }),
     )
     const { stdout, code } = await run({
-      hook_event_name: 'PreToolUse',
+      hook_event_name: 'PermissionRequest',
       session_id: 'abc',
       tool_name: 'Write',
     })
@@ -103,25 +108,28 @@ describe('the hook script — the terminal must never notice a problem', () => {
     expect(stdout).toBe('')
   })
 
-  it('read-only tools never even leave the machine', async () => {
+  it('an async PreToolUse observer reports activity without making a decision', async () => {
     let called = false
-    const port = await listenOn((_body, respond) => {
+    let body = ''
+    const observerPort = await listenOn((received, respond) => {
       called = true
+      body = received
       respond(200, {})
     })
     writeFileSync(
       join(dir, 'hook-endpoint.json'),
-      JSON.stringify({ url: `http://127.0.0.1:${port}/hook`, secret: 's' }),
+      JSON.stringify({ url: `http://127.0.0.1:${observerPort}/hook`, secret: 's' }),
     )
     const { stdout, code } = await run({
       hook_event_name: 'PreToolUse',
       session_id: 'abc',
       tool_name: 'Read',
       tool_input: { file_path: '/etc/hosts' },
-    })
+    }, ['--observe'])
     expect(code).toBe(0)
     expect(stdout).toBe('')
-    expect(called).toBe(false)
+    expect(called).toBe(true)
+    expect(JSON.parse(body).hook_event_name).toBe('SessionObserved')
   })
 
   it('mirrors the permission mode: an auto-approving session never reaches the daemon', async () => {
@@ -159,7 +167,7 @@ describe('the hook script — the terminal must never notice a problem', () => {
     expect(called).toBe(false)
   })
 
-  it('acceptEdits still gates a shell command — the terminal would have asked for that', async () => {
+  it('PermissionRequest is authoritative regardless of permission mode', async () => {
     let called = false
     const port = await listenOn((_body, respond) => {
       called = true
@@ -170,7 +178,7 @@ describe('the hook script — the terminal must never notice a problem', () => {
       JSON.stringify({ url: `http://127.0.0.1:${port}/hook`, secret: 's' }),
     )
     const { code } = await run({
-      hook_event_name: 'PreToolUse',
+      hook_event_name: 'PermissionRequest',
       session_id: 'abc',
       tool_name: 'Bash',
       tool_input: { command: 'rm -rf dist' },
@@ -180,7 +188,7 @@ describe('the hook script — the terminal must never notice a problem', () => {
     expect(called).toBe(true)
   })
 
-  it("respects the person's own allowlist — what the terminal auto-runs never asks the phone", async () => {
+  it('ordinary PreToolUse never creates a permission request', async () => {
     let called = false
     const port = await listenOn((_body, respond) => {
       called = true
@@ -190,33 +198,25 @@ describe('the hook script — the terminal must never notice a problem', () => {
       join(dir, 'hook-endpoint.json'),
       JSON.stringify({ url: `http://127.0.0.1:${port}/hook`, secret: 's' }),
     )
-    mkdirSync(join(dir, '.claude'), { recursive: true })
-    writeFileSync(
-      join(dir, '.claude', 'settings.json'),
-      JSON.stringify({ permissions: { allow: ['Bash(pnpm test:*)', 'WebFetch'] } }),
-    )
-
-    for (const payload of [
-      { tool_name: 'Bash', tool_input: { command: 'pnpm test --run' } },
-      { tool_name: 'WebFetch', tool_input: { url: 'https://x.dev' } },
-    ]) {
-      const { stdout, code } = await run({
-        hook_event_name: 'PreToolUse',
-        session_id: 'abc',
-        ...payload,
-      })
-      expect(code).toBe(0)
-      expect(stdout).toBe('')
-    }
-    expect(called).toBe(false)
-
-    await run({
+    const result = await run({
       hook_event_name: 'PreToolUse',
       session_id: 'abc',
       tool_name: 'Bash',
       tool_input: { command: 'rm -rf /' },
     })
-    expect(called).toBe(true)
+    expect(result.stdout).toBe('')
+    expect(called).toBe(false)
+  })
+
+  it('does not mirror a LongLeash-managed SDK session as an external duplicate', async () => {
+    let called = false
+    const port = await listenOn((_body, respond) => { called = true; respond(200, {}) })
+    writeFileSync(
+      join(dir, 'hook-endpoint.json'),
+      JSON.stringify({ url: `http://127.0.0.1:${port}/hook`, secret: 's' }),
+    )
+    await run({ hook_event_name: 'SessionStart', session_id: 'managed' }, [], { LONGLEASH_MANAGED: '1' })
+    expect(called).toBe(false)
   })
 
   it('a QUESTION always reaches the phone, in every permission mode', async () => {
@@ -242,6 +242,29 @@ describe('the hook script — the terminal must never notice a problem', () => {
       })
     }
     expect(seen).toBe(4)
+  })
+
+  it('returns phone answers as native AskUserQuestion input', async () => {
+    const port = await listenOn((_body, respond) => respond(200, {
+      decision: 'allow',
+      reason: 'Answered from your phone.',
+      answers: { 'Which one?': 'Codex' },
+      additionalContext: 'The user added: use the fast path',
+    }))
+    writeFileSync(
+      join(dir, 'hook-endpoint.json'),
+      JSON.stringify({ url: `http://127.0.0.1:${port}/hook`, secret: 's' }),
+    )
+    const out = JSON.parse((await run({
+      hook_event_name: 'PreToolUse',
+      session_id: 'abc',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [{ question: 'Which one?', header: 'Agent', options: [] }] },
+    })).stdout)
+    expect(out.hookSpecificOutput.permissionDecision).toBe('allow')
+    expect(out.hookSpecificOutput.updatedInput.answers).toEqual({ 'Which one?': 'Codex' })
+    expect(out.hookSpecificOutput.updatedInput.questions).toHaveLength(1)
+    expect(out.hookSpecificOutput.additionalContext).toBe('The user added: use the fast path')
   })
 
   it('with no daemon endpoint at all, it exits clean and silent', async () => {

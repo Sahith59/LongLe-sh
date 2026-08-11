@@ -111,6 +111,37 @@ describe('session list', () => {
     expect(stateOf(store).sessions.ses_1?.resumable).toBe(true)
   })
 
+  it('an ending or error event clears every approval owned by that session', () => {
+    const store = createStore()
+    store.apply(started('ses_ended'))
+    store.apply(approval('ses_ended', 2, 'apr_ended'))
+    store.apply(ev({ v: 1, seq: 3, sessionId: 'ses_ended', ts: 1, type: 'session.ended', payload: {} }))
+    expect(stateOf(store).approvals.some((a) => a.approvalId === 'apr_ended')).toBe(false)
+    expect(stateOf(store).sessions.ses_ended?.live).toBe(false)
+
+    store.apply(started('ses_error'))
+    store.apply(approval('ses_error', 2, 'apr_error'))
+    store.apply(ev({
+      v: 1,
+      seq: 3,
+      sessionId: 'ses_error',
+      ts: 1,
+      type: 'session.errored',
+      payload: { message: 'gone' },
+    }))
+    expect(stateOf(store).approvals.some((a) => a.approvalId === 'apr_error')).toBe(false)
+    expect(stateOf(store).sessions.ses_error?.live).toBe(false)
+  })
+
+  it('a Stop acknowledgement reconciles a process the daemon already lost', () => {
+    const store = createStore()
+    store.apply(started('ext_dead'))
+    store.apply(approval('ext_dead', 2, 'apr_dead'))
+    store.settleSession('ext_dead')
+    expect(stateOf(store).sessions.ext_dead).toMatchObject({ status: 'ended', live: false })
+    expect(stateOf(store).approvals.some((a) => a.sessionId === 'ext_dead')).toBe(false)
+  })
+
   it('remembers the conversation id so it can be picked up at a keyboard', () => {
     const store = createStore()
     store.apply(
@@ -488,9 +519,18 @@ describe('a session the daemon no longer knows about must stop looking alive', (
 
     const after = stateOf(store)
     expect(after.sessions['ext_ghost']?.status).toBe('ended')
+    expect(after.sessions['ext_ghost']?.live).toBe(false)
     expect(after.sessions['ext_live']?.status).toBe('running')
     // Its approval died with it — nothing could ever answer it.
     expect([...after.approvals.values()].some((a) => a.sessionId === 'ext_ghost')).toBe(false)
+
+    // Historical replay can restore the last conversation status, but cannot manufacture a
+    // process the authoritative hello says does not exist.
+    store.apply(ev({
+      v: 1, seq: 2, sessionId: 'ext_ghost', ts: 1, type: 'session.status',
+      payload: { status: 'waiting' },
+    }))
+    expect(stateOf(store).sessions['ext_ghost']).toMatchObject({ status: 'waiting', live: false })
   })
 
   it('does not resurrect or discard a session that legitimately finished', () => {
@@ -517,6 +557,31 @@ describe('a dormant conversation is history, not something happening now', () =>
     const s = stateOf(store).sessions
     expect(s['ses_old']?.live).toBe(false)
     expect(s['ses_now']?.live).toBe(true)
+  })
+
+  it('never keeps an approval on a dormant hello seed', () => {
+    const store = createStore()
+    store.apply(started('ses_old'))
+    store.apply(approval('ses_old', 2, 'apr_stale'))
+    store.seedSessions([
+      { sessionId: 'ses_old', agent: 'claude', cwd: '/x', title: 'old', origin: 'terminal',
+        status: 'waiting', live: false, resumable: true },
+    ] as never)
+    expect(stateOf(store).approvals).toEqual([])
+  })
+
+  it('does not let replayed waiting status turn a dormant hello seed live again', () => {
+    const store = createStore()
+    store.seedSessions([
+      { sessionId: 'ses_old', agent: 'claude', cwd: '/x', title: 'old', origin: 'phone',
+        status: 'waiting', live: false, resumable: true },
+    ] as never)
+    // Older logs have no `live` field. Hello remains the authority for that fact.
+    store.apply(ev({
+      v: 1, seq: 10, sessionId: 'ses_old', ts: 1, type: 'session.status',
+      payload: { status: 'waiting', detail: 'interrupted by a daemon restart' },
+    }))
+    expect(stateOf(store).sessions.ses_old?.live).toBe(false)
   })
 
   it('assumes live when an older daemon does not say — never hide something that IS running', () => {

@@ -82,6 +82,21 @@ describe('the Codex installer — it must not damage a file it was only asked to
     expect(twice.match(/^# >>> LongLeash/gm)).toHaveLength(1)
   })
 
+  it('preserves Codex hook review state even when Codex inserted it inside our markers', () => {
+    install()
+    const current = read()
+    const withState = current.replace(
+      '# <<< LongLeash',
+      '[hooks.state]\nreviewed = true\n\n# <<< LongLeash',
+    )
+    writeFileSync(CONFIG(), withState)
+    expect(install().code).toBe(0)
+    const next = read()
+    expect(next).toContain('[hooks.state]\nreviewed = true')
+    expect(next.match(/^PermissionRequest = /gm)).toHaveLength(1)
+    expect(next.match(/^\[hooks\.state\]$/gm)).toHaveLength(1)
+  })
+
   it('--remove restores the original file byte-for-byte', () => {
     const original = 'model = "gpt-5.6"\n\n[tui]\ntheme = "dark"\n'
     writeFileSync(CONFIG(), original)

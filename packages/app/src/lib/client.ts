@@ -439,6 +439,17 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       subscribe(message.sessionId)
       return
     }
+    if (
+      message.type === 'ack' &&
+      message.of === 'stopSession' &&
+      typeof message.sessionId === 'string' &&
+      (message.outcome === 'stopped' || message.outcome === 'not-running')
+    ) {
+      // "not-running" means the requested outcome is already true. Treating it as a no-op
+      // left a dead card and dead Stop button on screen forever.
+      store.settleSession(message.sessionId)
+      return
+    }
     if (message.type === 'hello') {
       const hello = message as unknown as Hello
       // Learn where the daemon lives beyond the LAN, so leaving home is survivable.

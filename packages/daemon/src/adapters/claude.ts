@@ -78,6 +78,15 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
         // Pinned per session. Spike S0 showed an agent writing outside its stated cwd when
         // this is not enforced, and resume is keyed to cwd, so it must never drift.
         cwd: request.cwd,
+        // A managed SDK session already reports through this adapter. If a caller elects to
+        // load user settings, the globally installed LongLeash hook must still not mirror the
+        // same process as a second external/ghost session.
+        env: {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+          ),
+          LONGLEASH_MANAGED: '1',
+        },
         ...(options.maxTurns === undefined ? {} : { maxTurns: options.maxTurns }),
         ...(options.model === undefined ? {} : { model: options.model }),
         ...(options.allowedTools === undefined ? {} : { allowedTools: options.allowedTools }),

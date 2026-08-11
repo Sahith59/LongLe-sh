@@ -63,7 +63,8 @@ Every failure path in `longleash-hook.mjs` exits 0 with no output, which Claude 
 "no opinion". Daemon down, endpoint stale, network weird → the session behaves as if LongLeash
 were not installed.
 
-**Never ask about something whose answer cannot matter.** *(2026-08-08, learned the hard way)*
+**Never ask about something whose answer cannot matter.** *(2026-08-08, learned the hard way;
+manual mode/allowlist replication superseded 2026-08-11)*
 An auto-approving session runs the command regardless. Paging a phone about it is worse than
 silence — it teaches the user their answers are theatre. This is why the mode filter lists the
 modes that GATE (`default`, `acceptEdits`) rather than the ones that don't: the "don't" list was
@@ -104,11 +105,26 @@ rejected for cost. Free tier: 100k requests/day, no credit card. One Durable Obj
 `crypto.subtle` is undefined on non-secure origins, and `http://LAN-IP` is not one. Discovered
 on a real phone; earlier rehearsals passed only because 127.0.0.1 is browser-exempt.
 
-**Answers to questions travel as the denial reason** *(2026-08-08)*
+**Answers to questions travel as the denial reason** *(2026-08-08; superseded 2026-08-11)*
 A PreToolUse hook can only allow / deny / stay out — it cannot supply a tool result (verified
 against docs AND a live session). So LongLeash stops `AskUserQuestion` and puts the answer in
 the reason field. Claude reads it correctly. **Cost:** the terminal paints it red under
 `Error:`, so the message opens with "Not an error".
+
+**Claude permissions come from `PermissionRequest`; questions use native `updatedInput`**
+*(2026-08-11, supersedes both decisions above)*
+Current Claude Code exposes the real boundary directly: `PermissionRequest` fires only when its
+own permission engine is about to show a dialog. LongLeash no longer guesses from permission
+modes or reimplements a user's evolving allow-rule grammar. `PreToolUse` remains synchronous
+only for `AskUserQuestion`, whose documented answer path is `permissionDecision: "allow"` plus
+the original questions and an `answers` map in `updatedInput`. REASON: this removes both false
+phone prompts and the red fake-error shown for a perfectly valid question answer.
+
+**Mirroring a permission must never remove laptop control** *(2026-08-11)*
+For terminal sessions the hook writes a visible handoff to `/dev/tty`: press L and
+LongLeash aborts its pending request, causing the agent's native permission prompt to appear
+immediately. The phone remains an additional control surface, never the only one. A timeout is
+still a failure fallback; it is not the laptop UI.
 
 **Questions bypass every permission-mode filter.** Claude Code shows question dialogs in every
 mode because it is asking the human to CHOOSE, not asking to be ALLOWED.
@@ -139,6 +155,15 @@ tests passed against a fixture that had invented the field — fixtures now trac
 Codex hashes hook commands and asks the user to review new or changed hooks. REASON: it is a
 security control the user is entitled to, and instructing them to disable it violates "never
 require a user to weaken their security." The installer explains the prompt instead of evading it.
+
+**Managed Codex app-server threads do not load external-session hooks** *(2026-08-10)*
+The adapter is already the structured lifecycle, transcript, Stop, and approval channel for a
+phone-started Codex thread. Loading the global hook as well gates one command twice. Worse, an
+older installed hook can wait on an older daemon before app-server emits its own approval request,
+so the phone sees no card and Codex appears frozen. Managed threads therefore use a hook-free
+configuration home which symlinks the normal Codex auth and persisted history. `codex resume <id>`
+still works; global hooks remain enabled for the terminal and VS Code sessions they actually own.
+This is pinned by a real approval-side-effect contract and a real stop/reopen/context contract.
 
 **Gemini CLI cannot approve through hooks — it needs ACP** *(2026-08-09)*
 Gemini's hook output has no `permissionDecision`; its internal decision variable is only ever

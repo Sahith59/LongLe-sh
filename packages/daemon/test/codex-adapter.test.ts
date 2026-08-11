@@ -155,7 +155,6 @@ describe('the Codex adapter — approvals reach the human and answer in Codex’
   const approvalCases = [
     { method: 'item/commandExecution/requestApproval', allow: 'accept', deny: 'decline', tool: 'Bash' },
     { method: 'item/fileChange/requestApproval', allow: 'accept', deny: 'decline', tool: 'Edit' },
-    { method: 'item/permissions/requestApproval', allow: 'accept', deny: 'decline', tool: 'Permissions' },
     // These answer with ReviewDecision, whose refusal is `abort`. Sending `decline` or `denied`
     // is rejected and the turn stalls silently — the failure this table exists to prevent.
     { method: 'execCommandApproval', allow: 'approved', deny: 'abort', tool: 'Bash' },
@@ -182,6 +181,34 @@ describe('the Codex adapter — approvals reach the human and answer in Codex’
       expect((reply.result as { decision: string }).decision).toBe(c.deny)
     })
   }
+
+  it('returns the granted permission subset in the schema permissions requests require', async () => {
+    const h = start(() => ({ behavior: 'allow' }))
+    await handshake(h)
+    const requested = { network: { enabled: true } }
+    h.server.say({
+      id: 101,
+      method: 'item/permissions/requestApproval',
+      params: { permissions: requested, threadId: 'thr-1' },
+    })
+    await settle()
+    const reply = h.server.sent.find((m) => m.id === 101 && m.result !== undefined)!
+    expect(reply.result).toEqual({ permissions: requested })
+    expect(h.approvals[0]!.toolName).toBe('Permissions')
+  })
+
+  it('grants no permissions when the person denies a permissions request', async () => {
+    const h = start(() => ({ behavior: 'deny', message: 'no network' }))
+    await handshake(h)
+    h.server.say({
+      id: 102,
+      method: 'item/permissions/requestApproval',
+      params: { permissions: { network: { enabled: true } }, threadId: 'thr-1' },
+    })
+    await settle()
+    const reply = h.server.sent.find((m) => m.id === 102 && m.result !== undefined)!
+    expect(reply.result).toEqual({ permissions: {} })
+  })
 
   it('denies rather than hanging when nobody can be reached', async () => {
     const h = start(() => {
@@ -219,6 +246,31 @@ describe('the Codex adapter — what reaches the phone', () => {
     ])
   })
 
+  it('uses authoritative item/completed text when a build sends no deltas', async () => {
+    const h = start()
+    await handshake(h)
+    h.server.say({
+      method: 'item/completed',
+      params: { item: { id: 'msg-1', type: 'agentMessage', text: 'The final answer.' } },
+    })
+    await settle()
+    expect(h.events.some((e) => e.type === 'text' && (e as { text: string }).text === 'The final answer.')).toBe(true)
+  })
+
+  it('does not duplicate completed text after streaming deltas', async () => {
+    const h = start()
+    await handshake(h)
+    h.server.say({ method: 'item/agentMessage/delta', params: { itemId: 'msg-2', delta: 'Hello ' } })
+    h.server.say({ method: 'item/agentMessage/delta', params: { itemId: 'msg-2', delta: 'there' } })
+    h.server.say({
+      method: 'item/completed',
+      params: { item: { id: 'msg-2', type: 'agentMessage', text: 'Hello there' } },
+    })
+    await settle()
+    const text = h.events.filter((e) => e.type === 'text').map((e) => (e as { text: string }).text).join('')
+    expect(text).toBe('Hello there')
+  })
+
   it('marks reasoning as thinking, not speech', async () => {
     const h = start()
     await handshake(h)
@@ -232,12 +284,37 @@ describe('the Codex adapter — what reaches the phone', () => {
     await handshake(h)
     h.server.say({
       method: 'item/started',
-      params: { item: { type: 'commandExecution', command: 'pnpm test' } },
+      params: { item: { id: 'exec-1', type: 'commandExecution', command: 'pnpm test' } },
+    })
+    h.server.say({
+      method: 'item/completed',
+      params: { item: { id: 'exec-1', type: 'commandExecution', command: 'pnpm test' } },
     })
     await settle()
     const tool = h.events.find((e) => e.type === 'tool') as { text: string } | undefined
     expect(tool?.text).toBe('Bash: pnpm test')
     expect(h.autoApproved).toContain('Bash')
+  })
+
+  it('never calls an action auto-approved when Codex actually asked the phone about it', async () => {
+    const h = start()
+    await handshake(h)
+    h.server.say({
+      method: 'item/started',
+      params: { item: { id: 'exec-asked', type: 'commandExecution', command: 'pnpm test' } },
+    })
+    h.server.say({
+      id: 88,
+      method: 'item/commandExecution/requestApproval',
+      params: { itemId: 'exec-asked', command: 'pnpm test' },
+    })
+    await settle()
+    h.server.say({
+      method: 'item/completed',
+      params: { item: { id: 'exec-asked', type: 'commandExecution', command: 'pnpm test' } },
+    })
+    await settle()
+    expect(h.autoApproved).not.toContain('Bash')
   })
 
   it('ends the turn without ending the session — a session is a dialogue', async () => {
@@ -263,6 +340,18 @@ describe('the Codex adapter — what reaches the phone', () => {
     h.server.say({ method: 'error', params: { message: 'rate limited' } })
     await settle()
     expect(h.events.some((e) => e.type === 'text' && (e as { text: string }).text.includes('rate limited'))).toBe(true)
+  })
+
+  it('accepts current nested turn and error notification shapes', async () => {
+    const h = start()
+    await handshake(h)
+    h.server.say({ method: 'turn/started', params: { turn: { id: 'turn-current' } } })
+    h.server.say({ method: 'error', params: { error: { message: 'nested failure' } } })
+    await settle()
+    expect(h.events.some((e) => e.type === 'text' && (e as { text: string }).text === 'nested failure')).toBe(true)
+    void h.handle.interrupt()
+    await new Promise((r) => setTimeout(r, 300))
+    expect((h.server.sentMethod('turn/interrupt')?.params as { turnId?: string })?.turnId).toBe('turn-current')
   })
 })
 

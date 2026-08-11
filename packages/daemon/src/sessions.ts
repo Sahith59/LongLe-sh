@@ -179,7 +179,7 @@ export class SessionManager {
           this.markStatus(row.session_id, 'waiting')
           this.emit(row.session_id, {
             type: 'session.status',
-            payload: { status: 'waiting', detail: 'interrupted by a daemon restart' },
+            payload: { status: 'waiting', live: false, detail: 'interrupted by a daemon restart' },
           })
         }
       } else {
@@ -194,7 +194,21 @@ export class SessionManager {
       }
     }
     // A crashed daemon takes its agents with it; anything still pending can never be answered.
-    this.orphansClosed = this.approvals.closeOrphans('Daemon restarted before this was answered').length
+    // Closing SQLite alone leaves any connected/reconnecting phone holding an immortal card,
+    // because the UI converges from events. Close the record and the screen together.
+    const orphans = this.approvals.closeOrphans('Daemon restarted before this was answered')
+    this.orphansClosed = orphans.length
+    for (const orphan of orphans) {
+      this.emit(orphan.sessionId, {
+        type: 'approval.decided',
+        payload: {
+          approvalId: orphan.approvalId,
+          verdict: 'deny',
+          decidedBy: 'system:orphaned',
+          reply: 'Daemon restarted before this was answered.',
+        },
+      })
+    }
 
   }
 
@@ -351,6 +365,7 @@ export class SessionManager {
    */
   adoptEndedSession(input: {
     sessionId: string
+    agent: AgentKind
     cwd: string
     title: string
     origin: SessionOrigin
@@ -360,14 +375,24 @@ export class SessionManager {
     this.approvals.rawDb
       .prepare(
         `INSERT INTO sessions (session_id, agent, cwd, origin, title, status, started_at, agent_session_id)
-         VALUES (?, 'claude', ?, ?, ?, 'ended', ?, ?)
+         VALUES (?, ?, ?, ?, ?, 'ended', ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET
            status = 'ended',
+           agent = excluded.agent,
+           origin = excluded.origin,
            cwd = excluded.cwd,
            title = excluded.title,
            agent_session_id = excluded.agent_session_id`,
       )
-      .run(input.sessionId, input.cwd, input.origin, input.title, input.startedAt, input.agentSessionId)
+      .run(
+        input.sessionId,
+        input.agent,
+        input.cwd,
+        input.origin,
+        input.title,
+        input.startedAt,
+        input.agentSessionId,
+      )
   }
 
   private persistSession(summary: SessionSummary): void {
@@ -481,7 +506,10 @@ export class SessionManager {
     this.audit(actor, 'session.resume', sessionId)
     this.supersede(sessionId)
     this.markStatus(sessionId, 'waiting')
-    this.emit(sessionId, { type: 'session.status', payload: { status: 'waiting', detail: 'reopened' } })
+    this.emit(sessionId, {
+      type: 'session.status',
+      payload: { status: 'waiting', live: false, detail: 'reopened' },
+    })
     return true
   }
 
@@ -500,7 +528,7 @@ export class SessionManager {
     session.status = 'running'
     this.markStatus(sessionId, 'running')
     this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${trimmed}\n` } })
-    this.emit(sessionId, { type: 'session.status', payload: { status: 'running' } })
+    this.emit(sessionId, { type: 'session.status', payload: { status: 'running', live: true } })
     session.handle.sendMessage(trimmed)
     return true
   }
@@ -556,7 +584,7 @@ export class SessionManager {
     }
     this.markStatus(sessionId, 'running')
     this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${text}\n` } })
-    this.emit(sessionId, { type: 'session.status', payload: { status: 'running' } })
+    this.emit(sessionId, { type: 'session.status', payload: { status: 'running', live: true } })
     session.done = this.consume(session)
     this.sessions.set(sessionId, session)
     this.claimed.add(sessionId)
@@ -667,7 +695,18 @@ export class SessionManager {
 
   private releasePending(session: LiveSession, message: string): void {
     for (const [approvalId, resolve] of session.waiting) {
-      this.approvals.decide(approvalId, 'denied', 'system:session-ended', message)
+      const decided = this.approvals.decide(approvalId, 'denied', 'system:session-ended', message)
+      if (decided) {
+        this.emit(session.sessionId, {
+          type: 'approval.decided',
+          payload: {
+            approvalId,
+            verdict: 'deny',
+            decidedBy: 'system:session-ended',
+            reply: message,
+          },
+        })
+      }
       resolve({ behavior: 'deny', message })
     }
     session.waiting.clear()
@@ -773,7 +812,10 @@ export class SessionManager {
           // The agent replied and is now waiting on the human; the conversation continues.
           session.status = 'waiting'
           this.markStatus(session.sessionId, 'waiting')
-          this.emit(session.sessionId, { type: 'session.status', payload: { status: 'waiting' } })
+          this.emit(session.sessionId, {
+            type: 'session.status',
+            payload: { status: 'waiting', live: true },
+          })
           continue
         }
         this.emit(session.sessionId, {

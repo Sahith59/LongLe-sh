@@ -27,10 +27,10 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function run(stdin: unknown): Promise<{ stdout: string; code: number | null }> {
+function run(stdin: unknown, env: Record<string, string> = {}): Promise<{ stdout: string; code: number | null }> {
   return new Promise((done) => {
     const child = spawn(process.execPath, [SCRIPT], {
-      env: { ...process.env, LONGLEASH_DATA: dir, HOME: dir },
+      env: { ...process.env, LONGLEASH_DATA: dir, HOME: dir, LONGLEASH_LOCAL_HANDOFF: 'off', ...env },
     })
     let stdout = ''
     child.stdout.on('data', (c: Buffer) => {
@@ -112,6 +112,13 @@ describe('the Codex hook — the terminal must never notice a problem', () => {
     expect(code).toBe(0)
   })
 
+  it('does not mirror a LongLeash-managed app-server session as an external duplicate', async () => {
+    let called = false
+    await listenOn((_b, respond) => { called = true; respond(200, {}) })
+    await run({ hook_event_name: 'SessionStart', session_id: 'managed' }, { LONGLEASH_MANAGED: '1' })
+    expect(called).toBe(false)
+  })
+
   it('stays silent when the daemon answers "ask" — the decision returns to Codex', async () => {
     await listenOn((_b, respond) => respond(200, { decision: 'ask', reason: 'nobody home' }))
     const { stdout } = await run(permissionRequest())
@@ -170,8 +177,7 @@ describe('the Codex hook — what it tells the daemon', () => {
     expect(sent.ll_agent).toBe('codex')
     expect(typeof sent.ll_dedupe).toBe('string')
     expect(sent.ll_dedupe.startsWith('turn-1:')).toBe(true)
-    // Arrives under the daemon's existing terminal-permission name.
-    expect(sent.hook_event_name).toBe('PreToolUse')
+    expect(sent.hook_event_name).toBe('PermissionRequest')
     expect(sent.tool_name).toBe('Bash')
     expect(sent.permission_mode).toBe('default')
   })

@@ -23,7 +23,10 @@ export function SessionCard({
   onOpen: () => void
 }) {
   const preview = session.output.trim().slice(-180)
-  const past = session.status === 'ended' || session.status === 'errored'
+  const past = session.status === 'ended' || session.status === 'errored' || !session.live
+  const status = !session.live && session.status === 'waiting'
+    ? 'ready to reopen'
+    : (STATUS_LABEL[session.status] ?? session.status)
   const still = useReducedMotion()
 
   return (
@@ -47,15 +50,15 @@ export function SessionCard({
       </button>
 
       <p className="meta">
-        <span className="agent">{AGENT_LABEL[session.agent] ?? session.agent}</span>
+        <span className="sessiontag">{AGENT_LABEL[session.agent] ?? session.agent}</span>
         <span className="dot" aria-hidden="true">·</span>
         <span className={`state ${session.status}`}>
-          {STATUS_LABEL[session.status] ?? session.status}
+          {status}
         </span>
         <span className="dot" aria-hidden="true">·</span>
         <PathChip text={session.cwd} kind="folder" max={26} expandable />
         <span className="dot" aria-hidden="true">·</span>
-        <span>{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
+        <span className="sessiontag">{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
       </p>
 
       {pending > 0 ? (

@@ -826,9 +826,10 @@ describe('take over: the baton passes from terminal to phone', () => {
       onEnded: (info) =>
         sessions.adoptEndedSession({
           sessionId: info.sessionId,
+          agent: info.agent,
           cwd: info.cwd,
           title: info.title,
-          origin: 'terminal',
+          origin: info.surface,
           startedAt: info.startedAt,
           agentSessionId: info.claudeSessionId,
         }),

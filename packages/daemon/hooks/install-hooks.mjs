@@ -14,12 +14,19 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const HOOK_COMMAND = `node ${resolve(here, 'longleash-hook.mjs')}`
 const SETTINGS = join(homedir(), '.claude', 'settings.json')
-// PreToolUse may hold the terminal while a phone answers; the others must be instant.
-const EVENTS = [
-  { name: 'SessionStart', timeout: 5 },
-  { name: 'PreToolUse', timeout: 180 },
-  { name: 'SessionEnd', timeout: 5 },
-]
+const EVENTS = {
+  SessionStart: [{ matcher: '*', command: HOOK_COMMAND, timeout: 5 }],
+  // PermissionRequest means Claude Code itself was about to render a permission dialog.
+  PermissionRequest: [{ matcher: '*', command: HOOK_COMMAND, timeout: 180 }],
+  PreToolUse: [
+    // AskUserQuestion is not a permission, so PermissionRequest never sees it.
+    { matcher: 'AskUserQuestion', command: HOOK_COMMAND, timeout: 180 },
+    // An observer makes already-running/auto-mode VS Code sessions discoverable without
+    // ever returning a decision or holding up the tool call.
+    { matcher: '*', command: `${HOOK_COMMAND} --observe`, timeout: 5, async: true },
+  ],
+  SessionEnd: [{ matcher: '*', command: HOOK_COMMAND, timeout: 5 }],
+}
 
 const removing = process.argv.includes('--remove')
 
@@ -41,11 +48,17 @@ if (existsSync(SETTINGS)) {
 settings.hooks ??= {}
 const ours = (entry) => entry?.hooks?.some((h) => String(h.command ?? '').includes('longleash-hook'))
 
-for (const { name, timeout } of EVENTS) {
+for (const [name, configs] of Object.entries(EVENTS)) {
   const list = Array.isArray(settings.hooks[name]) ? settings.hooks[name] : []
   const kept = list.filter((entry) => !ours(entry))
   if (!removing) {
-    kept.push({ matcher: '*', hooks: [{ type: 'command', command: HOOK_COMMAND, timeout }] })
+    for (const config of configs) {
+      const { matcher, command, timeout, async } = config
+      kept.push({
+        matcher,
+        hooks: [{ type: 'command', command, timeout, ...(async === true ? { async: true } : {}) }],
+      })
+    }
   }
   if (kept.length > 0) settings.hooks[name] = kept
   else delete settings.hooks[name]
@@ -57,9 +70,8 @@ writeFileSync(SETTINGS, JSON.stringify(settings, null, 2) + '\n')
 if (removing) {
   console.log('LongLeash hooks removed. Terminal sessions are invisible to the phone again.')
 } else {
-  console.log('LongLeash hooks installed for SessionStart, PreToolUse, SessionEnd.')
-  console.log('New `claude` sessions in a terminal will now appear on your phone,')
-  console.log('and risky tools will wait up to two minutes for your answer there.')
-  console.log('If no phone responds, the terminal prompt takes over exactly as before.')
-  console.log('\nAlready-running claude sessions pick this up on their next restart.')
+  console.log('LongLeash hooks installed for lifecycle, permissions, and questions.')
+  console.log('Terminal and VS Code sessions appear on your phone, including sessions')
+  console.log('that were already running when LongLeash started.')
+  console.log('At a laptop prompt, press L to return immediately to the native prompt.')
 }

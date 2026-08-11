@@ -1,4 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { existsSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type {
   AgentFactory,
   AgentRunHandle,
@@ -33,6 +36,16 @@ import type {
  */
 const INTERRUPT_GRACE_MS = 250
 
+/** Managed app-server threads broker their own lifecycle and approvals; user hooks are external-only. */
+const MANAGED_THREAD_CONFIG = {
+  hooks: {
+    SessionStart: [],
+    SessionEnd: [],
+    PreToolUse: [],
+    PermissionRequest: [],
+  },
+}
+
 /** Everything the server can ask us that means "a human should decide this". */
 const APPROVAL_METHODS = new Set([
   'item/commandExecution/requestApproval',
@@ -48,10 +61,9 @@ const APPROVAL_METHODS = new Set([
  * visible cause.
  */
 const DECISION_WORDS: Record<string, { allow: string; deny: string }> = {
-  // The `item/*` family answers with CommandExecution/FileChange/Permissions ApprovalDecision.
+  // The command/file families answer with ApprovalDecision.
   'item/commandExecution/requestApproval': { allow: 'accept', deny: 'decline' },
   'item/fileChange/requestApproval': { allow: 'accept', deny: 'decline' },
-  'item/permissions/requestApproval': { allow: 'accept', deny: 'decline' },
   // The older pair answers with `ReviewDecision`, whose refusal is spelled `abort` —
   // *"User has denied this command and the agent should not do anything"*. Not `decline`,
   // and not `denied`: both are rejected and the turn stalls with nothing to see.
@@ -69,6 +81,8 @@ export interface CodexAdapterOptions {
   approvalPolicy?: 'untrusted' | 'on-request' | 'never'
   sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access'
   log?: (line: string) => void
+  /** Test seam; production uses a hook-free home under LongLeash's data directory. */
+  managedHome?: string
 }
 
 interface Pending {
@@ -90,6 +104,11 @@ class CodexRun {
   private buffer = ''
   private threadId: string | null = null
   private turnId: string | null = null
+  /** Text already emitted for each agent-message item, used to dedupe authoritative completion. */
+  private readonly agentMessages = new Map<string, string>()
+  /** Tool items wait until completion before they can honestly be called auto-approved. */
+  private readonly toolItems = new Map<string, { name: string; input: unknown }>()
+  private readonly approvalItems = new Set<string>()
   private readonly log: (line: string) => void
 
   constructor(
@@ -99,7 +118,18 @@ class CodexRun {
     this.log = opts.log ?? (() => {})
     this.child =
       opts.spawnServer?.() ??
-      (spawn('codex', ['app-server'], { stdio: ['pipe', 'pipe', 'pipe'] }) as ChildProcessWithoutNullStreams)
+      (spawn('codex', ['app-server'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        // Managed sessions have their own structured approval broker. User hooks are for
+        // sessions the person starts in Codex/VS Code; loading them here can gate the same
+        // action twice, and an older installed LongLeash hook does not know the managed
+        // sentinel. The config override makes this process deterministic across upgrades.
+        env: {
+          ...process.env,
+          LONGLEASH_MANAGED: '1',
+          CODEX_HOME: managedCodexHome(opts.managedHome),
+        },
+      }) as ChildProcessWithoutNullStreams)
 
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (chunk: string) => this.onData(chunk))
@@ -154,11 +184,18 @@ class CodexRun {
         this.request.resume === undefined ? 'thread/start' : 'thread/resume',
         this.request.resume === undefined
           ? {
+            cwd: this.request.cwd,
+            approvalPolicy: this.opts.approvalPolicy ?? 'untrusted',
+            sandbox: this.opts.sandbox ?? 'workspace-write',
+            config: MANAGED_THREAD_CONFIG,
+          }
+          : {
+              threadId: this.request.resume,
               cwd: this.request.cwd,
               approvalPolicy: this.opts.approvalPolicy ?? 'untrusted',
               sandbox: this.opts.sandbox ?? 'workspace-write',
-            }
-          : { threadId: this.request.resume, cwd: this.request.cwd },
+              config: MANAGED_THREAD_CONFIG,
+            },
       )) as { thread?: { id?: string } }
 
       const id = started?.thread?.id
@@ -189,6 +226,9 @@ class CodexRun {
         type: 'text',
         text: `Codex refused the turn: ${error instanceof Error ? error.message : String(error)}`,
       })
+      // A failed turn/start has no turn/completed notification. Without this the UI keeps the
+      // session in a permanent "working" state after already showing the failure.
+      this.emit({ type: 'turn-end' })
     }
   }
 
@@ -208,6 +248,7 @@ class CodexRun {
       } catch {
         continue // a malformed line must never take the session down
       }
+      this.log(`codex <- ${line}`)
       this.dispatch(message)
     }
   }
@@ -251,7 +292,11 @@ class CodexRun {
   private onNotification(method: string, params: Record<string, unknown>): void {
     switch (method) {
       case 'item/agentMessage/delta': {
-        if (typeof params.delta === 'string') this.emit({ type: 'text', text: params.delta })
+        if (typeof params.delta === 'string') {
+          const id = typeof params.itemId === 'string' ? params.itemId : '__current__'
+          this.agentMessages.set(id, (this.agentMessages.get(id) ?? '') + params.delta)
+          this.emit({ type: 'text', text: params.delta })
+        }
         return
       }
       case 'item/reasoning/summaryTextDelta':
@@ -263,16 +308,60 @@ class CodexRun {
         const summary = describeItem(params.item)
         if (summary !== null) {
           this.emit({ type: 'tool', text: summary })
-          // Tools Codex ran without asking still belong in the activity feed.
-          this.request.onAutoApprovedTool(summary.split(':')[0] ?? 'tool', params.item)
+          const item = params.item as Record<string, unknown> | undefined
+          if (typeof item?.id === 'string') {
+            this.toolItems.set(item.id, { name: summary.split(':')[0] ?? 'tool', input: item })
+          }
+        }
+        return
+      }
+      case 'item/completed': {
+        const item = params.item as Record<string, unknown> | undefined
+        const kind = item?.type ?? item?.itemType
+        if (kind === 'agentMessage' && typeof item?.text === 'string') {
+          const id = typeof item.id === 'string'
+            ? item.id
+            : (typeof params.itemId === 'string' ? params.itemId : '__current__')
+          const streamed = this.agentMessages.get(id) ?? this.agentMessages.get('__current__') ?? ''
+          // item/completed is authoritative. Some app-server builds omit deltas entirely; emit
+          // the full final text then. When deltas did arrive, append only the missing suffix.
+          if (streamed === '') this.emit({ type: 'text', text: item.text })
+          else if (item.text.startsWith(streamed) && item.text.length > streamed.length) {
+            this.emit({ type: 'text', text: item.text.slice(streamed.length) })
+          }
+          this.agentMessages.delete(id)
+          this.agentMessages.delete('__current__')
+          return
+        }
+        const id = typeof item?.id === 'string'
+          ? item.id
+          : (typeof params.itemId === 'string' ? params.itemId : null)
+        if (id !== null) {
+          const tool = this.toolItems.get(id)
+          // `item/started` comes before the approval request. Reporting it there called a
+          // command "auto-approved" while the phone was visibly being asked about it.
+          if (tool !== undefined && !this.approvalItems.has(id)) {
+            this.request.onAutoApprovedTool(tool.name, tool.input)
+          }
+          this.toolItems.delete(id)
+          this.approvalItems.delete(id)
         }
         return
       }
       case 'turn/started': {
-        if (typeof params.turnId === 'string') this.turnId = params.turnId
+        const turn = params.turn as Record<string, unknown> | undefined
+        const id = typeof turn?.id === 'string' ? turn.id : params.turnId
+        if (typeof id === 'string') this.turnId = id
         return
       }
       case 'turn/completed': {
+        const turn = params.turn as Record<string, unknown> | undefined
+        const status = turn?.status
+        const error = turn?.error as Record<string, unknown> | undefined
+        if (status === 'failed') {
+          const detail = typeof error?.message === 'string' ? error.message : 'Codex turn failed'
+          this.emit({ type: 'text', text: detail })
+        }
         this.turnId = null
         // The turn ended but the conversation has not: the session stays alive for a reply.
         this.emit({ type: 'turn-end' })
@@ -284,7 +373,10 @@ class CodexRun {
         return
       }
       case 'error': {
-        const text = typeof params.message === 'string' ? params.message : 'Codex reported an error'
+        const error = params.error as Record<string, unknown> | undefined
+        const text = typeof error?.message === 'string'
+          ? error.message
+          : (typeof params.message === 'string' ? params.message : 'Codex reported an error')
         this.emit({ type: 'text', text })
         return
       }
@@ -295,7 +387,7 @@ class CodexRun {
 
   /** Route a Codex approval to whoever is holding the phone, then answer in Codex's own words. */
   private async askHuman(method: string, id: number, params: Record<string, unknown>): Promise<void> {
-    const words = DECISION_WORDS[method] ?? { allow: 'accept', deny: 'decline' }
+    if (typeof params.itemId === 'string') this.approvalItems.add(params.itemId)
     let decision: PermissionDecision
     try {
       decision = await this.request.canUseTool(toolNameFor(method, params), params)
@@ -303,6 +395,12 @@ class CodexRun {
       // Never leave Codex waiting forever on a broker that failed.
       decision = { behavior: 'deny', message: 'LongLeash could not reach anyone to decide.' }
     }
+    if (method === 'item/permissions/requestApproval') {
+      // This request is not an ApprovalDecision. Codex expects the granted subset itself.
+      this.respond(id, { permissions: decision.behavior === 'allow' ? (params.permissions ?? {}) : {} })
+      return
+    }
+    const words = DECISION_WORDS[method] ?? { allow: 'accept', deny: 'decline' }
     this.respond(id, { decision: decision.behavior === 'allow' ? words.allow : words.deny })
   }
 
@@ -332,7 +430,9 @@ class CodexRun {
   private write(message: unknown): void {
     if (this.finished) return
     try {
-      this.child.stdin.write(`${JSON.stringify(message)}\n`)
+      const line = JSON.stringify(message)
+      this.log(`codex -> ${line}`)
+      this.child.stdin.write(`${line}\n`)
     } catch {
       this.finish()
     }
@@ -367,6 +467,39 @@ class CodexRun {
       })
     }
   }
+}
+
+/**
+ * Use Codex's real auth/history/cache, but deliberately omit config.toml. User hooks are how
+ * terminal and VS Code sessions enter LongLeash; running them inside the app-server session
+ * gates the same action twice. A version-skewed old hook can then wait for the old daemon before
+ * app-server even emits its own approval request — the phone sees nothing and Codex freezes.
+ *
+ * Symlinks keep session storage in the user's normal Codex home, so `codex resume <id>` still
+ * works at the laptop. Only the configuration layer is isolated.
+ */
+function managedCodexHome(explicit?: string): string {
+  const userHome = process.env.CODEX_HOME ?? join(homedir(), '.codex')
+  const dataHome = process.env.LONGLEASH_DATA ?? join(homedir(), '.longleash')
+  const managed = explicit ?? join(dataHome, 'codex-managed')
+  if (managed === userHome) return userHome
+
+  mkdirSync(managed, { recursive: true, mode: 0o700 })
+  if (!existsSync(userHome)) return managed
+  for (const entry of readdirSync(userHome, { withFileTypes: true })) {
+    if (entry.name === 'config.toml') continue
+    const destination = join(managed, entry.name)
+    if (existsSync(destination)) continue
+    try {
+      symlinkSync(join(userHome, entry.name), destination, entry.isDirectory() ? 'dir' : 'file')
+    } catch {
+      // Another concurrent session may have made the same link; either way, never block Codex.
+    }
+  }
+  // Codex expects a temp directory beneath its home on some builds. If the source home was
+  // unusually empty, give it a private one rather than falling back to a shared path.
+  mkdirSync(join(managed, 'tmp'), { recursive: true, mode: 0o700 })
+  return managed
 }
 
 /**

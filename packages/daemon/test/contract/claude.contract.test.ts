@@ -158,7 +158,7 @@ suite('contract: real Claude through the adapter', () => {
     const { sessionId } = await ctx.manager.startSession({
       agent: 'claude',
       cwd: ctx.root,
-      prompt: 'Create a file named approved.txt containing the word YES. Then reply DONE.',
+      prompt: `Create the file ${join(ctx.root, 'approved.txt')} containing the word YES. Then reply DONE.`,
     })
 
     await until(() => ctx.manager.listPendingApprovals().some((a) => a.toolName === 'Write'))
@@ -189,7 +189,7 @@ suite('contract: real Claude through the adapter', () => {
     const { sessionId } = await ctx.manager.startSession({
       agent: 'claude',
       cwd: ctx.root,
-      prompt: 'Create a file named denied.txt containing NO. If you cannot, explain briefly.',
+      prompt: `Create the file ${join(ctx.root, 'denied.txt')} containing NO. If you cannot, explain briefly.`,
     })
 
     const stop = autoRespond(ctx, 'deny', 'Do not create any files.')

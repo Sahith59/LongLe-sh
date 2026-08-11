@@ -529,6 +529,7 @@ describe('hardening: stop, limits, origin, audit (audit A1-A6)', () => {
     await h.manager.stopSession(sessionId, 'dev_phone')
     expect(await pending).toMatchObject({ behavior: 'deny' })
     expect(h.manager.listPendingApprovals()).toHaveLength(0)
+    expect(eventsOf(h.log, sessionId).filter((e) => e.type === 'approval.decided')).toHaveLength(1)
   })
 
   it('stopping an unknown or already-finished session is a no-op, not a crash', async () => {
@@ -1102,6 +1103,33 @@ describe('restart recovery', () => {
     expect(approvals.listPending()).toHaveLength(0)
     approvals.close()
   })
+
+  it('announces every orphaned approval as decided during startup reconciliation', () => {
+    const approvals = new ApprovalStore(':memory:', { now: () => clock })
+    const log = new EventLog(':memory:')
+    approvals.create({
+      approvalId: 'apr_orphan_event',
+      sessionId: 'ses_old',
+      toolName: 'Bash',
+      inputSummary: 'Bash: old command',
+      expiresAt: clock + 60_000,
+    })
+    const manager = new SessionManager({
+      eventLog: log,
+      approvals,
+      allowedRoots: [tmpdir()],
+      agentFactories: {},
+    })
+    const decided = eventsOf(log, 'ses_old').find((event) => event.type === 'approval.decided')
+    expect(manager.orphansClosed).toBe(1)
+    expect(decided?.payload).toMatchObject({
+      approvalId: 'apr_orphan_event',
+      verdict: 'deny',
+      decidedBy: 'system:orphaned',
+    })
+    approvals.close()
+    log.close()
+  })
 })
 
 describe('a finishing agent must not speak for a conversation that moved on', () => {
@@ -1135,4 +1163,3 @@ describe('a finishing agent must not speak for a conversation that moved on', ()
     expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)).toBeDefined()
   })
 })
-

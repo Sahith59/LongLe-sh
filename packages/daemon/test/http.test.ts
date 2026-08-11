@@ -56,7 +56,8 @@ describe('health endpoint', () => {
 
   it('leaks nothing about the machine beyond liveness', async () => {
     const body = (await (await fetch(`${h.base}/health`)).json()) as Record<string, unknown>
-    expect(Object.keys(body).sort()).toEqual(['name', 'ok', 'protocol'])
+    expect(Object.keys(body).sort()).toEqual(['build', 'name', 'ok', 'protocol'])
+    expect(body.build).toBeNull()
   })
 })
 

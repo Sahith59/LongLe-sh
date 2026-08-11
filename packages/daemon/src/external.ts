@@ -27,6 +27,10 @@ import type { SessionRegistry } from './session-registry.js'
 export interface HookDecision {
   decision: 'allow' | 'deny' | 'ask'
   reason: string
+  /** AskUserQuestion answers are returned as updatedInput by the Claude hook. */
+  answers?: Record<string, string>
+  /** Optional free-form words typed beside a structured question answer. */
+  additionalContext?: string
 }
 
 /**
@@ -93,6 +97,8 @@ export interface ExternalSessionsOptions {
   onEnded?: (info: {
     sessionId: string
     claudeSessionId: string
+    agent: TerminalAgent
+    surface: Surface
     cwd: string
     title: string
     startedAt: number
@@ -174,37 +180,6 @@ export function readQuestions(toolName: string, input: unknown): AskedQuestion[]
     if (result.success) parsed.push(result.data)
   }
   return parsed.length > 0 ? parsed : null
-}
-
-/**
- * What Claude receives once a question has been answered on the phone. A PreToolUse hook
- * cannot supply a tool's result — it can only allow, deny, or modify input — so the
- * answer travels back as the denial reason. Phrased to be unmistakable: the tool did not
- * run, but the question HAS been answered and must not be asked again.
- */
-export function formatAnswers(
-  questions: AskedQuestion[],
-  answers: Record<string, string>,
-  response?: string,
-): string {
-  const lines: string[] = []
-  for (const q of questions) {
-    const picked = answers[q.question]
-    if (picked) lines.push(`\u2022 ${q.question} \u2192 ${picked}`)
-  }
-  if (response !== undefined && response.trim() !== '') {
-    lines.push(`\u2022 They also said: ${response.trim()}`)
-  }
-  return [
-    // Opens with "Not an error" on purpose: Claude Code paints every intercepted tool
-    // red under an "Error:" prefix, so the first words a person reads in their terminal
-    // should contradict that. The model reads the same sentence and treats it as a reply.
-    'Not an error — answered from your phone via LongLeash.',
-    '',
-    ...lines,
-    '',
-    'Continue with this answer; do not ask the question again.',
-  ].join('\n')
 }
 
 function summarize(toolName: string, input: unknown): string {
@@ -295,7 +270,7 @@ export class ExternalSessions {
       const alive = row.pid !== null && this.isClaudeProcess(row.pid)
       if (!alive) {
         this.registry.forget(row.agentSessionId)
-        this.emit(row.sessionId, { type: 'session.status', payload: { status: 'ended' } })
+        this.emit(row.sessionId, { type: 'session.status', payload: { status: 'ended', live: false } })
         this.emit(row.sessionId, {
           type: 'session.ended',
           payload: { reason: 'this session is no longer running', resumable: false },
@@ -323,7 +298,9 @@ export class ExternalSessions {
       this.sessions.set(row.agentSessionId, session)
       session.timer = setInterval(() => this.drain(session), this.pollMs)
       session.timer.unref?.()
-      this.emit(session.sessionId, { type: 'session.status', payload: { status: 'running' } })
+      this.emit(session.sessionId, {
+        type: 'session.status', payload: { status: 'running', live: true },
+      })
     }
   }
 
@@ -419,7 +396,7 @@ export class ExternalSessions {
       session.permissionMode = permissionMode
       this.emit(session.sessionId, {
         type: 'session.status',
-        payload: { status: session.status, permissionMode },
+        payload: { status: session.status, live: true, permissionMode },
       })
     }
 
@@ -604,11 +581,16 @@ export class ExternalSessions {
     if (waiter) {
       this.waiting.delete(approvalId)
       clearTimeout(waiter.timer)
-      // A question is answered, never "approved": the tool is refused on purpose and the
-      // chosen options travel back as the reason, which is the only channel a PreToolUse
-      // hook has for saying something to the model.
+      // AskUserQuestion accepts answers by rewriting its input. Returning allow + answers
+      // lets the hook use that native path, so the terminal no longer paints a valid phone
+      // answer as a red tool error.
       if (questions !== undefined && answers !== undefined) {
-        waiter.resolve({ decision: 'deny', reason: formatAnswers(questions, answers, reply) })
+        waiter.resolve({
+          decision: 'allow',
+          reason: reply?.trim() ? `Answered from your phone: ${reply.trim()}` : 'Answered from your phone.',
+          answers,
+          ...(reply?.trim() ? { additionalContext: `The user added: ${reply.trim()}` } : {}),
+        })
       } else if (questions !== undefined) {
         // The person dismissed the question instead of answering it.
         waiter.resolve({
@@ -636,7 +618,7 @@ export class ExternalSessions {
     session.gate = gate
     this.emit(session.sessionId, {
       type: 'session.status',
-      payload: { status: session.status, gate },
+      payload: { status: session.status, live: true, gate },
     })
     return true
   }
@@ -666,12 +648,14 @@ export class ExternalSessions {
     this.onEnded?.({
       sessionId: session.sessionId,
       claudeSessionId,
+      agent: session.agent,
+      surface: session.surface,
       cwd: session.cwd,
       title: session.title,
       startedAt: session.startedAt,
     })
 
-    this.emit(session.sessionId, { type: 'session.status', payload: { status: 'ended' } })
+    this.emit(session.sessionId, { type: 'session.status', payload: { status: 'ended', live: false } })
     this.emit(session.sessionId, {
       type: 'session.ended',
       payload: { reason: 'terminal session ended', resumable: adopted, resumeId: claudeSessionId },
@@ -747,7 +731,7 @@ export class ExternalSessions {
      * again on the next start.
      */
     for (const [, session] of this.sessions) {
-      this.emit(session.sessionId, { type: 'session.status', payload: { status: 'ended' } })
+      this.emit(session.sessionId, { type: 'session.status', payload: { status: 'ended', live: false } })
       this.emit(session.sessionId, {
         type: 'session.ended',
         payload: { reason: 'LongLeash stopped watching', resumable: false },
@@ -813,7 +797,7 @@ export class ExternalSessions {
         },
       })
     }
-    this.emit(sessionId, { type: 'session.status', payload: { status: 'running' } })
+    this.emit(sessionId, { type: 'session.status', payload: { status: 'running', live: true } })
 
     session.timer = setInterval(() => this.drain(session), this.pollMs)
     session.timer.unref?.()
@@ -874,7 +858,7 @@ export class ExternalSessions {
         session.title = title
         this.emit(session.sessionId, {
           type: 'session.status',
-          payload: { status: session.status, title },
+          payload: { status: session.status, live: true, title },
         })
         break
       }
@@ -908,6 +892,8 @@ const MACHINE_TAGS = [
   'command-message',
   'command-args',
   'command-name',
+  'recommended_plugins',
+  'environment_context',
 ]
 
 /** A whole block of `<tag>…</tag>`, with nothing else around it. */
@@ -988,13 +974,52 @@ export function transcriptDeltas(line: unknown): AppendInput[] {
   if (!line || typeof line !== 'object') return []
   const record = line as Record<string, unknown>
   if (record.isMeta === true) return []
-  const message = record.message as Record<string, unknown> | undefined
-  if (!message) return []
 
   const out: AppendInput[] = []
   const push = (kind: 'text' | 'tool' | 'thinking' | 'user', text: string) => {
     if (text.trim() !== '') out.push({ type: 'stream.delta', payload: { kind, text } })
   }
+
+  // Codex CLI rollout JSONL. `response_item` is the durable conversation record;
+  // `event_msg.agent_message` repeats the same assistant text and must be ignored or every
+  // answer appears twice. Developer/system messages are intentionally not rendered as speech.
+  if (record.type === 'response_item') {
+    const payload = record.payload as Record<string, unknown> | undefined
+    if (!payload) return out
+    if (payload.type === 'message') {
+      const role = payload.role
+      if (role !== 'user' && role !== 'assistant') return out
+      const content = payload.content
+      if (!Array.isArray(content)) return out
+      for (const block of content) {
+        if (!block || typeof block !== 'object') continue
+        const item = block as Record<string, unknown>
+        if (role === 'user' && item.type === 'input_text' && typeof item.text === 'string') {
+          push('user', humanSaid(item.text))
+        } else if (
+          role === 'assistant' &&
+          item.type === 'output_text' &&
+          typeof item.text === 'string'
+        ) {
+          push('text', item.text)
+        }
+      }
+      return out
+    }
+    if (payload.type === 'custom_tool_call' || payload.type === 'function_call') {
+      const name = typeof payload.name === 'string' ? payload.name : 'Tool'
+      push('tool', name)
+      return out
+    }
+    if (payload.type === 'local_shell_call') {
+      push('tool', 'Bash')
+      return out
+    }
+    return out
+  }
+
+  const message = record.message as Record<string, unknown> | undefined
+  if (!message) return out
 
   if (record.type === 'user') {
     const content = message.content
@@ -1023,4 +1048,3 @@ export function transcriptDeltas(line: unknown): AppendInput[] {
   }
   return out
 }
-

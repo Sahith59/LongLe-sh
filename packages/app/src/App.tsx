@@ -48,10 +48,11 @@ import {
   listVariants,
   useKeyboardInset,
 } from './ui/primitives.js'
-import { MODE_LABEL, ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
+import { AGENT_LABEL, MODE_LABEL, ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
 import { PathChip } from './ui/PathChip.js'
 import { enablePush, pushPermission, syncPush } from './lib/push.js'
 import { QrScanner } from './ui/QrScanner.js'
+import { hasSessionLink, sessionFromSearch } from './lib/deep-link.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
@@ -67,7 +68,7 @@ export default function App() {
   const [openSessionId, setOpenSessionId] = useState<string | null>(
     // A cold start FROM a notification: the service worker put the session in the URL, so the
     // app opens on the thing that interrupted you instead of the home screen.
-    () => new URLSearchParams(window.location.search).get('s'),
+    () => sessionFromSearch(window.location.search),
   )
   const [sheetOpen, setSheetOpen] = useState(false)
   const [pushKey, setPushKey] = useState<string | null>(null)
@@ -95,7 +96,7 @@ export default function App() {
   // Once the deep link has been consumed, take it out of the address bar: a reload later
   // should show where you are, not reopen where a notification once sent you.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).has('s')) {
+    if (hasSessionLink(window.location.search)) {
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
@@ -280,7 +281,9 @@ export default function App() {
   const active = allSessions.filter(
     (s) => s.status === 'running' || (s.status === 'waiting' && s.live),
   )
-  const past = allSessions.filter((s) => s.status === 'ended' || s.status === 'errored')
+  const past = allSessions.filter(
+    (s) => s.status === 'ended' || s.status === 'errored' || !s.live,
+  )
   const openSession = openSessionId ? snapshot.sessions[openSessionId] : undefined
   const connected = state === 'connected'
 
@@ -655,9 +658,8 @@ export function ConsoleScreen({
         ) : null}
 
         <p className="foot">
-          Sessions you start here and `claude` sessions you start in a terminal both appear
-          (terminals need the LongLeash hook installed on the laptop). VS Code chat panels are
-          sealed and cannot be shown — that is a platform limit, not a coming feature.
+          Sessions started here, in a terminal, and in VS Code all appear after the agent's
+          first lifecycle event or tool call (the laptop hooks must be installed).
           Conversations started here survive daemon restarts: reply to any of them and the same
           agent picks up where it left off.
           <span className="buildtag mono">build {__BUILD__}</span>
@@ -714,10 +716,10 @@ export function DetailScreen({
   // Sending a message TAKES IT OVER: the daemon ends the terminal process (verified) and
   // continues the same conversation through the SDK, one driver at a time. What never
   // happens is faking keystrokes into a terminal.
-  const inTerminal = session.origin === 'terminal'
+  const externallyDriven = session.origin === 'terminal' || session.origin === 'vscode'
   // Typing wakes a dormant conversation, so the composer belongs to anything continuable —
   // not only to what happens to be running right now.
-  const live = session.status === 'running' || session.status === 'waiting'
+  const live = session.live && (session.status === 'running' || session.status === 'waiting')
   const canType = live || session.resumable
   const readoutRef = useRef<HTMLDivElement | null>(null)
   const followTail = useRef(true)
@@ -731,7 +733,7 @@ export function DetailScreen({
     const text = message.trim()
     if (text === '') return
     // Terminal sessions are continued by taking them over — never by typing into them.
-    if ((inTerminal ? onTakeOver : onSend)(text)) setMessage('')
+    if ((externallyDriven ? onTakeOver : onSend)(text)) setMessage('')
   }
 
   return (
@@ -762,10 +764,14 @@ export function DetailScreen({
           <p className="meta">
             <Led status={session.status} />
             <span className={`state ${session.status}`}>
-              {STATUS_LABEL[session.status] ?? session.status}
+              {!session.live && session.status === 'waiting'
+                ? 'ready to reopen'
+                : (STATUS_LABEL[session.status] ?? session.status)}
             </span>
             <span className="dot" aria-hidden="true">·</span>
-            <span>{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
+            <span className="sessiontag">{AGENT_LABEL[session.agent] ?? session.agent}</span>
+            <span className="dot" aria-hidden="true">·</span>
+            <span className="sessiontag">{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
             {session.permissionMode ? (
               <>
                 <span className="dot" aria-hidden="true">·</span>
@@ -777,7 +783,7 @@ export function DetailScreen({
             <span className="dot" aria-hidden="true">·</span>
             <PathChip text={session.cwd} kind="folder" max={30} expandable />
           </p>
-          {inTerminal && live ? (
+          {externallyDriven && live ? (
             <GateSwitch
               gate={session.gate ?? 'ask'}
               {...(session.permissionMode ? { permissionMode: session.permissionMode } : {})}
@@ -785,7 +791,7 @@ export function DetailScreen({
             />
           ) : null}
           {session.resumeId ? (
-            <ResumeInTerminal cwd={session.cwd} resumeId={session.resumeId} />
+            <ResumeInTerminal cwd={session.cwd} resumeId={session.resumeId} agent={session.agent} />
           ) : null}
         </div>
 
@@ -861,7 +867,7 @@ export function DetailScreen({
                 }
               }}
               placeholder={
-                inTerminal ? 'Take over and reply…' : live ? 'Reply…' : 'Carry this on…'
+                externallyDriven ? 'Take over and reply…' : live ? 'Reply…' : 'Carry this on…'
               }
               aria-label="Reply to this session"
             />
@@ -942,10 +948,11 @@ function GateSwitch({
  * folder and the id — this hands over the whole command rather than an id the
  * person then has to assemble something around.
  */
-function ResumeInTerminal({ cwd, resumeId }: { cwd: string; resumeId: string }) {
+function ResumeInTerminal({ cwd, resumeId, agent }: { cwd: string; resumeId: string; agent: string }) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const command = `cd ${JSON.stringify(cwd)} && claude --resume ${resumeId}`
+  const resume = agent === 'codex' ? `codex resume ${resumeId}` : `claude --resume ${resumeId}`
+  const command = `cd ${JSON.stringify(cwd)} && ${resume}`
 
   const copy = () => {
     void navigator.clipboard

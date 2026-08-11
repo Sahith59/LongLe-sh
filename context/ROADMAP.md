@@ -206,6 +206,13 @@ phone face-down in a drawer.
 
 Pinned by a test asserting the shipped defaults, so nobody quietly raises them back.
 
+**2026-08-11 correction:** shorter timeouts reduced the damage but did not restore control.
+The terminal still showed no native options while the phone wait was active. The hook now gives
+the laptop an explicit handoff (`L`) and aborts the remote wait immediately; ordinary
+permissions moved from guessed `PreToolUse` filtering to Claude's authoritative
+`PermissionRequest`. Already-running terminal/VS Code sessions are observed asynchronously and
+every real interaction repairs missed PID/surface metadata.
+
 ### Bug 6/7 — Stop refused forever *(root cause found in Sahith's own daemon log)* — **FIXED**
 
 The log showed `stop terminal ext_… -> refused`, over and over, for the same sessions. Two causes:
@@ -221,23 +228,25 @@ The safety property is unchanged and tested: a recycled pid is still never kille
 ### Bug 2 — notification opened the home screen — **FIXED**
 
 The payload carried `sessionId` all along; `notificationclick` ignored it. Now it postMessages a
-live app (no reload, no lost place) or cold-starts with `?s=<id>`, which the app consumes and
+live app (no reload, no lost place) or cold-starts with `?session=<id>`, which the app consumes and
 strips from the address bar.
 
-### Confirmed but unfixed
+### 2026-08-10 resolution of the remaining confirmed items
 
-- **Bug 2 — a notification does not open the thing it is about.** `sw.js` `notificationclick`
-  focuses any existing window or opens `/`. It never routes to the session or approval. Confirmed
-  by reading the handler.
-- **Bug 7 — sessions that ended long ago still appear as active.**
-- **Bug 8 — an approval from a closed session still shows.** `closeOrphans` IS called for
-  external sessions (`external.ts`), so the startup path is not the gap; something else keeps or
-  re-announces them. **Not yet diagnosed — do not guess.**
-- **Bug 6/7 — Stop does nothing; "connection refused" in the terminal; a Codex session shows
-  nothing when its turn finishes.** The daemon WAS listening at the advertised address when
-  checked, so "connection refused" is not a dead daemon. **Not yet diagnosed.**
-- **VS Code sessions never appear at all** — separate from the labelling work, which was only
-  ever about naming them once they arrive.
+- **Old sessions:** hello now carries process liveness separately from stored status. Historical
+  replay can restore a transcript/status but cannot manufacture a process, including for a row
+  completely absent from hello. Dormant sessions live under Earlier and say Reopen.
+- **Stale approvals:** orphan/session-end/Stop paths all emit or reconcile the terminal event that
+  removes the card; the phone also clears every approval owned by a non-live session seed.
+- **Codex completion and connection-refused symptoms:** current `response_item`, nested turn/error,
+  and authoritative `item/completed` shapes are implemented. A real approval contract found the
+  remaining freeze: managed app-server threads were also running the global external hook, so an
+  old hook could block before the native app-server request arrived. Managed threads now use a
+  hook-free config layer while sharing Codex auth/history. Real start, approval side effect, Stop,
+  and stop/reopen/context contracts pass.
+- **VS Code invisibility:** async lifecycle observers discover already-running IDE sessions on the
+  next tool call, and every permission/question repairs missed PID, agent, and surface metadata.
+  Cards and detail views stamp both the agent and TERMINAL/VS CODE origin.
 
 ### The process change that follows
 

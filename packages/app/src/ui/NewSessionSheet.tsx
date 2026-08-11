@@ -10,6 +10,29 @@ const DISMISS_VELOCITY = 500
 
 const AGENT_NAME = { claude: 'Claude', codex: 'Codex' } as const
 
+function AgentPicker({
+  agent,
+  onPick,
+}: {
+  agent: 'claude' | 'codex'
+  onPick: (agent: 'claude' | 'codex') => void
+}) {
+  return (
+    <div className="agentpick" role="group" aria-label="Which agent">
+      {(['claude', 'codex'] as const).map((option) => (
+        <Key
+          key={option}
+          className={agent === option ? 'picked' : ''}
+          aria-pressed={agent === option}
+          onClick={() => onPick(option)}
+        >
+          {AGENT_NAME[option]}
+        </Key>
+      ))}
+    </div>
+  )
+}
+
 export function NewSessionSheet({
   open,
   roots,
@@ -121,6 +144,7 @@ function SheetBody({
     return (
       <>
         <h2>Start a session</h2>
+        <AgentPicker agent={agent} onPick={setAgent} />
         <p className="sub">No project directories are configured on the laptop.</p>
       </>
     )
@@ -132,6 +156,7 @@ function SheetBody({
       <>
         <h2>Start a session</h2>
         <p className="sub">{AGENT_NAME[agent]} runs in this folder and asks before it touches anything else.</p>
+        <AgentPicker agent={agent} onPick={setAgent} />
 
         <div className="chosen">
           <span className="fico">
@@ -165,22 +190,6 @@ function SheetBody({
             {' '}{AGENT_NAME[agent]} starts on that file.
           </p>
         ) : null}
-
-        {/* Which agent runs this. Two machined keys rather than a dropdown: with two choices a
-            dropdown hides one of them behind a tap, and the whole point of the product is that
-            you can see what is about to happen. */}
-        <div className="agentpick" role="group" aria-label="Which agent">
-          {(['claude', 'codex'] as const).map((option) => (
-            <Key
-              key={option}
-              className={agent === option ? 'picked' : ''}
-              aria-pressed={agent === option}
-              onClick={() => setAgent(option)}
-            >
-              {AGENT_NAME[option]}
-            </Key>
-          ))}
-        </div>
 
         <textarea
           ref={promptRef}
@@ -216,7 +225,8 @@ function SheetBody({
   return (
     <>
       <h2>Start a session</h2>
-      <p className="sub">Name a folder the way you'd say it out loud — no paths to remember.</p>
+      <p className="sub">Choose the agent, then name a folder the way you'd say it out loud.</p>
+      <AgentPicker agent={agent} onPick={setAgent} />
 
       <div className="searchwrap">
         <Search className="glyph" size={17} strokeWidth={2.2} aria-hidden="true" />

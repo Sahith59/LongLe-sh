@@ -34,7 +34,11 @@ case "${1:-}" in
     # Hooks are re-applied on update: a new release may add an agent or change a hook's shape,
     # and a stale hook fails silently, which is the worst way for this to break.
     hooks_install
-    echo "LongLeash updated."
+    echo "LongLeash files, app, and hooks updated."
+    if pgrep -f 'longleashd|packages/daemon' >/dev/null 2>&1; then
+      printf 'IMPORTANT: a running daemon still has the old code in memory.\n'
+      printf 'Stop it with Ctrl-C and run longleash again before testing this update.\n'
+    fi
     exit 0 ;;
   hooks)
     hooks_install "${@:2}"
@@ -52,17 +56,51 @@ case "${1:-}" in
       "$([ -f "$DIR/packages/app/dist/index.html" ] && echo yes || echo 'NO — run: longleash update')"
     printf '  relay           %s\n' "$RELAY"
     printf '  watching        %s\n' "$ROOTS"
+    DAEMON_BUILD=""
+    ENDPOINT="$HOME/.longleash/hook-endpoint.json"
+    if [ -f "$ENDPOINT" ]; then
+      HOOK_URL="$(node -e "try{process.stdout.write(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).url||'')}catch{}" "$ENDPOINT")"
+      if [ -n "$HOOK_URL" ]; then
+        DAEMON_HEALTH="$(curl -fsS --max-time 2 "${HOOK_URL%/hook}/health" 2>/dev/null || true)"
+      else
+        DAEMON_HEALTH=""
+      fi
+      if [ -n "$HOOK_URL" ] && [ -n "$DAEMON_HEALTH" ]; then
+        DAEMON_BUILD="$(printf '%s' "$DAEMON_HEALTH" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{process.stdout.write(JSON.parse(s).build||'')}catch{}})")"
+        printf '  daemon          reachable (%s) · build %s\n' \
+          "${HOOK_URL%/hook}" "${DAEMON_BUILD:-unknown/old}"
+      else
+        printf '  daemon          NOT reachable — start: longleash\n'
+      fi
+    else
+      printf '  daemon          has never started — start: longleash\n'
+    fi
+    LOCAL_BUILD="$(node -e "try{process.stdout.write(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).build||'')}catch{}" "$DIR/packages/app/dist/build.json")"
+    BUILD_MATCH="$([ -n "$LOCAL_BUILD" ] && [ -n "$DAEMON_BUILD" ] && [ "$LOCAL_BUILD" = "$DAEMON_BUILD" ] && echo match || echo MISMATCH)"
+    printf '  code builds     laptop %s · daemon %s · %s\n' \
+      "${LOCAL_BUILD:-missing}" "${DAEMON_BUILD:-unknown/old}" "$BUILD_MATCH"
+    if [ "$RELAY" != "off" ]; then
+      # Configuration stores the WebSocket endpoint (`wss://host/ws`), while build.json is
+      # served from the corresponding HTTPS app origin.
+      RELAY_ORIGIN="${RELAY/wss:\/\//https://}"
+      RELAY_ORIGIN="${RELAY_ORIGIN/ws:\/\//http://}"
+      RELAY_ORIGIN="${RELAY_ORIGIN%/ws}"
+      RELAY_BUILD="$(curl -fsS --max-time 3 "${RELAY_ORIGIN%/}/build.json" 2>/dev/null | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{process.stdout.write(JSON.parse(s).build||'')}catch{}})" || true)"
+      printf '  app builds      laptop %s · relay %s%s\n' \
+        "${LOCAL_BUILD:-missing}" "${RELAY_BUILD:-unreachable}" \
+        "$([ -n "$LOCAL_BUILD" ] && [ "$LOCAL_BUILD" = "$RELAY_BUILD" ] && echo ' · match' || echo ' · MISMATCH')"
+    fi
     printf '\nAgents\n'
     if command -v claude >/dev/null 2>&1; then
       printf '  Claude Code     installed, hook %s\n' \
-        "$(grep -q longleash-hook "$HOME/.claude/settings.json" 2>/dev/null && echo 'installed' || echo 'NOT installed — run: longleash hooks')"
+        "$(grep -Fq "$DIR/packages/daemon/hooks/longleash-hook.mjs" "$HOME/.claude/settings.json" 2>/dev/null && echo 'installed for this build' || echo 'STALE/MISSING — run: longleash hooks')"
     else
       printf '  Claude Code     not installed\n'
     fi
     if command -v codex >/dev/null 2>&1; then
       printf '  Codex CLI       %s, hook %s\n' \
         "$(codex --version 2>/dev/null | head -1)" \
-        "$(grep -q '>>> LongLeash' "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null && echo 'installed' || echo 'NOT installed — run: longleash hooks')"
+        "$(grep -Fq "$DIR/packages/daemon/hooks/longleash-codex-hook.mjs" "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null && echo 'installed for this build' || echo 'STALE/MISSING — run: longleash hooks')"
     else
       printf '  Codex CLI       not installed\n'
     fi
