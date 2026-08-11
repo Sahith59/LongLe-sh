@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+export { humanSaid } from './human-text.js'
+
 export const PROTOCOL_VERSION = 1
 
 export const AgentKind = z.enum(['claude', 'gemini', 'codex', 'terminal'])

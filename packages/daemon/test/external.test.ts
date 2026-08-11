@@ -365,6 +365,24 @@ describe('transcript lines → deltas', () => {
     })
     expect(deltas).toEqual([{ type: 'stream.delta', payload: { kind: 'user', text: 'Fix the stop button.' } }])
   })
+
+  it('keeps only the human request from Codex VS Code\'s IDE context envelope', () => {
+    const deltas = transcriptDeltas({
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'user',
+        content: [{
+          type: 'input_text',
+          text: '# Context from my IDE setup:\n\n## Open tabs:\n- PLAN.md: PLAN.md\n\n## My request:\nFix the gibberish transcript.',
+        }],
+      },
+    })
+    expect(deltas).toEqual([{
+      type: 'stream.delta',
+      payload: { kind: 'user', text: 'Fix the gibberish transcript.' },
+    }])
+  })
 })
 
 
@@ -532,6 +550,12 @@ describe('slash commands are machinery, not speech', () => {
     expect(titleFrom('<command-name></command-name>')).toBeNull()
     expect(titleFrom('   ')).toBeNull()
     expect(titleFrom('a'.repeat(100))?.length).toBe(72)
+  })
+
+  it('titles a Codex VS Code session from the request, not the IDE wrapper', () => {
+    expect(titleFrom(
+      '# Context from my IDE setup:\n\n## Open tabs:\n- PLAN.md\n\n## My request:\nFix mobile overflow',
+    )).toBe('Fix mobile overflow')
   })
 })
 

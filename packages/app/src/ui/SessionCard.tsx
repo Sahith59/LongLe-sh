@@ -50,7 +50,9 @@ export function SessionCard({
       </button>
 
       <p className="meta">
-        <span className="sessiontag">{AGENT_LABEL[session.agent] ?? session.agent}</span>
+        <span className="sessiontag agenttag" data-agent={session.agent}>
+          {AGENT_LABEL[session.agent] ?? session.agent}
+        </span>
         <span className="dot" aria-hidden="true">·</span>
         <span className={`state ${session.status}`}>
           {status}
@@ -58,7 +60,9 @@ export function SessionCard({
         <span className="dot" aria-hidden="true">·</span>
         <PathChip text={session.cwd} kind="folder" max={26} expandable />
         <span className="dot" aria-hidden="true">·</span>
-        <span className="sessiontag">{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
+        <span className="sessiontag origintag" data-origin={session.origin}>
+          {ORIGIN_LABEL[session.origin] ?? session.origin}
+        </span>
       </p>
 
       {pending > 0 ? (

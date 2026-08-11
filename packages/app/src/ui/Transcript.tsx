@@ -1,4 +1,5 @@
 import { motion } from 'motion/react'
+import { humanSaid } from '@longleash/protocol'
 import type { Block } from '../lib/store.js'
 import { EASE } from './primitives.js'
 import { splitTool, toolIcon } from './format.js'
@@ -76,7 +77,11 @@ function ActionGroup({ items }: { items: string[] }) {
 
 export function TranscriptBlock({ block }: { block: Block }) {
   if (block.kind === 'user') {
-    const text = block.text.replace(/^[\s›]+/, '').trim()
+    // Also clean at render time: event-log history written by an older daemon may already
+    // contain Codex's IDE envelope. A release should repair what the person sees now rather
+    // than only making the next message clean.
+    const text = humanSaid(block.text.replace(/^[\s›]+/, '')).trim()
+    if (text === '') return null
     if (text === '— reopened —') return <div className="blk divider">reopened</div>
     return (
       <motion.div

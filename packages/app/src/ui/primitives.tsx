@@ -33,6 +33,31 @@ export function useKeyboardInset(active: boolean): number {
   return inset
 }
 
+/** The actually visible height after mobile browser chrome and the software keyboard. */
+export function useVisualViewportHeight(active: boolean): number | null {
+  const [height, setHeight] = useState<number | null>(null)
+  useEffect(() => {
+    if (!active) {
+      setHeight(null)
+      return
+    }
+    const vv = window.visualViewport
+    if (!vv) {
+      setHeight(window.innerHeight)
+      return
+    }
+    const update = () => setHeight(Math.round(vv.height))
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    update()
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [active])
+  return height
+}
+
 /** One motion vocabulary for the whole app, so nothing feels borrowed from elsewhere. */
 export const SPRING: Transition = { type: 'spring', stiffness: 380, damping: 34, mass: 0.9 }
 export const EASE: Transition = { duration: 0.26, ease: [0.22, 0.61, 0.24, 1] }
@@ -86,12 +111,14 @@ export function Key({
   className = '',
   disabled,
   label,
+  pressed,
 }: {
   children: ReactNode
   onClick?: () => void
   className?: string
   disabled?: boolean
   label?: string
+  pressed?: boolean
 }) {
   return (
     <motion.button
@@ -100,6 +127,7 @@ export function Key({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
+      aria-pressed={pressed}
       {...(disabled ? {} : { whileTap: { y: 1, scale: 0.985 } })}
       transition={SPRING}
     >

@@ -1,14 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { File, Folder, Search } from 'lucide-react'
+import { Check, Code2, File, Folder, Search, Sparkles, X } from 'lucide-react'
 import type { FolderHit } from '../lib/client.js'
-import { EXIT, Key, SPRING, useKeyboardInset } from './primitives.js'
+import { EXIT, Key, SPRING, useKeyboardInset, useVisualViewportHeight } from './primitives.js'
 import { fileName, parentPath } from './format.js'
 
-const DISMISS_DISTANCE = 110
-const DISMISS_VELOCITY = 500
-
 const AGENT_NAME = { claude: 'Claude', codex: 'Codex' } as const
+const AGENT_DETAIL = { claude: 'Anthropic agent', codex: 'OpenAI agent' } as const
+const AGENT_ICON = { claude: Sparkles, codex: Code2 } as const
+
+function StepLabel({ number, children }: { number: number; children: string }) {
+  return (
+    <div className="step-label">
+      <span className="step-number" aria-hidden="true">{number}</span>
+      <span>{children}</span>
+    </div>
+  )
+}
 
 function AgentPicker({
   agent,
@@ -19,16 +27,28 @@ function AgentPicker({
 }) {
   return (
     <div className="agentpick" role="group" aria-label="Which agent">
-      {(['claude', 'codex'] as const).map((option) => (
-        <Key
-          key={option}
-          className={agent === option ? 'picked' : ''}
-          aria-pressed={agent === option}
-          onClick={() => onPick(option)}
-        >
-          {AGENT_NAME[option]}
-        </Key>
-      ))}
+      {(['claude', 'codex'] as const).map((option) => {
+        const Icon = AGENT_ICON[option]
+        const selected = agent === option
+        return (
+          <Key
+            key={option}
+            className={`agentoption${selected ? ' picked' : ''}`}
+            pressed={selected}
+            label={`Use ${AGENT_NAME[option]}`}
+            onClick={() => onPick(option)}
+          >
+            <span className="agenticon" data-agent={option} aria-hidden="true">
+              <Icon size={18} strokeWidth={2.1} />
+            </span>
+            <span className="agentcopy">
+              <strong>{AGENT_NAME[option]}</strong>
+              <small>{AGENT_DETAIL[option]}</small>
+            </span>
+            <Check className="agentcheck" size={17} strokeWidth={2.7} aria-hidden="true" />
+          </Key>
+        )
+      })}
     </div>
   )
 }
@@ -51,6 +71,7 @@ export function NewSessionSheet({
   onClose: () => void
 }) {
   const keyboard = useKeyboardInset(open)
+  const viewportHeight = useVisualViewportHeight(open)
   return (
     <AnimatePresence>
       {open ? (
@@ -64,9 +85,12 @@ export function NewSessionSheet({
           />
           <motion.div
             className="sheet"
-            {...(keyboard > 0
-              ? { style: { bottom: keyboard, maxHeight: `calc(100dvh - ${keyboard + 10}px)` } }
-              : {})}
+            style={{
+              ...(keyboard > 0 ? { bottom: keyboard } : {}),
+              ...(viewportHeight === null
+                ? {}
+                : { maxHeight: `${Math.max(180, viewportHeight - 8)}px` }),
+            }}
             role="dialog"
             aria-modal="true"
             aria-label="Start a new session"
@@ -74,15 +98,14 @@ export function NewSessionSheet({
             animate={{ y: 0 }}
             exit={{ y: '100%', transition: EXIT }}
             transition={SPRING}
-            drag="y"
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0, bottom: 0.4 }}
-            onDragEnd={(_, info) => {
-              if (info.offset.y > DISMISS_DISTANCE || info.velocity.y > DISMISS_VELOCITY) onClose()
-            }}
           >
-            <div className="sheet-in">
+            <div className="sheetbar">
               <div className="grab" aria-hidden="true" />
+              <button type="button" className="sheetclose" onClick={onClose} aria-label="Close new session">
+                <X size={19} strokeWidth={2.2} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="sheet-in">
               <SheetBody
                 roots={roots}
                 folders={folders}
@@ -144,6 +167,7 @@ function SheetBody({
     return (
       <>
         <h2>Start a session</h2>
+        <StepLabel number={1}>Choose an agent</StepLabel>
         <AgentPicker agent={agent} onPick={setAgent} />
         <p className="sub">No project directories are configured on the laptop.</p>
       </>
@@ -155,9 +179,11 @@ function SheetBody({
     return (
       <>
         <h2>Start a session</h2>
-        <p className="sub">{AGENT_NAME[agent]} runs in this folder and asks before it touches anything else.</p>
+        <p className="sub">Review the agent and project, then describe the task.</p>
+        <StepLabel number={1}>Agent</StepLabel>
         <AgentPicker agent={agent} onPick={setAgent} />
 
+        <StepLabel number={2}>Project</StepLabel>
         <div className="chosen">
           <span className="fico">
             {chosen.kind === 'file' ? (
@@ -191,14 +217,23 @@ function SheetBody({
           </p>
         ) : null}
 
+        <label className="step-label" htmlFor="new-session-task">
+          <span className="step-number" aria-hidden="true">3</span>
+          <span>Task for {AGENT_NAME[agent]}</span>
+        </label>
         <textarea
+          id="new-session-task"
           ref={promptRef}
           className="field"
-          style={{ marginTop: 12 }}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={`What should ${AGENT_NAME[agent]} do?`}
           aria-label={`Task for ${AGENT_NAME[agent]}`}
+          rows={3}
+          onFocus={(event) => {
+            const field = event.currentTarget
+            setTimeout(() => field.scrollIntoView({ block: 'center' }), 80)
+          }}
         />
 
         <Key
@@ -225,18 +260,38 @@ function SheetBody({
   return (
     <>
       <h2>Start a session</h2>
-      <p className="sub">Choose the agent, then name a folder the way you'd say it out loud.</p>
+      <p className="sub">Pick who should work, then find the project on your laptop.</p>
+      <StepLabel number={1}>Choose an agent</StepLabel>
       <AgentPicker agent={agent} onPick={setAgent} />
 
+      <label className="step-label" htmlFor="new-session-folder">
+        <span className="step-number" aria-hidden="true">2</span>
+        <span>Find a project</span>
+      </label>
+      <p className="field-hint">Type any part of the folder or file name.</p>
       <div className="searchwrap">
         <Search className="glyph" size={17} strokeWidth={2.2} aria-hidden="true" />
         <input
+          id="new-session-folder"
+          type="search"
           className="field"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="FD_Engineer, or test in downloads"
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && folders[0]) {
+              event.preventDefault()
+              setChosen(folders[0])
+            }
+          }}
+          onFocus={(event) => {
+            const field = event.currentTarget
+            setTimeout(() => field.scrollIntoView({ block: 'center' }), 80)
+          }}
+          placeholder="e.g. AgentMem-OS"
           aria-label="Find a folder"
-          autoFocus
+          enterKeyHint="search"
+          inputMode="search"
+          autoComplete="off"
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
@@ -244,8 +299,10 @@ function SheetBody({
       </div>
 
       {folders.length === 0 ? (
-        <p className="small dim" style={{ margin: '14px 2px 0' }}>
-          {query.trim() ? 'Nothing on your laptop matches that.' : 'Type a name, or pick a root below.'}
+        <p className="folder-empty" role="status">
+          {query.trim()
+            ? 'No match inside the locations LongLeash is currently allowed to use.'
+            : 'Type a name, or choose an allowed location below.'}
         </p>
       ) : (
         <ul className="folders">
@@ -267,6 +324,11 @@ function SheetBody({
           ))}
         </ul>
       )}
+      <p className="scopehint">
+        Searching {roots.length === 1 ? '1 allowed location' : `${roots.length} allowed locations`}:
+        {' '}{roots.map((root) => fileName(root)).join(', ')}.
+        {' '}Start LongLeash with another folder path to add it.
+      </p>
     </>
   )
 }

@@ -2,7 +2,14 @@ import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { basename } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { AskedQuestion, type AgentKind, type SessionEvent, type SessionGate } from '@longleash/protocol'
+import {
+  AskedQuestion,
+  humanSaid,
+  type AgentKind,
+  type SessionEvent,
+  type SessionGate,
+} from '@longleash/protocol'
+export { humanSaid } from '@longleash/protocol'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { ApprovalStore } from './approvals.js'
 import type { DecisionOutcome, SessionStatus } from './sessions.js'
@@ -869,68 +876,6 @@ export class ExternalSessions {
     const event = this.eventLog.append(sessionId, input)
     this.onEvent?.(event)
   }
-}
-
-/**
- * What the person actually said. Claude Code records slash commands as markup
- * (`<command-name>/exit</command-name>…`) in the same place as real messages; rendering
- * that verbatim on a phone shows plumbing where speech should be.
- */
-/**
- * Tags the harness and the IDE inject into the conversation as if the person had typed
- * them. Named explicitly so the common ones are unambiguous — but the general rule below
- * is what actually carries the weight, because this list will keep growing and the next
- * tag must not need a release to stop leaking onto someone's phone.
- */
-const MACHINE_TAGS = [
-  'ide_opened_file',
-  'ide_selection',
-  'task-notification',
-  'system-reminder',
-  'local-command-stdout',
-  'local-command-stderr',
-  'command-message',
-  'command-args',
-  'command-name',
-  'recommended_plugins',
-  'environment_context',
-]
-
-/** A whole block of `<tag>…</tag>`, with nothing else around it. */
-const ONLY_TAGS = /^(?:\s*<([a-zA-Z][\w-]*)\b[^>]*>[\s\S]*?<\/\1>\s*)+$/
-
-/**
- * What a person actually said, out of a transcript entry recorded as coming from them.
- *
- * Agents receive a lot of machinery on the user's turn — files opened in the IDE, background
- * task notifications, system reminders — and none of it is speech. Showing it as speech makes
- * the phone look like it is quoting you saying things you never said, which is both confusing
- * and the kind of small wrongness that makes people stop trusting the whole view.
- *
- * Returns '' for anything that is purely machinery.
- */
-export function humanSaid(text: string): string {
-  // Slash commands are the one case where markup wraps something the person genuinely did.
-  if (/<command-(name|message|args)>/.test(text)) {
-    const name = text.match(/<command-name>([^<]*)<\/command-name>/)?.[1]?.trim()
-    const args = text.match(/<command-args>([^<]*)<\/command-args>/)?.[1]?.trim()
-    if (name === undefined || name === '') return ''
-    return args ? `${name} ${args}` : name
-  }
-
-  // Strip known machine blocks wherever they sit, so a real message that merely arrived
-  // alongside one still reaches the phone intact.
-  let remaining = text
-  for (const tag of MACHINE_TAGS) {
-    remaining = remaining.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, 'gi'), '')
-    // Unclosed variants appear when a block is truncated mid-write.
-    remaining = remaining.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*$`, 'i'), '')
-  }
-
-  // Anything still made entirely of tags is machinery we have not met before.
-  if (ONLY_TAGS.test(remaining.trim())) return ''
-
-  return remaining.trim()
 }
 
 /**

@@ -53,6 +53,7 @@ import { PathChip } from './ui/PathChip.js'
 import { enablePush, pushPermission, syncPush } from './lib/push.js'
 import { QrScanner } from './ui/QrScanner.js'
 import { hasSessionLink, sessionFromSearch } from './lib/deep-link.js'
+import { isCurrentFolderReply } from './lib/folder-search.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
@@ -65,6 +66,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [roots, setRoots] = useState<string[]>([])
   const [folders, setFolders] = useState<FolderHit[]>([])
+  const folderQueryRef = useRef('')
   const [openSessionId, setOpenSessionId] = useState<string | null>(
     // A cold start FROM a notification: the service worker put the session in the URL, so the
     // app opens on the thing that interrupted you instead of the home screen.
@@ -151,7 +153,11 @@ export default function App() {
         } else setAlerts('ready')
       },
       onError: setError,
-      onFolders: (_query, results) => setFolders(results),
+      onFolders: (query, results) => {
+        // Search replies can cross in flight. Never let an older empty-query/root response
+        // replace the results for what the person is currently typing.
+        if (isCurrentFolderReply(folderQueryRef.current, query)) setFolders(results)
+      },
       onPath: setLinkPath,
     })
     clientRef.current = client
@@ -213,7 +219,10 @@ export default function App() {
     [store],
   )
 
-  const search = useCallback((query: string) => clientRef.current?.findFolders(query), [])
+  const search = useCallback((query: string) => {
+    folderQueryRef.current = query
+    clientRef.current?.findFolders(query)
+  }, [])
 
   const enableAlerts = useCallback(() => {
     if (!pushKey) return
@@ -769,9 +778,13 @@ export function DetailScreen({
                 : (STATUS_LABEL[session.status] ?? session.status)}
             </span>
             <span className="dot" aria-hidden="true">·</span>
-            <span className="sessiontag">{AGENT_LABEL[session.agent] ?? session.agent}</span>
+            <span className="sessiontag agenttag" data-agent={session.agent}>
+              {AGENT_LABEL[session.agent] ?? session.agent}
+            </span>
             <span className="dot" aria-hidden="true">·</span>
-            <span className="sessiontag">{ORIGIN_LABEL[session.origin] ?? session.origin}</span>
+            <span className="sessiontag origintag" data-origin={session.origin}>
+              {ORIGIN_LABEL[session.origin] ?? session.origin}
+            </span>
             {session.permissionMode ? (
               <>
                 <span className="dot" aria-hidden="true">·</span>
@@ -790,7 +803,7 @@ export function DetailScreen({
               onSet={onSetGate}
             />
           ) : null}
-          {session.resumeId ? (
+          {!live && session.resumable && session.resumeId ? (
             <ResumeInTerminal cwd={session.cwd} resumeId={session.resumeId} agent={session.agent} />
           ) : null}
         </div>

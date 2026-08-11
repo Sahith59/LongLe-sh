@@ -98,6 +98,15 @@
   --sage: #a5c2af;
   --clay: #c99b93;
 
+  /* Identity accents. Text and icons always carry the same written label, so colour helps
+     scanning without becoming the only way to tell agents and surfaces apart. */
+  --agent-claude: #f0a27d;
+  --agent-codex: #79d8b2;
+  --origin-terminal: #e2c274;
+  --origin-vscode: #78a9ff;
+  --origin-phone: #c5a6f2;
+  --origin-laptop: #b3bac5;
+
   /* elevation */
   --raise:
     inset 0 1px 0 rgba(255, 255, 255, 0.055), inset 0 -1px 0 rgba(0, 0, 0, 0.32),
@@ -156,6 +165,8 @@
 
 html {
   background: var(--ground);
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 body {
@@ -167,11 +178,15 @@ body {
   letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 /* ------------------------------------------------------------------ layout */
 
 .shell {
+  width: 100%;
+  min-width: 0;
   max-width: 640px;
   margin: 0 auto;
   padding: calc(64px + env(safe-area-inset-top)) var(--gut) 40px;
@@ -577,22 +592,49 @@ body {
 .session .meta .dot {
   opacity: 0.45;
 }
-/* Which agent this is. Engraved, not badged: the interface speaks in luminance, and a
-   coloured pill per vendor would make a list of sessions read as a chart. Slightly
-   brighter than the rest of the meta line because it is the first thing you scan for
-   when three different agents are running at once. */
+/* Identity stamps: muted brand/surface accents make a mixed-agent list scannable while the
+   written label remains the accessible source of truth. */
 .sessiontag {
   display: inline-flex;
   align-items: center;
   padding: 2px 6px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 5px;
-  color: var(--ink-1);
+  color: var(--ink);
   background: rgba(255, 255, 255, 0.025);
   box-shadow: var(--engrave);
   font: 550 10px/1.35 'Geist Mono', ui-monospace, monospace;
   letter-spacing: 0.055em;
   text-transform: uppercase;
+}
+.sessiontag.agenttag[data-agent='claude'] {
+  color: var(--agent-claude);
+  border-color: color-mix(in srgb, var(--agent-claude) 35%, transparent);
+  background: color-mix(in srgb, var(--agent-claude) 8%, transparent);
+}
+.sessiontag.agenttag[data-agent='codex'] {
+  color: var(--agent-codex);
+  border-color: color-mix(in srgb, var(--agent-codex) 35%, transparent);
+  background: color-mix(in srgb, var(--agent-codex) 8%, transparent);
+}
+.sessiontag.origintag[data-origin='terminal'] {
+  color: var(--origin-terminal);
+  border-color: color-mix(in srgb, var(--origin-terminal) 32%, transparent);
+  background: color-mix(in srgb, var(--origin-terminal) 7%, transparent);
+}
+.sessiontag.origintag[data-origin='vscode'] {
+  color: var(--origin-vscode);
+  border-color: color-mix(in srgb, var(--origin-vscode) 35%, transparent);
+  background: color-mix(in srgb, var(--origin-vscode) 8%, transparent);
+}
+.sessiontag.origintag[data-origin='phone'] {
+  color: var(--origin-phone);
+  border-color: color-mix(in srgb, var(--origin-phone) 32%, transparent);
+  background: color-mix(in srgb, var(--origin-phone) 7%, transparent);
+}
+.sessiontag.origintag[data-origin='daemon'] {
+  color: var(--origin-laptop);
+  border-color: color-mix(in srgb, var(--origin-laptop) 28%, transparent);
 }
 .session .preview {
   margin: 8px 0 0;
@@ -1323,21 +1365,60 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 -18px 50px rgba(0, 0, 0, 0.5);
   max-height: 86dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sheetbar {
+  position: relative;
+  flex: none;
+  height: 42px;
+  display: grid;
+  place-items: center;
 }
 .sheet-in {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   max-width: 640px;
   margin: 0 auto;
-  padding: 10px var(--gut) calc(24px + env(safe-area-inset-bottom));
+  padding: 0 var(--gut) calc(24px + env(safe-area-inset-bottom));
+  scroll-padding: 16px 0 calc(24px + env(safe-area-inset-bottom));
 }
 .grab {
   width: 40px;
   height: 4px;
-  margin: 4px auto 16px;
+  margin: 0 auto;
   border-radius: 2px;
   background: rgba(0, 0, 0, 0.45);
   box-shadow: var(--engrave);
+}
+.sheetclose {
+  appearance: none;
+  position: absolute;
+  right: max(var(--gut), calc((100% - 640px) / 2 + var(--gut)));
+  top: 3px;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+  background: rgba(0, 0, 0, 0.24);
+  box-shadow: var(--engrave);
+  cursor: pointer;
+}
+.sheetclose:active {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+}
+.sheetclose:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
 }
 .sheet h2 {
   margin: 0;
@@ -1350,6 +1431,56 @@ body {
   font-size: 14px;
   line-height: 1.5;
   color: var(--ink-2);
+}
+.step-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 8px;
+  color: var(--ink-2);
+  font: 600 11px/1.2 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+.step-number {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: var(--engrave);
+  color: var(--ink);
+  font-size: 10px;
+}
+.field-hint,
+.scopehint,
+.folder-empty {
+  text-wrap: pretty;
+}
+.field-hint {
+  margin: -2px 0 8px 28px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.folder-empty {
+  margin: 14px 2px 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.scopehint {
+  margin: 12px 2px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--hair-soft);
+  color: var(--ink-3);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.sheet textarea.field {
+  min-height: 96px;
 }
 .sheet .key.wide {
   margin-top: 14px;
@@ -1710,23 +1841,97 @@ body {
   }
 }
 
-/* Which agent a new session runs. Two keys side by side: with only two choices, a dropdown
-   would hide one behind a tap, and this product is built on seeing what is about to happen.
-   The chosen one is BRIGHTER, not tinted — luminance is how this interface says "this one". */
+/* Which agent a new session runs. Both options stay visible, with a proper selected state,
+   vendor subtitle, accent glyph and checkmark rather than two ambiguous grey rectangles. */
 .agentpick {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: 14px;
+  margin: 0;
 }
-.agentpick .key {
-  justify-content: center;
-  font: 500 13.5px/1 'Instrument Sans', system-ui, sans-serif;
+.agentpick .key.agentoption {
+  min-width: 0;
+  min-height: 68px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  color: var(--ink-2);
+  text-align: left;
+}
+.agenticon {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: var(--engrave);
+}
+.agenticon[data-agent='claude'] {
+  color: var(--agent-claude);
+}
+.agenticon[data-agent='codex'] {
+  color: var(--agent-codex);
+}
+.agentcopy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agentcopy strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1;
+}
+.agentcopy small {
   color: var(--ink-3);
+  font: 400 10px/1.2 'Geist Mono', ui-monospace, monospace;
+  white-space: nowrap;
 }
-.agentpick .key.picked {
-  color: var(--ink-0);
-  box-shadow: var(--raise), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+.agentcheck {
+  flex: none;
+  color: var(--ink-3);
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity var(--fast) var(--step), transform var(--fast) var(--step);
+}
+.agentpick .key.agentoption.picked {
+  color: var(--ink);
+  box-shadow: var(--raise), inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.agentpick .key.agentoption.picked .agentcheck {
+  opacity: 1;
+  transform: scale(1);
+}
+.agentpick .key.agentoption.picked:has(.agenticon[data-agent='claude']) {
+  box-shadow: var(--raise), inset 0 0 0 1px color-mix(in srgb, var(--agent-claude) 48%, transparent);
+}
+.agentpick .key.agentoption.picked:has(.agenticon[data-agent='codex']) {
+  box-shadow: var(--raise), inset 0 0 0 1px color-mix(in srgb, var(--agent-codex) 48%, transparent);
+}
+.agentpick .key.agentoption.picked:has(.agenticon[data-agent='claude']) .agentcheck {
+  color: var(--agent-claude);
+}
+.agentpick .key.agentoption.picked:has(.agenticon[data-agent='codex']) .agentcheck {
+  color: var(--agent-codex);
+}
+
+@media (max-width: 360px) {
+  :root {
+    --gut: 13px;
+  }
+  .agentpick {
+    grid-template-columns: 1fr;
+  }
+  .sheet h2 {
+    font-size: 20px;
+  }
+  .sheet .sub {
+    margin-bottom: 12px;
+  }
 }
 
 /* Out of date, not broken. Engraved rather than alarming — this is the machine telling you
