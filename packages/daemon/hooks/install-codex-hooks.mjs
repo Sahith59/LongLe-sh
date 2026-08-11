@@ -149,7 +149,10 @@ if (removing) {
 // the person already has a [hooks] table of their own.
 const hasHooksHeader = /^[ \t]*\[hooks\][ \t]*$/m.test(withoutOurs)
 const hasHooksSubtable = [...withoutOurs.matchAll(/^[ \t]*\[hooks\.([^\]]+)\][ \t]*$/gm)]
-  .some((match) => match[1] !== 'state')
+  // Codex owns both the parent table and one quoted child table per reviewed hook.
+  // They can be moved out of our managed block during an update, but they are review
+  // receipts rather than competing hook definitions and must not make the update refuse.
+  .some((match) => match[1] !== 'state' && !match[1]?.startsWith('state.'))
 const hasDottedHooks = /^[ \t]*hooks\.[A-Za-z]/m.test(withoutOurs)
 
 if (hasHooksSubtable || hasDottedHooks) {

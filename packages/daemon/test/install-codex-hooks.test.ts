@@ -87,12 +87,21 @@ describe('the Codex installer — it must not damage a file it was only asked to
     const current = read()
     const withState = current.replace(
       '# <<< LongLeash',
-      '[hooks.state]\nreviewed = true\n\n# <<< LongLeash',
+      [
+        '[hooks.state]',
+        '',
+        '[hooks.state."config.toml:permission_request:0:0"]',
+        'trusted_hash = "sha256:reviewed"',
+        'enabled = true',
+        '',
+        '# <<< LongLeash',
+      ].join('\n'),
     )
     writeFileSync(CONFIG(), withState)
     expect(install().code).toBe(0)
     const next = read()
-    expect(next).toContain('[hooks.state]\nreviewed = true')
+    expect(next).toContain('[hooks.state."config.toml:permission_request:0:0"]')
+    expect(next).toContain('trusted_hash = "sha256:reviewed"')
     expect(next.match(/^PermissionRequest = /gm)).toHaveLength(1)
     expect(next.match(/^\[hooks\.state\]$/gm)).toHaveLength(1)
   })
