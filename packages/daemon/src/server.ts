@@ -791,18 +791,32 @@ export class LongLeashServer {
     }
 
     if (message.type === 'stopSession') {
-      // Terminal sessions are stopped by ending their process, not an agent handle.
+      /**
+       * Stop goes to whoever actually owns the session, NOT to whoever its id looks like.
+       *
+       * An `ext_` id means the session STARTED in a terminal — it does not mean the terminal
+       * manager still owns it. When such a session ends it is adopted into SessionManager so
+       * it can be reopened, and it keeps its `ext_` id for life. Reopen then runs it as a real
+       * agent here. Routing on the prefix sent Stop to the terminal manager, which no longer
+       * had it, and the `return` meant the manager that DID have it was never asked. Stop was
+       * therefore impossible on any reopened session — permanently, with `refused` in the log
+       * one second after `reopened`, which is exactly how this was finally caught.
+       */
       if (message.sessionId.startsWith('ext_') && this.external !== null) {
         const stopped = this.external.stop(message.sessionId, connection.deviceId)
-        this.log(`stop terminal ${message.sessionId} -> ${stopped ? 'stopped' : 'refused'}`)
-        this.sendTo(connection, {
-          v: PROTOCOL_VERSION,
-          type: 'ack',
-          of: 'stopSession',
-          sessionId: message.sessionId,
-          outcome: stopped ? 'stopped' : 'not-running',
-        })
-        return
+        if (stopped) {
+          this.log(`stop terminal ${message.sessionId} -> stopped`)
+          this.sendTo(connection, {
+            v: PROTOCOL_VERSION,
+            type: 'ack',
+            of: 'stopSession',
+            sessionId: message.sessionId,
+            outcome: 'stopped',
+          })
+          return
+        }
+        // Not the terminal manager's any more — fall through and ask the one that resumed it.
+        this.log(`stop ${message.sessionId} -> not a live terminal session; trying the agent`)
       }
       void this.sessions.stopSession(message.sessionId, connection.deviceId).then((stopped) => {
         this.sendTo(connection, {

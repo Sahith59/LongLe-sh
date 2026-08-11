@@ -882,3 +882,52 @@ describe('take over: the baton passes from terminal to phone', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 })
+
+describe('Stop must reach whoever owns the session, not whoever its id looks like', () => {
+  it('does not stop at the terminal manager when it no longer owns the session', async () => {
+    /**
+     * A terminal session keeps its `ext_` id for life. Once it ends it is adopted into
+     * SessionManager so it can be reopened, and Reopen runs it as a real agent there. Routing
+     * Stop on the `ext_` prefix sent it to the terminal manager, which no longer owned it, and
+     * `return`ed — so the manager that DID own it was never asked. In the field this appeared
+     * as `reopened` and then `refused` one second later, permanently.
+     */
+    const h = await startHarness()
+    const agent = new DemoAgent()
+    h.server.attachSessions(
+      new SessionManager({
+        eventLog: h.log,
+        approvals: new ApprovalStore(':memory:'),
+        allowedRoots: [realpathSync(tmpdir())],
+        agentFactories: { claude: agent.factory },
+      }),
+    )
+    // A terminal manager that owns nothing — the state after a session has been adopted.
+    h.server.attachExternal(
+      new ExternalSessions({
+        eventLog: h.log,
+        approvals: new ApprovalStore(':memory:'),
+        audience: () => 'connected' as const,
+      }),
+      'secret',
+    )
+
+    const ws = connect(h.port, h.token)
+    await helloOf(ws)
+    ws.send(JSON.stringify({ v: 1, type: 'stopSession', sessionId: 'ext_adopted-elsewhere' }))
+
+    // The proof is that an ack arrives at all: previously the terminal manager refused and
+    // returned, so the request never reached the manager that could answer it.
+    const start = Date.now()
+    let ack: Record<string, unknown> | undefined
+    while (Date.now() - start < 4000 && ack === undefined) {
+      ack = inbox.get(ws)?.find((m) => m.type === 'ack' && m.of === 'stopSession')
+      if (ack === undefined) await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(ack).toBeDefined()
+    expect(ack!.sessionId).toBe('ext_adopted-elsewhere')
+    ws.close()
+    await h.server.close()
+    h.log.close()
+  })
+})
