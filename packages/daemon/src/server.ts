@@ -872,7 +872,21 @@ export class LongLeashServer {
 
   private broadcast(event: SessionEvent): void {
     for (const connection of this.connections) {
-      if (!connection.sessions.has(event.sessionId)) continue
+      /**
+       * A session that BEGINS while a phone is connected must reach it.
+       *
+       * Delivery is scoped to what a connection subscribed to, and a phone subscribes to the
+       * sessions named in `hello` — so anything started afterwards was silently dropped for
+       * every open app. Start `claude` in a terminal with LongLeash on screen and nothing
+       * appeared until the page was reloaded, which reads exactly like "terminal sessions do
+       * not show up". `session.started` is therefore always delivered, and the connection is
+       * subscribed from that moment so the rest of the session's life follows it.
+       */
+      if (event.type === 'session.started') {
+        connection.sessions.add(event.sessionId)
+      } else if (!connection.sessions.has(event.sessionId)) {
+        continue
+      }
 
       const buffered = connection.transport.bufferedAmount()
       if (buffered > this.peakBufferedBytes) this.peakBufferedBytes = buffered

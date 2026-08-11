@@ -428,9 +428,13 @@ describe('typed operations: decisions and remote start', () => {
     ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId, fromCursor: h.log.latestSeq(sessionId) }))
     await new Promise((r) => setTimeout(r, 50))
 
-    const streamed = nextMessages(ws, 1)
+    // `session.started` now reaches every connected phone — a session that BEGINS while the
+    // app is open must appear without a reload. It arrives before anything the agent says, so
+    // this waits for the stream rather than assuming it is first in the queue.
+    const streamed = nextMessages(ws, 2)
     agent.say('thinking out loud')
-    expect((await streamed)[0]).toMatchObject({ type: 'stream.delta', sessionId })
+    const arrived = await streamed
+    expect(arrived.some((m) => m.type === 'stream.delta' && m.sessionId === sessionId)).toBe(true)
 
     const approval = nextMessages(ws, 1)
     void agent.requestTool('Bash', { command: 'ls' })
@@ -450,11 +454,15 @@ describe('typed operations: decisions and remote start', () => {
   it('starts a session remotely inside an allowlisted root', async () => {
     const ws = connect(h.port, h.token)
     await opened(ws)
-    const messages = nextMessages(ws, 1)
+    // Two messages now: the session.started event a connected phone must receive so a new
+    // session appears without a reload, and the ack for the request itself.
+    const messages = nextMessages(ws, 2)
     ws.send(JSON.stringify({ v: 1, type: 'startSession', agent: 'claude', root, prompt: 'build it' }))
-    const [ack] = await messages
+    const arrived = await messages
+    const ack = arrived.find((m) => m.type === 'ack')
     expect(ack).toMatchObject({ type: 'ack', outcome: 'started' })
     expect(String(ack?.sessionId)).toMatch(/^ses_/)
+    expect(arrived.some((m) => m.type === 'session.started')).toBe(true)
     ws.close()
   })
 
