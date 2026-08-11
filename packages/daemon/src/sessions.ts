@@ -463,6 +463,14 @@ export class SessionManager {
         this.approvals.rawDb
           .prepare('UPDATE sessions SET agent_session_id = ? WHERE session_id = ?')
           .run(agentSessionId, sessionId)
+        // An already-open phone must learn this now. Previously the id only appeared in the
+        // next hello/reload, so terminal handoff looked random: absent after launch, present
+        // after refreshing the exact same session.
+        const status = this.sessions.get(sessionId)?.status ?? 'running'
+        this.emit(sessionId, {
+          type: 'session.status',
+          payload: { status, live: true, resumable: true, resumeId: agentSessionId },
+        })
       },
     })
   }

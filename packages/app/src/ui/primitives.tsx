@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { motion, type Transition, type Variants } from 'motion/react'
+import { motion, type Transition } from 'motion/react'
 import { TriangleAlert, X } from 'lucide-react'
 
 /**
@@ -62,16 +62,6 @@ export function useVisualViewportHeight(active: boolean): number | null {
 export const SPRING: Transition = { type: 'spring', stiffness: 380, damping: 34, mass: 0.9 }
 export const EASE: Transition = { duration: 0.26, ease: [0.22, 0.61, 0.24, 1] }
 export const EXIT: Transition = { duration: 0.16, ease: [0.4, 0, 1, 1] }
-
-export const listVariants: Variants = {
-  hidden: {},
-  shown: { transition: { staggerChildren: 0.04 } },
-}
-
-export const itemVariants: Variants = {
-  hidden: { opacity: 0, y: 10 },
-  shown: { opacity: 1, y: 0, transition: EASE },
-}
 
 /**
  * A status light seated in a drilled socket. Colour alone never carries the meaning — every

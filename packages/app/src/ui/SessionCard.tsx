@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'motion/react'
 import { ChevronRight, Radio } from 'lucide-react'
 import type { SessionView } from '../lib/store.js'
-import { Led, SPRING, itemVariants } from './primitives.js'
+import { Led, SPRING } from './primitives.js'
 import { AGENT_LABEL, ORIGIN_LABEL, STATUS_LABEL } from './format.js'
 import { PathChip } from './PathChip.js'
 
@@ -31,7 +31,8 @@ export function SessionCard({
 
   return (
     <motion.article
-      variants={itemVariants}
+      layout="position"
+      transition={SPRING}
       className={`session${pending > 0 ? ' needs' : ''}${past ? ' past' : ''}`}
     >
       <button type="button" className="opener" onClick={onOpen}>

@@ -42,6 +42,10 @@ const sessionStatusPayload = z
     status: z.enum(['running', 'waiting', 'errored', 'ended']),
     /** Whether a real agent process exists now; waiting can also mean dormant/reopenable. */
     live: z.boolean().optional(),
+    /** The native agent has announced a conversation id that can move between surfaces. */
+    resumable: z.boolean().optional(),
+    /** Claude/Codex's own conversation id, delivered as soon as it is known. */
+    resumeId: z.string().optional(),
     detail: z.string().optional(),
     /**
      * A better name, learned after the fact. A terminal session is born knowing only its

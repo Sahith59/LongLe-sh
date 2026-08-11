@@ -11,6 +11,7 @@ import {
   ScanLine,
   Bell,
   BellOff,
+  Download,
   Square,
   SquareTerminal,
 } from 'lucide-react'
@@ -45,7 +46,6 @@ import {
   Notice,
   SectionLabel,
   SPRING,
-  listVariants,
   useKeyboardInset,
 } from './ui/primitives.js'
 import { AGENT_LABEL, MODE_LABEL, ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
@@ -77,6 +77,7 @@ export default function App() {
   const [alerts, setAlerts] = useState<AlertsState | null>(null)
   /** Set when the laptop is running a newer release than this app bundle. */
   const [staleApp, setStaleApp] = useState<string | null>(null)
+  const [updating, setUpdating] = useState(false)
   const clientRef = useRef<Client | null>(null)
 
   /**
@@ -238,6 +239,24 @@ export default function App() {
 
   const testAlert = useCallback(() => clientRef.current?.pushTest() ?? false, [])
 
+  const updateApp = useCallback(() => {
+    if (updating) return
+    setUpdating(true)
+    void (async () => {
+      try {
+        // The relay owns the phone bundle. Remove every cached shell, ask the worker to
+        // re-check now, then reload from the public release rather than an old local copy.
+        for (const name of await caches.keys()) await caches.delete(name)
+        const registrations = await navigator.serviceWorker?.getRegistrations?.()
+        for (const registration of registrations ?? []) await registration.update()
+      } catch {
+        // Cache access can be denied in private mode. Reloading still gives the network path
+        // its chance, and the build banner remains if that did not work.
+      }
+      window.location.reload()
+    })()
+  }, [updating])
+
   if (!token) {
     return (
       <PairGate
@@ -301,84 +320,56 @@ export default function App() {
       <Rail
         connected={connected}
         via={linkPath}
+        {...(staleApp === null
+          ? {}
+          : { updateBuild: staleApp, updating, onUpdate: updateApp })}
         {...(openSession ? { onBack: () => setOpenSessionId(null) } : {})}
       />
 
-      {/* Both screens live in the same grid cell (.screens), so during a transition
-          they overlap instead of stacking — the outgoing one can never push the
-          incoming one down the page. That, plus transform-free screen fades, is what
-          lets the shared title measure an honest flight path between them. */}
-      {/* A stale bundle used to be invisible: the phone loads the app from the RELAY, so a
-          laptop update changed nothing here and every new feature simply appeared missing.
-          Now it announces itself, because "out of date" and "broken" must never look alike. */}
-      {staleApp !== null ? (
-        <div className="stalebar" role="status">
-          <span>
-            This app is out of date — your laptop is on <span className="mono">{staleApp}</span>,
-            this is <span className="mono">{__BUILD__}</span>.
-          </span>
-          <Key
-            onClick={() => {
-              // Drop the cached shell before reloading, or the service worker hands back the
-              // very bundle we are trying to leave.
-              void (async () => {
-                try {
-                  for (const name of await caches.keys()) await caches.delete(name)
-                  const registrations = await navigator.serviceWorker?.getRegistrations?.()
-                  for (const r of registrations ?? []) await r.update()
-                } catch {
-                  // Cache eviction is best effort; the reload is what matters.
-                }
-                window.location.reload()
-              })()
-            }}
-          >
-            Update
-          </Key>
-        </div>
-      ) : null}
-
+      {/* Both screens live in the same grid cell (.screens), so an outgoing detail can
+          never push the console down the page while it leaves. Cold loads render at
+          their final position; only an intentional screen change gets an exit fade. */}
       <div className="screens">
-      <AnimatePresence initial={false}>
-        {openSession ? (
-          <DetailScreen
-            key={openSession.sessionId}
-            session={openSession}
-            approvals={approvalsFor(snapshot, openSession.sessionId)}
-            connected={connected}
-            diagnostic={diagnostic}
-            error={error}
-            onClearError={() => setError(null)}
-            onDecide={decide}
-            onAnswer={answer}
-            onLeave={leaveQuestion}
-            onStop={() => clientRef.current?.stopSession(openSession.sessionId)}
-            onResume={() => clientRef.current?.resumeSession(openSession.sessionId)}
-            onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
-            onTakeOver={(text) => clientRef.current?.takeOver(openSession.sessionId, text) ?? false}
-            onSetGate={(gate) => clientRef.current?.setGate(openSession.sessionId, gate)}
-          />
-        ) : (
-          <ConsoleScreen
-            key="console"
-            approvals={snapshot.approvals}
-            active={active}
-            past={past}
-            snapshot={snapshot}
-            diagnostic={diagnostic}
-            error={error}
-            onClearError={() => setError(null)}
-            onDecide={decide}
-            onAnswer={answer}
-            onLeave={leaveQuestion}
-            onOpen={setOpenSessionId}
-            onNew={() => setSheetOpen(true)}
-            alerts={alerts}
-            onEnableAlerts={enableAlerts}
-            onTestAlert={testAlert}
-          />
-        )}
-      </AnimatePresence>
+        <AnimatePresence initial={false}>
+          {openSession ? (
+            <DetailScreen
+              key={openSession.sessionId}
+              session={openSession}
+              approvals={approvalsFor(snapshot, openSession.sessionId)}
+              connected={connected}
+              diagnostic={diagnostic}
+              error={error}
+              onClearError={() => setError(null)}
+              onDecide={decide}
+              onAnswer={answer}
+              onLeave={leaveQuestion}
+              onStop={() => clientRef.current?.stopSession(openSession.sessionId)}
+              onResume={() => clientRef.current?.resumeSession(openSession.sessionId)}
+              onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
+              onTakeOver={(text) => clientRef.current?.takeOver(openSession.sessionId, text) ?? false}
+              onSetGate={(gate) => clientRef.current?.setGate(openSession.sessionId, gate)}
+            />
+          ) : (
+            <ConsoleScreen
+              key="console"
+              approvals={snapshot.approvals}
+              active={active}
+              past={past}
+              snapshot={snapshot}
+              diagnostic={diagnostic}
+              error={error}
+              onClearError={() => setError(null)}
+              onDecide={decide}
+              onAnswer={answer}
+              onLeave={leaveQuestion}
+              onOpen={setOpenSessionId}
+              onNew={() => setSheetOpen(true)}
+              alerts={alerts}
+              onEnableAlerts={enableAlerts}
+              onTestAlert={testAlert}
+            />
+          )}
+        </AnimatePresence>
       </div>
 
       <NewSessionSheet
@@ -406,6 +397,9 @@ export function Rail({
   connected,
   via,
   onBack,
+  updateBuild,
+  updating = false,
+  onUpdate,
 }: {
   connected: boolean
   /**
@@ -414,9 +408,12 @@ export function Rail({
    */
   via?: LinkPath
   onBack?: () => void
+  updateBuild?: string
+  updating?: boolean
+  onUpdate?: () => void
 }) {
   return (
-    <div className="rail">
+    <div className={`rail${onUpdate ? ' has-update' : ''}`}>
       <div className="rail-in">
         {onBack ? (
           <button type="button" className="tap" onClick={onBack} aria-label="Back to all sessions">
@@ -430,9 +427,24 @@ export function Rail({
           </h1>
         )}
         <span className="spacer" />
+        {onUpdate ? (
+          <Key
+            className="railupdate"
+            onClick={onUpdate}
+            disabled={updating}
+            label={`Update LongLeash to build ${updateBuild ?? 'latest'}`}
+          >
+            <Download size={14} strokeWidth={2.4} aria-hidden="true" />
+            {updating ? 'Updating…' : 'Update'}
+          </Key>
+        ) : null}
         <span className={`link-state${connected ? ' on' : ''}`}>
           {connected ? <Led status="running" /> : <Link2 size={13} strokeWidth={2.3} aria-hidden="true" />}
-          {connected ? (via === 'relay' ? 'linked · relay' : 'linked · direct') : 'reconnecting'}
+          {connected ? (
+            <>
+              linked<span className="route-detail">{via === 'relay' ? ' · relay' : ' · direct'}</span>
+            </>
+          ) : 'reconnecting'}
         </span>
         <span className="sr" role="status">
           {connected
@@ -620,12 +632,7 @@ export function ConsoleScreen({
           {active.length === 0 ? (
             <p className="empty">Nothing running. Start a session below.</p>
           ) : (
-            <motion.div
-              className="stack"
-              variants={listVariants}
-              initial="hidden"
-              animate="shown"
-            >
+            <div className="stack">
               {active.map((session) => (
                 <SessionCard
                   key={session.sessionId}
@@ -634,7 +641,7 @@ export function ConsoleScreen({
                   onOpen={() => onOpen(session.sessionId)}
                 />
               ))}
-            </motion.div>
+            </div>
           )}
         </section>
         )}
@@ -642,7 +649,7 @@ export function ConsoleScreen({
         {past.length > 0 ? (
           <section>
             <SectionLabel count={past.length}>Earlier</SectionLabel>
-            <motion.div className="stack" variants={listVariants} initial="hidden" animate="shown">
+            <div className="stack">
               {past.slice(0, 20).map((session) => (
                 <SessionCard
                   key={session.sessionId}
@@ -651,7 +658,7 @@ export function ConsoleScreen({
                   onOpen={() => onOpen(session.sessionId)}
                 />
               ))}
-            </motion.div>
+            </div>
           </section>
         ) : null}
 
@@ -803,8 +810,22 @@ export function DetailScreen({
               onSet={onSetGate}
             />
           ) : null}
-          {!live && session.resumable && session.resumeId ? (
-            <ResumeInTerminal cwd={session.cwd} resumeId={session.resumeId} agent={session.agent} />
+          {session.origin === 'phone' ? (
+            <TerminalHandoff
+              cwd={session.cwd}
+              resumeId={session.resumeId}
+              agent={session.agent}
+              live={live}
+              expandedByDefault
+              onRelease={onStop}
+            />
+          ) : !live && session.resumable && session.resumeId ? (
+            <TerminalHandoff
+              cwd={session.cwd}
+              resumeId={session.resumeId}
+              agent={session.agent}
+              live={false}
+            />
           ) : null}
         </div>
 
@@ -961,22 +982,46 @@ function GateSwitch({
  * folder and the id — this hands over the whole command rather than an id the
  * person then has to assemble something around.
  */
-function ResumeInTerminal({ cwd, resumeId, agent }: { cwd: string; resumeId: string; agent: string }) {
-  const [open, setOpen] = useState(false)
+function TerminalHandoff({
+  cwd,
+  resumeId,
+  agent,
+  live,
+  expandedByDefault = false,
+  onRelease,
+}: {
+  cwd: string
+  resumeId: string | undefined
+  agent: string
+  live: boolean
+  expandedByDefault?: boolean
+  onRelease?: () => void
+}) {
+  const [open, setOpen] = useState(expandedByDefault)
   const [copied, setCopied] = useState(false)
-  const resume = agent === 'codex' ? `codex resume ${resumeId}` : `claude --resume ${resumeId}`
+  const [copyError, setCopyError] = useState(false)
+  const [releaseRequested, setReleaseRequested] = useState(false)
+  const quotedId = resumeId === undefined ? '' : JSON.stringify(resumeId)
+  const resume = agent === 'codex' ? `codex resume ${quotedId}` : `claude --resume ${quotedId}`
   const command = `cd ${JSON.stringify(cwd)} && ${resume}`
 
   const copy = () => {
-    void navigator.clipboard
-      ?.writeText(command)
+    if (resumeId === undefined) return
+    setCopyError(false)
+    const clipboard = navigator.clipboard
+    if (!clipboard) {
+      setCopyError(true)
+      return
+    }
+    void clipboard.writeText(command)
       .then(() => {
         setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
+        setTimeout(() => setCopied(false), 2500)
       })
       .catch(() => {
-        // Clipboard refused (older browser, insecure origin). The command is on
-        // screen either way, so long-press to select still works.
+        // The visible command remains selectable as the recovery path on browsers that block
+        // programmatic clipboard access.
+        setCopyError(true)
       })
   }
 
@@ -989,7 +1034,11 @@ function ResumeInTerminal({ cwd, resumeId, agent }: { cwd: string; resumeId: str
         onClick={() => setOpen((value) => !value)}
       >
         <SquareTerminal size={14} strokeWidth={2.2} aria-hidden="true" />
-        {open ? 'Hide the terminal command' : 'Continue in a terminal'}
+        {open
+          ? 'Hide terminal handoff'
+          : live
+            ? 'Move to a terminal'
+            : 'Continue in a terminal'}
       </button>
       {open ? (
         <motion.div
@@ -998,24 +1047,54 @@ function ResumeInTerminal({ cwd, resumeId, agent }: { cwd: string; resumeId: str
           animate={{ opacity: 1, y: 0 }}
           transition={EASE}
         >
-          <code className="resumecmd">{command}</code>
-          <Key className="sm wide" onClick={copy}>
-            {copied ? (
-              <>
-                <Check size={15} strokeWidth={2.6} aria-hidden="true" />
-                Copied
-              </>
-            ) : (
-              <>
-                <Copy size={15} strokeWidth={2.2} aria-hidden="true" />
-                Copy command
-              </>
-            )}
-          </Key>
-          <p className="resumenote">
-            Paste this in any terminal to pick this exact conversation back up at your keyboard.
-            It reappears here while it runs.
-          </p>
+          {resumeId === undefined ? (
+            <p className="handoffpending" role="status">
+              Preparing the exact terminal command…
+            </p>
+          ) : (
+            <>
+              <code className="resumecmd">{command}</code>
+              {live ? (
+                <Key
+                  className="wide"
+                  onClick={() => {
+                    setReleaseRequested(true)
+                    onRelease?.()
+                    // A dropped stop command must not leave the only retry control disabled.
+                    setTimeout(() => setReleaseRequested(false), 8000)
+                  }}
+                  disabled={releaseRequested}
+                >
+                  <Square size={14} strokeWidth={2.5} fill="currentColor" aria-hidden="true" />
+                  {releaseRequested ? 'Releasing…' : 'Release for terminal'}
+                </Key>
+              ) : (
+                <Key className="wide" onClick={copy}>
+                  {copied ? (
+                    <>
+                      <Check size={15} strokeWidth={2.6} aria-hidden="true" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={15} strokeWidth={2.2} aria-hidden="true" />
+                      Copy command
+                    </>
+                  )}
+                </Key>
+              )}
+              <p className="resumenote">
+                {live
+                  ? 'Release ends the phone-driven process first. Copy unlocks when it is fully stopped, so the conversation has one writer and Codex cannot reject it as already active.'
+                  : 'Paste this in any terminal to continue this exact conversation at your keyboard.'}
+              </p>
+              {copyError ? (
+                <p className="handofferror" role="alert">
+                  Clipboard access was blocked. Long-press the command to copy it.
+                </p>
+              ) : null}
+            </>
+          )}
         </motion.div>
       ) : null}
     </div>
@@ -1106,9 +1185,8 @@ function AlertsPanel({
 /* --------------------------------------------------------------- scaffolding */
 
 /**
- * Screens crossfade; the SPACE is carried by the shared title, which physically flies
- * between the card and the headline. When motion is reduced (or a title has no partner,
- * e.g. deep history), the crossfade alone still tells the story.
+ * Refreshes render the final screen immediately. An outgoing screen may fade when a person
+ * navigates, but no mount-time opacity/position animation makes a reloaded list rebuild itself.
  */
 function Screen({
   children,
@@ -1122,7 +1200,7 @@ function Screen({
   // wrong corner of the screen in testing. The title carries all the motion.
   return (
     <motion.div
-      initial={{ opacity: 0 }}
+      initial={false}
       animate={{ opacity: 1, transition: EASE }}
       exit={{ opacity: 0, transition: EXIT }}
     >
@@ -1154,19 +1232,14 @@ function Banners({
 
 function FirstRun() {
   return (
-    <motion.section
-      className="firstrun"
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={EASE}
-    >
+    <section className="firstrun">
       <Mark />
       <h2>Your laptop is linked</h2>
       <p>
-        Tap <strong>New session</strong>, name a folder the way you would say it out loud, and
-        tell Claude what to do. It asks you before it changes anything.
+        Tap <strong>New session</strong>, choose Claude or Codex, name a folder, and tell the
+        agent what to do. It asks you before it changes anything.
       </p>
-    </motion.section>
+    </section>
   )
 }
 

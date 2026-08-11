@@ -1,7 +1,5 @@
-import { motion } from 'motion/react'
 import { humanSaid } from '@longleash/protocol'
 import type { Block } from '../lib/store.js'
-import { EASE } from './primitives.js'
 import { splitTool, toolIcon } from './format.js'
 import { PathChip } from './PathChip.js'
 import { Prose } from './prose.js'
@@ -48,12 +46,7 @@ function groupBlocks(blocks: Block[]): Group[] {
 
 function ActionGroup({ items }: { items: string[] }) {
   return (
-    <motion.div
-      className="actions"
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={EASE}
-    >
+    <div className="actions">
       {items.map((text, i) => {
         const { name, detail } = splitTool(text)
         const Glyph = toolIcon(name)
@@ -71,7 +64,7 @@ function ActionGroup({ items }: { items: string[] }) {
           </div>
         )
       })}
-    </motion.div>
+    </div>
   )
 }
 
@@ -84,14 +77,9 @@ export function TranscriptBlock({ block }: { block: Block }) {
     if (text === '') return null
     if (text === '— reopened —') return <div className="blk divider">reopened</div>
     return (
-      <motion.div
-        className="blk mine"
-        initial={{ opacity: 0, y: 8, scale: 0.985 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={EASE}
-      >
+      <div className="blk mine">
         {text}
-      </motion.div>
+      </div>
     )
   }
 
@@ -100,13 +88,8 @@ export function TranscriptBlock({ block }: { block: Block }) {
   }
 
   return (
-    <motion.div
-      className="blk say"
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={EASE}
-    >
+    <div className="blk say">
       <Prose text={block.text} />
-    </motion.div>
+    </div>
   )
 }

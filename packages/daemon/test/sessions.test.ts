@@ -178,6 +178,25 @@ describe('startSession: allowlisted roots (security boundary)', () => {
     if (started?.type === 'session.started') expect(started.payload.cwd).toBe(h.root)
   })
 
+  it('publishes the terminal resume id without making the phone reconnect first', async () => {
+    const { sessionId } = await h.manager.startSession({
+      agent: 'claude',
+      cwd: h.root,
+      prompt: 'do the thing',
+      origin: 'phone',
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const announced = eventsOf(h.log, sessionId).find(
+      (event) => event.type === 'session.status' && event.payload.resumeId === 'claude_1',
+    )
+    expect(announced?.payload).toMatchObject({
+      status: 'running',
+      live: true,
+      resumable: true,
+      resumeId: 'claude_1',
+    })
+  })
+
   it('starts in a subdirectory of an allowlisted root', async () => {
     const sub = join(h.root, 'packages', 'api')
     mkdirSync(sub, { recursive: true })

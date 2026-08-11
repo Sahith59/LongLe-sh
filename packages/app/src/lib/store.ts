@@ -233,6 +233,8 @@ export function createStore(options: StoreOptions = {}) {
           permissionMode?: string
           gate?: 'ask' | 'auto'
           live?: boolean
+          resumable?: boolean
+          resumeId?: string
         }
         if (payload.status === 'waiting' || payload.status === 'running') {
           session.status = payload.status
@@ -240,6 +242,8 @@ export function createStore(options: StoreOptions = {}) {
           delete session.error
         }
         if (typeof payload.live === 'boolean') session.live = payload.live
+        if (typeof payload.resumable === 'boolean') session.resumable = payload.resumable
+        if (payload.resumeId) session.resumeId = payload.resumeId
         // A terminal session renames itself once it knows what it was asked to do.
         if (payload.title !== undefined && payload.title !== '') session.title = payload.title
         if (payload.permissionMode !== undefined) session.permissionMode = payload.permissionMode

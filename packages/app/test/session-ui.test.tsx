@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { NewSessionSheet } from '../src/ui/NewSessionSheet.js'
 import { SessionCard } from '../src/ui/SessionCard.js'
-import { DetailScreen } from '../src/App.js'
+import { DetailScreen, Rail } from '../src/App.js'
 import { Transcript } from '../src/ui/Transcript.js'
 
 describe('session controls visible on a phone-sized flow', () => {
@@ -171,5 +171,70 @@ describe('session controls visible on a phone-sized flow', () => {
       />,
     )
     expect(html).toContain('Continue in a terminal')
+  })
+
+  it('shows a safe release handoff as soon as a phone session has its native id', () => {
+    const html = renderToStaticMarkup(
+      <DetailScreen
+        session={{
+          sessionId: 'phone_live', agent: 'codex', live: true, cwd: '/Users/me/a project',
+          title: 'Phone work', origin: 'phone', status: 'running', blocks: [], output: '',
+          activity: [], resumable: true, resumeId: 'thread-live',
+        }}
+        approvals={[]}
+        connected
+        diagnostic={null}
+        error={null}
+        onClearError={() => {}}
+        onDecide={() => {}}
+        onAnswer={() => {}}
+        onLeave={() => {}}
+        onStop={() => {}}
+        onResume={() => {}}
+        onSend={() => true}
+        onTakeOver={() => true}
+        onSetGate={() => {}}
+      />,
+    )
+    expect(html).toContain('codex resume')
+    expect(html).toContain('thread-live')
+    expect(html).toContain('Release for terminal')
+    expect(html).toContain('Copy unlocks when it is fully stopped')
+    expect(html).toContain('one writer')
+  })
+
+  it('shows handoff progress instead of silently omitting a new phone session command', () => {
+    const html = renderToStaticMarkup(
+      <DetailScreen
+        session={{
+          sessionId: 'phone_new', agent: 'claude', live: true, cwd: '/x', title: 'New work',
+          origin: 'phone', status: 'running', blocks: [], output: '', activity: [],
+          resumable: false,
+        }}
+        approvals={[]}
+        connected
+        diagnostic={null}
+        error={null}
+        onClearError={() => {}}
+        onDecide={() => {}}
+        onAnswer={() => {}}
+        onLeave={() => {}}
+        onStop={() => {}}
+        onResume={() => {}}
+        onSend={() => true}
+        onTakeOver={() => true}
+        onSetGate={() => {}}
+      />,
+    )
+    expect(html).toContain('Preparing the exact terminal command')
+  })
+
+  it('puts an available update in the persistent top rail', () => {
+    const html = renderToStaticMarkup(
+      <Rail connected via="relay" updateBuild="abc1234" onUpdate={() => {}} />,
+    )
+    expect(html).toContain('Update')
+    expect(html).toContain('Update LongLeash to build abc1234')
+    expect(html).toContain('railupdate')
   })
 })

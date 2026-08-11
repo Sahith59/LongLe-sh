@@ -156,6 +156,22 @@ describe('session list', () => {
     )
     expect(stateOf(store).sessions.ses_1?.resumeId).toBe('abc-123')
 
+    store.apply(
+      ev({
+        v: 1,
+        seq: 2,
+        sessionId: 'ses_1',
+        ts: 2,
+        type: 'session.status',
+        payload: { status: 'running', live: true, resumable: true, resumeId: 'live-456' },
+      }),
+    )
+    expect(stateOf(store).sessions.ses_1).toMatchObject({
+      live: true,
+      resumable: true,
+      resumeId: 'live-456',
+    })
+
     // It also arrives on the ending event and in a reconnect seed.
     const other = createStore()
     other.apply(started('ses_2'))

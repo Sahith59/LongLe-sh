@@ -3,10 +3,10 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import qrcode from 'qrcode-terminal'
 import { startDaemon } from '../src/daemon.js'
 import { resolveRelayUrl } from '../src/config.js'
 import { hostPairing } from '../src/pairing-host.js'
+import { terminalQr } from '../src/terminal-qr.js'
 import { findCandidates, noAddressReason, vpnWarning } from '../demo/lan.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -200,7 +200,7 @@ console.log(
     : 'Relay: not configured (LAN only). Set LONGLEASH_RELAY_URL once to enable remote access — it is remembered.',
 )
 console.log('\nScan this with your phone, then add it to your home screen:\n')
-qrcode.generate(url, { small: true })
+console.log(terminalQr(url))
 console.log(`\n  ${url}\n`)
 if (relay !== null && servedOnLan) {
   console.log(`(LAN fallback for pairing at home: http://${servedHost}:${daemon.port}/?c=…&s=… — same code)`)
@@ -247,7 +247,7 @@ process.stdin.on('data', (chunk: string) => {
   if (key === 'n') {
     const next = freshPairingUrl()
     console.log('\nScan this with your phone:\n')
-    qrcode.generate(next, { small: true })
+    console.log(terminalQr(next))
     console.log(`\n  ${next}\n`)
   }
   if (key === 'r') {

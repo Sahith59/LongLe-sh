@@ -37,6 +37,20 @@ describe('event envelope', () => {
     expect(ev.type).toBe('stream.delta')
   })
 
+  it('carries a live resume id the moment the native agent announces it', () => {
+    const ev = parseEvent({
+      ...baseEvent,
+      type: 'session.status',
+      payload: {
+        status: 'running',
+        live: true,
+        resumable: true,
+        resumeId: 'native-thread-1',
+      },
+    })
+    expect(ev.payload).toMatchObject({ resumable: true, resumeId: 'native-thread-1' })
+  })
+
   it('round-trips an approval.requested event with expiry', () => {
     const ev = parseEvent({
       ...baseEvent,
