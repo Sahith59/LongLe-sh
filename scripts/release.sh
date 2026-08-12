@@ -61,16 +61,24 @@ pnpm --filter @longleash/relay deploy:worker || die "The relay did not deploy. T
 ok "relay deployed with build $BUILD"
 
 bold "Verifying the phone would really get it"
-sleep 3
-SERVED="$(curl -fsS https://longleash-relay.tsahith59.workers.dev/build.json 2>/dev/null || echo '')"
-if [ -z "$SERVED" ]; then
-  printf '  \033[33m!\033[0m Could not read build.json from the relay. Check it by hand before trusting this release.\n'
-else
-  SERVED_BUILD="$(printf '%s' "$SERVED" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).build" 2>/dev/null || echo '?')"
-  [ "$SERVED_BUILD" = "$BUILD" ] \
-    && ok "the relay is serving $SERVED_BUILD" \
-    || die "The relay is serving $SERVED_BUILD but this release is $BUILD. The phone would NOT get this."
-fi
+# Cloudflare may keep the just-replaced static asset at one edge for a few seconds after Wrangler
+# reports the Worker active. A single request to the bare path can therefore turn a successful
+# release into a false failure. Cache-bust with the immutable build id and retry for a bounded
+# window; this still fails closed if the new bundle never becomes publicly readable.
+VERIFY_URL="https://longleash-relay.tsahith59.workers.dev/build.json?release=$BUILD"
+SERVED_BUILD=""
+ATTEMPT=1
+while [ "$ATTEMPT" -le 10 ]; do
+  SERVED="$(curl -fsS --max-time 5 -H 'Cache-Control: no-cache' "${VERIFY_URL}&attempt=${ATTEMPT}" 2>/dev/null || true)"
+  SERVED_BUILD="$(printf '%s' "$SERVED" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).build" 2>/dev/null || true)"
+  [ "$SERVED_BUILD" = "$BUILD" ] && break
+  [ "$ATTEMPT" -lt 10 ] && sleep 2
+  ATTEMPT=$((ATTEMPT + 1))
+done
+
+[ "$SERVED_BUILD" = "$BUILD" ] \
+  && ok "the relay is serving $SERVED_BUILD" \
+  || die "The public relay did not serve build $BUILD after 10 checks (last response: ${SERVED_BUILD:-unreachable}). The phone would NOT get this release."
 
 printf '\n\033[1mReleased %s.\033[0m\n\n' "$BUILD"
 
