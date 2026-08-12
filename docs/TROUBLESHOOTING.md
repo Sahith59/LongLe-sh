@@ -64,6 +64,23 @@ loads but never links usually indicates the daemon's relay connection or stale p
 Browser tabs and installed PWAs have separate storage contexts on iOS. Open the home-screen app,
 choose its scanner, and pair it with a fresh QR. Do not copy browser storage or reuse the old link.
 
+### The in-app camera is soft or the QR will not scan
+
+1. Fit the QR's complete white border inside the finder. Moving the phone farther away is usually
+   better than filling the finder with cropped QR pixels.
+2. Tap **Refocus** and hold the phone still for a moment.
+3. If **Switch lens** appears, try the next rear lens. iPhones may expose several physical and
+   virtual rear cameras, and their close-focus distances differ.
+4. Turn the laptop display brightness up enough to avoid glare and wipe the phone camera lens.
+5. In the daemon terminal, press `n`, then Enter, and scan the fresh QR. Do not scan an old
+   screenshot—the link is single-use.
+6. If WebKit still produces a soft or frozen stream in the installed app, paste the complete fresh
+   pairing link. That follows the same pairing protocol and does not weaken authentication.
+
+The in-app scanner requests a high-resolution rear stream and continuous focus when the browser
+exposes that capability. Camera selection and focus remain partly controlled by iOS, so the lens
+and refocus controls are deliberate recovery paths, not cosmetic settings.
+
 ### Start over after a lost or exposed phone
 
 ```sh

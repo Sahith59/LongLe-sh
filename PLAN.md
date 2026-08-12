@@ -24,7 +24,12 @@ We own every product surface: daemon, phone app, relay, protocol, installer, ext
    **Accepted trade-off:** iOS web push (16.4+, home-screen install required) has no lock-screen action buttons, so iPhone approvals are tap-notification → approve in app (~2s slower than native). Android web push does support actions. If users demand lock-screen actions later, the same web app gets a thin native wrapper — daemon, protocol, and relay are unaffected.
 3. **`longleash-relay`** — small Node WSS relay: routes ciphertext between paired devices, zero-knowledge (E2E payloads it cannot read), stores nothing durable but queued ciphertext, NEVER credentials (the Happy #680 lesson is a design rule). Docker image, self-hostable free; hosted public instance later if the project earns it.
 4. **`longleash` CLI** — installer/orchestrator: audits the machine, silently installs internal deps (tmux etc.), writes launchd agents + tmux config + VS Code terminal profile, applies invariants, prints pairing QR.
-5. **VS Code companion extension** (later phase) — thin sensor/actuator: IDE state (workspace, editors, tabs, terminal inventory), best-effort shell-integration mirroring of non-tmux terminals, sendText input with terminal-identity verification. Never onDidWriteTerminalData (dead API), never the Claude chat webview (sealed).
+5. **VS Code companion extension** (Phase 2A) — an authenticated IDE client for session navigation,
+   exact handoff, provider controls, native diffs, and delegation review. Claude can use its official
+   exact-session VS Code URI; Codex uses a LongLeash-owned editor backed by the documented app-server
+   because no public exact-thread entry point into Codex's own panel is currently part of its
+   contract. The extension never scrapes or mutates another extension's webview. See
+   [the durable extension plan](docs/VSCODE-EXTENSION.md).
 
 ## Protocol & security
 
@@ -64,6 +69,11 @@ settings are wired end to end. Delegated children still use the reviewed sequent
 their merge/return UX exists. Physical-phone UX review, all four live Claude/Codex handoffs, and
 the 20-delegation dogfood gate remain required before release.
 
+Phase 2 begins with the companion-extension contract and the remaining isolated-specialist work.
+The product, security boundary, provider capability split, delivery phases, and release matrix are
+preserved in [the VS Code companion plan](docs/VSCODE-EXTENSION.md). Use the
+[Phase 1 phone test](docs/PHASE1-PHONE-TEST.md) before moving the release label forward.
+
 Verification spikes before building on them: **S0** Agent SDK under subscription OAuth — PASSED, gate for Phase A; S1–S5 from v1 (push payload audit → now ours by construction; killed-state actions; concurrent-resume assumption; Gemini ACP quality; relay push viability → moot, we own the relay).
 
 ## Costs (honest)
@@ -79,10 +89,10 @@ Verification spikes before building on them: **S0** Agent SDK under subscription
 
 ## Known hard walls (stated honestly, in docs too)
 
-- VS Code chat-panel sessions can be observed through vendor lifecycle hooks, but the sealed
-  webview cannot be programmatically reopened or injected into. LongLeash offers a verified
-  transfer to the phone and a workspace-opening CLI handoff; a future companion extension owns
-  any richer native IDE actuation.
+- LongLeash never injects into another extension's private webview. Claude now documents an
+  exact-session VS Code URI that the companion can use. Codex documents app-server for custom rich
+  clients but not an external exact-thread URI for its own panel, so the companion will render that
+  exact thread in a LongLeash-owned editor. See [the extension plan](docs/VSCODE-EXTENSION.md).
 - Non-tmux terminals opened before setup can never be retro-captured on macOS.
 - Killed-state lock-screen actions occasionally degrade to "open the app" (both platforms) — inbox is the guaranteed path.
 - A home laptop is a home server: sleep/power/net failures happen; daemon self-health push + machine-readiness config reduce, never eliminate.
@@ -90,4 +100,7 @@ Verification spikes before building on them: **S0** Agent SDK under subscription
 
 ## What we deliberately do NOT build
 
-Hosted multi-tenant SaaS (v1 is self-hosted relay + BYO devices); web client; voice; TUI scraping of any agent; generic shell-exec endpoint; Claude chat-panel integration; custom terminal emulator (xterm.js) or multiplexer (tmux) — those are internal components we configure, not products we rebuild.
+Hosted multi-tenant SaaS (v1 is self-hosted relay + BYO devices); web client; voice; TUI scraping of
+any agent; generic shell-exec endpoint; mutation of vendor-owned chat webviews; custom terminal
+emulator (xterm.js) or multiplexer (tmux) — those are internal components we configure, not products
+we rebuild.

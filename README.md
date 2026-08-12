@@ -108,6 +108,8 @@ Keep that terminal open. Press `q`, then Enter, for a clean shutdown.
 
 Pairing links are single-use and expire. Press `n`, then Enter, in the daemon terminal whenever you
 need a fresh one. Do not reuse a QR from a screenshot or share it—it contains a temporary secret.
+If the installed app's camera stays soft, fit the full white border in the finder, tap **Refocus**,
+then try **Switch lens** if it is offered. See [camera and QR recovery](docs/TROUBLESHOOTING.md#the-in-app-camera-is-soft-or-the-qr-will-not-scan).
 
 ### 4. Verify before trusting it
 
@@ -157,8 +159,12 @@ Open the session's handoff panel and choose:
 Release a live writer before executing the copied command. Running two writers against one native
 conversation can produce the provider's “active writer” error.
 
-LongLeash cannot inject an existing conversation into Claude's or Codex's sealed VS Code chat
-webview. That requires a future companion extension; the current UI does not pretend otherwise.
+LongLeash never injects into another extension's private chat webview. Claude now exposes an
+official exact-session VS Code URI; the planned companion will use it after verifying the workspace
+and native session ID. Codex exposes app-server for rich clients but no documented external
+exact-thread entry point into its own panel, so the companion will open the exact thread in a
+LongLeash-owned VS Code editor. Until that ships, the current handoff remains the honest CLI/IDE
+route. See [the VS Code companion plan](docs/VSCODE-EXTENSION.md).
 
 ### Delegate between agents
 
@@ -292,8 +298,10 @@ model](docs/ARCHITECTURE.md#security-model).
 | [Session portability](docs/SESSION-PORTABILITY.md) | Running parallel sessions or moving work between phone, Terminal, and VS Code |
 | [Architecture](docs/ARCHITECTURE.md) | Understanding components, data flow, storage, and trust boundaries |
 | [Deploying the relay](docs/DEPLOY.md) | Self-hosting or publishing a new phone app build |
-| [Release acceptance](docs/ACCEPTANCE.md) | Performing the mandatory laptop + real-phone release gate |
+| [Phase 1 phone test](docs/PHASE1-PHONE-TEST.md) | Running the short practical fixes + Delegate Phase 1 check |
+| [Release acceptance](docs/ACCEPTANCE.md) | Performing the mandatory complete laptop + real-phone release gate |
 | [Delegate plan](docs/DELEGATION.md) | Understanding cross-agent handoffs, guarantees, and remaining phases |
+| [VS Code companion plan](docs/VSCODE-EXTENSION.md) | Understanding the exact-session IDE design, phases, boundaries, and release gates |
 | [Product plan](PLAN.md) | Reading the historical phase plan, current corrections, and known platform walls |
 | [Decision log](context/DECISIONS.md) | Understanding why major product and security choices were made |
 | [Glossary](context/GLOSSARY.md) | Translating LongLeash terminology into plain language |

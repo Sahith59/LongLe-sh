@@ -19,13 +19,16 @@ describe('terminal QR', () => {
 
     expect(lines).toHaveLength(Math.ceil((modules.length + 8) / 2))
     for (const line of lines) {
-      expect(line.startsWith('\u001b[97;107m▀▀▀▀')).toBe(true)
+      expect(line.startsWith('\u001b[38;2;255;255;255;48;2;255;255;255m▀▀▀▀')).toBe(true)
       expect(line.endsWith('\u001b[0m')).toBe(true)
       expect(line.replace(ANSI, '')).toHaveLength(modules.length + 8)
       expect(line.replace(ANSI, '')).toMatch(/^▀+$/)
     }
-    expect(rendered).toContain('\u001b[30;40m')
-    expect(rendered).toMatch(/\u001b\[(?:30;107|97;40)m/)
+    expect(rendered).toContain('\u001b[38;2;0;0;0;48;2;0;0;0m')
+    expect(rendered).toMatch(
+      /\u001b\[38;2;(?:0;0;0;48;2;255;255;255|255;255;255;48;2;0;0;0)m/,
+    )
+    expect(rendered).not.toMatch(/\u001b\[(?:30|40|97|107)(?:;|m)/)
   })
 
   it('does not depend on a terminal theme environment variable', () => {

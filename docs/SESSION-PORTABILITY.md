@@ -37,10 +37,11 @@ Every Claude or Codex session with a native conversation id shows a handoff pane
 whether it began on the phone, in Terminal, or in VS Code. The command can be copied immediately.
 If a writer is still live, release it before running the command.
 
-The VS Code workspace option opens the project before resuming. Claude resumes with its `--ide`
-connection; Codex resumes in the terminal where the command was run. VS Code's vendor chat webviews
-are sealed: LongLeash cannot inject or reopen a native chat panel without the planned companion
-extension. The UI states this boundary rather than claiming a handoff it cannot perform.
+The current VS Code workspace option opens the project before resuming. Claude resumes with its
+CLI/IDE connection; Codex resumes in the terminal where the command was run. LongLeash never
+injects into another extension's private webview. Claude now documents an official exact-session
+VS Code URI, which the planned companion will use; Codex's documented app-server lets the companion
+open the exact thread in a LongLeash-owned editor. See [the extension plan](VSCODE-EXTENSION.md).
 
 Moving an active terminal/IDE conversation to the phone is an explicit confirmation. The daemon
 reserves the checkout, asks the native process to stop, verifies that it exited, and only then

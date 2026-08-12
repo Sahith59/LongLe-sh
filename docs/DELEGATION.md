@@ -388,6 +388,10 @@ results.
 
 ### Phase 2 — Isolated parallel specialists
 
+Phase 2A also carries the premium IDE portability track in
+[the VS Code companion plan](VSCODE-EXTENSION.md). That work does not weaken the isolation or
+review requirements below; it gives them a first-class IDE surface.
+
 - [x] Git worktree provider and per-session branches for ordinary phone launches.
 - [ ] Apply isolated worktrees to delegated children after merge/return review UX exists.
 - [ ] Multiple children per parent.

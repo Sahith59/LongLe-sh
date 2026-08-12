@@ -59,13 +59,16 @@ export function qrModules(input: string): Module[][] {
 
 const QUIET_ZONE = 4
 const RESET = '\u001b[0m'
+const BLACK = '0;0;0'
+const WHITE = '255;255;255'
 
 /**
  * Render a theme-independent compact terminal QR.
  *
  * `▀` lets one character carry two square QR modules. Foreground paints the top half and
- * background paints the bottom half; both colours are explicit ANSI values, so neither macOS
- * Terminal's light theme nor a dark shell can invert the symbol. Four white modules surround the
+ * background paints the bottom half. Use true-colour black and white instead of the ANSI palette:
+ * terminals are allowed to remap palette "white" to grey (and commonly do), which lowers QR
+ * contrast even when the shell theme is otherwise correct. Four pure-white modules surround the
  * code as the standard quiet zone scanners expect.
  */
 export function terminalQr(input: string): string {
@@ -93,7 +96,9 @@ export function terminalQr(input: string): string {
     let line = ''
     let lastStyle = ''
     for (let col = 0; col < top.length; col += 1) {
-      const style = `\u001b[${top[col] ? 30 : 97};${bottom[col] ? 40 : 107}m`
+      const foreground = top[col] ? BLACK : WHITE
+      const background = bottom[col] ? BLACK : WHITE
+      const style = `\u001b[38;2;${foreground};48;2;${background}m`
       if (style !== lastStyle) {
         line += style
         lastStyle = style

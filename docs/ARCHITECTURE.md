@@ -162,10 +162,12 @@ A LongLeash session stores its own durable ID and, when available, the provider'
 Codex conversation ID. Native IDs produce copyable resume commands for every origin.
 
 - Terminal handoff resumes in the selected project directory.
-- VS Code workspace handoff opens the project first. Claude uses `--ide`; Codex resumes in the
-  invoking terminal.
+- The current VS Code workspace handoff opens the project first. Claude uses its CLI/IDE path;
+  Codex resumes in the invoking terminal.
 - A live writer must be released before its resume command is executed.
-- LongLeash does not and cannot inject a transcript into a sealed vendor VS Code chat webview.
+- LongLeash does not inject into vendor-owned VS Code webviews. The planned companion uses Claude's
+  documented exact-session URI and renders Codex threads in its own editor through Codex's
+  documented app-server. See [the companion plan](VSCODE-EXTENSION.md).
 
 See [Session portability](SESSION-PORTABILITY.md) for the user-facing behavior and limits.
 
