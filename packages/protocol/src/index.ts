@@ -22,6 +22,52 @@ export type Verdict = z.infer<typeof Verdict>
 export const SessionGate = z.enum(['ask', 'auto'])
 export type SessionGate = z.infer<typeof SessionGate>
 
+/** The bounded job a delegated child is expected to perform. */
+export const DelegationRole = z.enum(['investigate', 'review', 'implement', 'test'])
+export type DelegationRole = z.infer<typeof DelegationRole>
+
+/** How much of the source conversation was deliberately included in a briefing. */
+export const DelegationContextScope = z.enum(['selected', 'recent', 'task'])
+export type DelegationContextScope = z.infer<typeof DelegationContextScope>
+
+/** Agents that LongLeash can deliberately start as delegated workers in V1. */
+export const DelegationTargetAgent = z.enum(['claude', 'codex'])
+export type DelegationTargetAgent = z.infer<typeof DelegationTargetAgent>
+
+/** Durable orchestration lifecycle. Only the daemon may advance these states. */
+export const DelegationStatus = z.enum([
+  'draft',
+  'starting',
+  'running',
+  'ready',
+  'returned',
+  'cancelled',
+  'failed',
+])
+export type DelegationStatus = z.infer<typeof DelegationStatus>
+
+/** One limit shared by preview, launch validation, persistence, and the phone editor. */
+export const MAX_DELEGATION_BRIEFING_CHARACTERS = 24_000
+/** A reviewed result uses the same bounded mobile editing budget as its briefing. */
+export const MAX_DELEGATION_RETURN_CHARACTERS = 24_000
+/** V1 deliberately stays shallow enough that the human can still understand the graph. */
+export const MAX_DELEGATION_DEPTH = 2
+
+/**
+ * A child session's place in a delegation tree. Kept as one optional object so an older or
+ * unrelated session cannot accidentally carry a half-populated relationship.
+ */
+export const SessionRelationship = z
+  .object({
+    delegationId: z.string().min(1),
+    parentSessionId: z.string().min(1),
+    role: DelegationRole,
+    /** V1 allows two edges below the root. The protocol leaves room for a later bounded Crew. */
+    depth: z.number().int().min(1).max(16),
+  })
+  .passthrough()
+export type SessionRelationship = z.infer<typeof SessionRelationship>
+
 const sessionStartedPayload = z
   .object({
     agent: AgentKind,
@@ -34,6 +80,7 @@ const sessionStartedPayload = z
      * session's folder — instead of being locked to whichever surface started it.
      */
     resumeId: z.string().optional(),
+    relationship: SessionRelationship.optional(),
   })
   .passthrough()
 
@@ -60,6 +107,15 @@ const sessionStatusPayload = z
     permissionMode: z.string().optional(),
     /** LongLeash's own gate for this session: whether it should page the phone at all. */
     gate: SessionGate.optional(),
+    /** A second writer was observed in this checkout; text accompanies color for accessibility. */
+    workspaceConflict: z
+      .object({
+        cwd: z.string().min(1),
+        ownerSessionId: z.string().min(1),
+        /** True when LongLeash also suspended the local process, not only its write hooks. */
+        processPaused: z.boolean().optional(),
+      })
+      .optional(),
   })
   .passthrough()
 
@@ -302,6 +358,188 @@ const takeOverMessage = z
   })
   .passthrough()
 
+/**
+ * Build the exact prompt a delegated child would receive, without starting anything.
+ * The request id makes previews safe when a phone changes controls while an older reply is
+ * still crossing a slow relay connection.
+ */
+const previewDelegationMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('previewDelegation'),
+    requestId: z.string().min(1).max(120),
+    sourceSessionId: z.string().min(1),
+    sourceSeq: z.number().int().positive().optional(),
+    targetAgent: DelegationTargetAgent,
+    role: DelegationRole,
+    contextScope: DelegationContextScope,
+  })
+  .passthrough()
+
+/**
+ * The only operation that may turn an edited preview into a child session. `confirmed` is a
+ * deliberate speed bump in the wire contract: a preview request can never be replayed as a
+ * launch, and a future client cannot accidentally omit the final human confirmation.
+ */
+const startDelegationMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('startDelegation'),
+    requestId: z.string().min(1).max(120),
+    idempotencyKey: z.string().min(1).max(200),
+    sourceSessionId: z.string().min(1),
+    sourceSeq: z.number().int().positive().optional(),
+    targetAgent: DelegationTargetAgent,
+    role: DelegationRole,
+    contextScope: DelegationContextScope,
+    briefing: z
+      .string()
+      .max(MAX_DELEGATION_BRIEFING_CHARACTERS)
+      .refine((value) => value.trim().length > 0, 'Briefing must not be empty'),
+    confirmed: z.literal(true),
+    /** V1 is sequential: launching moves exclusive checkout ownership from source to child. */
+    workspaceTransferConfirmed: z.literal(true),
+  })
+  .passthrough()
+
+const prepareReturnMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('prepareReturn'),
+    requestId: z.string().min(1).max(120),
+    delegationId: z.string().min(1),
+  })
+  .passthrough()
+
+const returnDelegationMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('returnDelegation'),
+    requestId: z.string().min(1).max(120),
+    idempotencyKey: z.string().min(1).max(200),
+    delegationId: z.string().min(1),
+    returnText: z
+      .string()
+      .max(MAX_DELEGATION_RETURN_CHARACTERS)
+      .refine((value) => value.trim().length > 0, 'Return text must not be empty'),
+    confirmed: z.literal(true),
+    /** Required by the daemon only while a Terminal/VS Code parent still owns its process. */
+    takeoverConfirmed: z.boolean(),
+  })
+  .passthrough()
+
+/** Private briefing text stays on the laptop; connected devices only need lifecycle metadata. */
+export const DelegationSummarySchema = z
+  .object({
+    delegationId: z.string().min(1),
+    /** Lets the initiating phone reconcile a launch whose direct acknowledgement was lost. */
+    idempotencyKey: z.string().min(1).max(200),
+    sourceSessionId: z.string().min(1),
+    sourceSeq: z.number().int().positive().optional(),
+    targetSessionId: z.string().min(1).optional(),
+    targetAgent: DelegationTargetAgent,
+    role: DelegationRole,
+    contextScope: DelegationContextScope,
+    depth: z.number().int().min(1).max(MAX_DELEGATION_DEPTH),
+    status: DelegationStatus,
+    failure: z.string().optional(),
+    /** Lets a reconnecting phone settle a return whose direct acknowledgement was lost. */
+    returnIdempotencyKey: z.string().min(1).max(200).optional(),
+    returnedAt: z.number().int().nonnegative().optional(),
+    createdAt: z.number().int().nonnegative(),
+    updatedAt: z.number().int().nonnegative(),
+  })
+  .passthrough()
+export type DelegationSummary = z.infer<typeof DelegationSummarySchema>
+
+export const DelegationUpdateSchema = z
+  .object({
+    v: z.number().int().positive(),
+    type: z.literal('delegation'),
+    requestId: z.string().min(1).optional(),
+    /** False means this was an idempotent replay of an already accepted launch. */
+    created: z.boolean().optional(),
+    delegation: DelegationSummarySchema,
+  })
+  .passthrough()
+export type DelegationUpdate = z.infer<typeof DelegationUpdateSchema>
+
+export const DelegationPreviewSchema = z
+  .object({
+    v: z.number().int().positive(),
+    type: z.literal('delegationPreview'),
+    requestId: z.string().min(1),
+    source: z
+      .object({
+        sessionId: z.string().min(1),
+        agent: AgentKind,
+        cwd: z.string(),
+        title: z.string(),
+        origin: SessionOrigin,
+      })
+      .passthrough(),
+    sourceSeq: z.number().int().positive().optional(),
+    targetAgent: DelegationTargetAgent,
+    role: DelegationRole,
+    contextScope: DelegationContextScope,
+    briefing: z.string().min(1),
+    context: z
+      .object({
+        includedFirstSeq: z.number().int().positive(),
+        includedLastSeq: z.number().int().positive(),
+        includedBlocks: z.number().int().positive(),
+        omittedEvents: z.number().int().nonnegative(),
+        omittedCharacters: z.number().int().nonnegative(),
+        truncated: z.boolean(),
+        characterCount: z.number().int().positive(),
+        maxCharacters: z.number().int().positive(),
+      })
+      .passthrough(),
+  })
+  .passthrough()
+export type DelegationPreview = z.infer<typeof DelegationPreviewSchema>
+
+export const DelegationReturnPreviewSchema = z
+  .object({
+    v: z.number().int().positive(),
+    type: z.literal('delegationReturnPreview'),
+    requestId: z.string().min(1),
+    delegationId: z.string().min(1),
+    parent: z
+      .object({
+        sessionId: z.string().min(1),
+        agent: AgentKind,
+        title: z.string(),
+        cwd: z.string(),
+        origin: SessionOrigin,
+        live: z.boolean(),
+      })
+      .passthrough(),
+    child: z
+      .object({
+        sessionId: z.string().min(1),
+        agent: AgentKind,
+        title: z.string(),
+      })
+      .passthrough(),
+    role: DelegationRole,
+    returnText: z.string().min(1).max(MAX_DELEGATION_RETURN_CHARACTERS),
+    attribution: z.string().min(1),
+    requiresTakeover: z.boolean(),
+    context: z
+      .object({
+        includedFirstSeq: z.number().int().positive(),
+        includedLastSeq: z.number().int().positive(),
+        omittedCharacters: z.number().int().nonnegative(),
+        truncated: z.boolean(),
+        characterCount: z.number().int().positive(),
+        maxCharacters: z.number().int().positive(),
+      })
+      .passthrough(),
+  })
+  .passthrough()
+export type DelegationReturnPreview = z.infer<typeof DelegationReturnPreviewSchema>
+
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   subscribeMessage,
   decisionMessage,
@@ -315,6 +553,10 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   pushTestMessage,
   takeOverMessage,
   setGateMessage,
+  previewDelegationMessage,
+  startDelegationMessage,
+  prepareReturnMessage,
+  returnDelegationMessage,
 ])
 export type ClientMessage = z.infer<typeof ClientMessageSchema>
 

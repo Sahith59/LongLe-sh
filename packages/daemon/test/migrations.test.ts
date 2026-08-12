@@ -105,6 +105,7 @@ describe('upgrading a database written by an older release', () => {
     const columns = (second.rawDb.prepare('PRAGMA table_info(sessions)').all() as { name: string }[])
       .map((c) => c.name)
     expect(columns.filter((c) => c === 'agent_session_id')).toHaveLength(1)
+    expect(columns.filter((c) => c === 'delegation_id')).toHaveLength(1)
     second.close()
   })
 
@@ -113,6 +114,12 @@ describe('upgrading a database written by an older release', () => {
     const columns = (approvals.rawDb.prepare('PRAGMA table_info(sessions)').all() as { name: string }[])
       .map((c) => c.name)
     expect(columns).toContain('agent_session_id')
+    expect(columns).toEqual(expect.arrayContaining([
+      'parent_session_id',
+      'delegation_id',
+      'delegation_role',
+      'delegation_depth',
+    ]))
     approvals.close()
   })
 })

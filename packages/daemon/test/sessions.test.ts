@@ -115,7 +115,12 @@ interface Harness {
 let clock = 1_000_000
 
 function makeHarness(
-  opts: { approvalTtlMs?: number; denyOutsideRoot?: boolean; maxConcurrentSessions?: number } = {},
+  opts: {
+    approvalTtlMs?: number
+    denyOutsideRoot?: boolean
+    maxConcurrentSessions?: number
+    pauseTimeoutMs?: number
+  } = {},
 ): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'longleash-sessions-'))
   const root = realpathSync(dir)
@@ -133,6 +138,7 @@ function makeHarness(
     ...(opts.maxConcurrentSessions === undefined
       ? {}
       : { maxConcurrentSessions: opts.maxConcurrentSessions }),
+    ...(opts.pauseTimeoutMs === undefined ? {} : { pauseTimeoutMs: opts.pauseTimeoutMs }),
   })
   return {
     manager,
@@ -195,6 +201,35 @@ describe('startSession: allowlisted roots (security boundary)', () => {
       resumable: true,
       resumeId: 'claude_1',
     })
+  })
+
+  it('records the full initial request as a selectable user event', async () => {
+    const prompt = 'review the entire parser and preserve every detail after the title limit'
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt })
+    const user = eventsOf(h.log, sessionId).find(
+      (event) => event.type === 'stream.delta' && event.payload.kind === 'user',
+    )
+    expect(user?.seq).toBe(2)
+    expect(user?.payload.text).toContain(prompt)
+  })
+
+  it('persists complete delegated-child attribution in both the start event and reload listing', async () => {
+    const relationship = {
+      delegationId: 'del_1',
+      parentSessionId: 'ses_parent',
+      role: 'review' as const,
+      depth: 1,
+    }
+    const { sessionId } = await h.manager.startSession({
+      agent: 'claude',
+      cwd: h.root,
+      prompt: 'review it',
+      relationship,
+    })
+    const started = eventsOf(h.log, sessionId)[0]
+    expect(started?.payload).toMatchObject({ relationship })
+    expect(h.manager.listSessions().find((session) => session.sessionId === sessionId)?.relationship)
+      .toEqual(relationship)
   })
 
   it('starts in a subdirectory of an allowlisted root', async () => {
@@ -275,7 +310,9 @@ describe('streaming', () => {
     await h.manager.waitForIdle(sessionId)
 
     const events = eventsOf(h.log, sessionId)
-    const texts = events.filter((e) => e.type === 'stream.delta').map((e) => (e.payload as { text: string }).text)
+    const texts = events
+      .filter((e) => e.type === 'stream.delta' && e.payload.kind === 'text')
+      .map((e) => e.payload.text)
     expect(texts).toEqual(['hello ', 'world'])
     expect(events[events.length - 1]?.type).toBe('session.ended')
   })
@@ -538,6 +575,7 @@ describe('hardening: stop, limits, origin, audit (audit A1-A6)', () => {
     expect(await h.manager.stopSession(sessionId, 'dev_phone')).toBe(true)
     await h.manager.waitForIdle(sessionId)
     expect(h.manager.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('ended')
+    expect(eventsOf(h.log, sessionId).filter((event) => event.type === 'session.ended')).toHaveLength(1)
   })
 
   it('stopping releases an agent blocked on an approval instead of leaving it hanging', async () => {
@@ -686,7 +724,7 @@ describe('conversations: a session is a dialogue, not a one-shot', () => {
     const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'hi' })
     h.manager.sendMessage(sessionId, 'follow up', 'dev_phone')
     const userDelta = eventsOf(h.log, sessionId).find(
-      (e) => e.type === 'stream.delta' && (e.payload as { kind: string }).kind === 'user',
+      (e) => e.type === 'stream.delta' && e.payload.kind === 'user' && e.payload.text.includes('follow up'),
     )
     expect((userDelta?.payload as { text: string }).text).toContain('follow up')
   })
@@ -752,6 +790,35 @@ describe('single-writer discipline', () => {
     await h.manager.waitForIdle(sessionId)
     expect(() => h.manager.claimSession(sessionId)).not.toThrow()
   })
+
+  it('refuses pause and Stop when the old adapter does not actually drain', async () => {
+    const stuck: AgentFactory = (request) => {
+      queueMicrotask(() => request.onAgentSession('native_stuck'))
+      return {
+        events: (async function* () { await new Promise(() => {}) })(),
+        sendMessage: () => {},
+        interrupt: async () => {},
+      }
+    }
+    const manager = new SessionManager({
+      eventLog: h.log,
+      approvals: h.approvals,
+      allowedRoots: [h.root],
+      agentFactories: { claude: stuck },
+      pauseTimeoutMs: 5,
+    })
+    const { sessionId } = await manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    await expect(manager.pauseSession(sessionId, 'dev_phone', 'handoff')).resolves.toBe(false)
+    expect(manager.listSessions().find((session) => session.sessionId === sessionId)).toMatchObject({
+      live: true,
+      status: 'running',
+    })
+    await expect(manager.stopSession(sessionId, 'dev_phone')).resolves.toBe(false)
+    expect(manager.listAuditEntries().map((entry) => entry.action)).toContain('session.pause-failed')
+    expect(manager.listAuditEntries().map((entry) => entry.action)).toContain('session.stop-failed')
+  })
 })
 
 describe('reopening a closed session', () => {
@@ -779,6 +846,7 @@ describe('reopening a closed session', () => {
     })
     h.agent.say('deleted them')
     await closeIt(sessionId)
+    const beforeReopen = h.log.latestSeq(sessionId)
 
     expect(await h.manager.resumeSession(sessionId, 'dev_phone')).toBe(true)
     await new Promise((r) => setTimeout(r, 20))
@@ -786,8 +854,8 @@ describe('reopening a closed session', () => {
     // cannot fire again behind the person's back.
     expect(h.agent.runs).toHaveLength(1)
     const text = eventsOf(h.log, sessionId)
-      .filter((e) => e.type === 'stream.delta')
-      .map((e) => (e.payload as { text: string }).text)
+      .filter((e) => e.seq > beforeReopen && e.type === 'stream.delta')
+      .map((e) => e.payload.text)
       .join('')
     expect(text).not.toContain('delete every file')
   })
@@ -830,6 +898,7 @@ describe('reopening a closed session', () => {
       allowedRoots: [h.root],
       agentFactories: { claude: silent },
       now: () => clock,
+      pauseTimeoutMs: 5,
     })
     const { sessionId } = await manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'x' })
     await manager.stopSession(sessionId, 'dev_phone')

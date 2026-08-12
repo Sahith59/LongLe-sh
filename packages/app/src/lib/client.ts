@@ -1,10 +1,19 @@
 import {
+  DelegationPreviewSchema,
+  DelegationReturnPreviewSchema,
+  DelegationUpdateSchema,
   PROTOCOL_VERSION,
   derivePairingIdentity,
   deriveRelayIdentity,
   open as openEnvelope,
   seal,
   type RelayIdentity,
+  type DelegationContextScope,
+  type DelegationPreview,
+  type DelegationSummary,
+  type DelegationReturnPreview,
+  type DelegationRole,
+  type DelegationTargetAgent,
   type SessionEvent,
 } from '@longleash/protocol'
 import type { SessionSeed, Store } from './store.js'
@@ -197,7 +206,20 @@ export interface Hello {
   deviceId: string
   roots: string[]
   sessions: SessionSeed[]
-  capabilities: { startSession: boolean; stopSession: boolean }
+  capabilities: {
+    startSession: boolean
+    stopSession: boolean
+    delegation?: {
+      preview: boolean
+      start: boolean
+      targets: { claude: boolean; codex: boolean }
+      maxDepth: number
+      maxActivePerSource: number
+      return?: boolean
+      workspace?: 'legacy' | 'sequential'
+    }
+  }
+  delegations?: DelegationSummary[]
   relay?: { url: string } | null
   /** VAPID public key for lock-screen alerts; null when the daemon has push disabled. */
   push?: { publicKey: string } | null
@@ -226,6 +248,13 @@ export interface ClientCallbacks {
   onError: (message: string) => void
   /** Folder search results, so a project can be picked by name rather than typed as a path. */
   onFolders: (query: string, results: FolderHit[]) => void
+  /** Exact deterministic briefing returned for editing; this never means a child was started. */
+  onDelegationPreview?: (preview: DelegationPreview) => void
+  onDelegationReturnPreview?: (preview: DelegationReturnPreview) => void
+  /** Durable launch/status updates; requestId is present only for the initiating device. */
+  onDelegationUpdate?: (delegation: DelegationSummary, requestId?: string, created?: boolean) => void
+  /** Preview errors are correlated so an older request cannot overwrite the current sheet. */
+  onDelegationError?: (requestId: string, message: string) => void
   /** Which path carries the link right now — the UI shows "away" when it is the relay. */
   onPath?: (path: LinkPath) => void
 }
@@ -464,8 +493,34 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       callbacks.onFolders(String(message.query ?? ''), (message.results ?? []) as FolderHit[])
       return
     }
+    if (message.type === 'delegationPreview') {
+      const parsed = DelegationPreviewSchema.safeParse(message)
+      if (parsed.success) callbacks.onDelegationPreview?.(parsed.data)
+      else callbacks.onError('The laptop returned an invalid delegation preview.')
+      return
+    }
+    if (message.type === 'delegationReturnPreview') {
+      const parsed = DelegationReturnPreviewSchema.safeParse(message)
+      if (parsed.success) callbacks.onDelegationReturnPreview?.(parsed.data)
+      else callbacks.onError('The laptop returned an invalid delegation return preview.')
+      return
+    }
+    if (message.type === 'delegation') {
+      const parsed = DelegationUpdateSchema.safeParse(message)
+      if (parsed.success) {
+        callbacks.onDelegationUpdate?.(
+          parsed.data.delegation,
+          parsed.data.requestId,
+          parsed.data.created,
+        )
+      } else callbacks.onError('The laptop returned invalid delegation state.')
+      return
+    }
     if (message.type === 'error') {
-      callbacks.onError(String(message.message ?? message.code ?? 'Something went wrong'))
+      const detail = String(message.message ?? message.code ?? 'Something went wrong')
+      if (typeof message.requestId === 'string' && callbacks.onDelegationError) {
+        callbacks.onDelegationError(message.requestId, detail)
+      } else callbacks.onError(detail)
       return
     }
     if (message.type === 'ack' && message.outcome === 'unknown') {
@@ -593,6 +648,75 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       send({ v: PROTOCOL_VERSION, type: 'setGate', sessionId, gate }),
     takeOver: (sessionId: string, text: string) =>
       send({ v: PROTOCOL_VERSION, type: 'takeOver', sessionId, text }),
+    previewDelegation: (input: {
+      requestId: string
+      sourceSessionId: string
+      sourceSeq?: number
+      targetAgent: DelegationTargetAgent
+      role: DelegationRole
+      contextScope: DelegationContextScope
+    }) => {
+      const sent = send({ v: PROTOCOL_VERSION, type: 'previewDelegation', ...input })
+      if (!sent) {
+        const detail = 'Not connected to your laptop — the briefing was not built.'
+        if (callbacks.onDelegationError) callbacks.onDelegationError(input.requestId, detail)
+        else callbacks.onError(detail)
+      }
+      return sent
+    },
+    startDelegation: (input: {
+      requestId: string
+      idempotencyKey: string
+      sourceSessionId: string
+      sourceSeq?: number
+      targetAgent: DelegationTargetAgent
+      role: DelegationRole
+      contextScope: DelegationContextScope
+      briefing: string
+    }) => {
+      const sent = send({
+        v: PROTOCOL_VERSION,
+        type: 'startDelegation',
+        ...input,
+        confirmed: true,
+        workspaceTransferConfirmed: true,
+      })
+      if (!sent) {
+        const detail = 'Not connected to your laptop — no child session was started.'
+        if (callbacks.onDelegationError) callbacks.onDelegationError(input.requestId, detail)
+        else callbacks.onError(detail)
+      }
+      return sent
+    },
+    prepareReturn: (input: { requestId: string; delegationId: string }) => {
+      const sent = send({ v: PROTOCOL_VERSION, type: 'prepareReturn', ...input })
+      if (!sent) {
+        const detail = 'Not connected to your laptop — the return was not prepared.'
+        if (callbacks.onDelegationError) callbacks.onDelegationError(input.requestId, detail)
+        else callbacks.onError(detail)
+      }
+      return sent
+    },
+    returnDelegation: (input: {
+      requestId: string
+      idempotencyKey: string
+      delegationId: string
+      returnText: string
+      takeoverConfirmed: boolean
+    }) => {
+      const sent = send({
+        v: PROTOCOL_VERSION,
+        type: 'returnDelegation',
+        ...input,
+        confirmed: true,
+      })
+      if (!sent) {
+        const detail = 'Not connected to your laptop — the reviewed return was not delivered.'
+        if (callbacks.onDelegationError) callbacks.onDelegationError(input.requestId, detail)
+        else callbacks.onError(detail)
+      }
+      return sent
+    },
     decide: (
       approvalId: string,
       verdict: 'allow' | 'deny',

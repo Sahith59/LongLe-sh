@@ -642,6 +642,12 @@ body {
 .sessiontag.origintag[data-origin='daemon'] {
   color: var(--origin-laptop);
 }
+.sessiontag.childtag {
+  color: #c9aedf;
+}
+.sessiontag.parenttag {
+  color: #b8bdc9;
+}
 .session .preview {
   margin: 8px 0 0;
   font-size: 13.5px;
@@ -1201,6 +1207,58 @@ body {
   overflow-wrap: break-word;
 }
 
+/* A transcript message is a first-class delegation source. The 44px control is present on
+   touch screens without turning every message into a row of action chrome. */
+.blk-wrap {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.blk-wrap.text .blk.say {
+  padding-right: 38px;
+}
+.delegate-block {
+  appearance: none;
+  position: absolute;
+  top: -8px;
+  right: -7px;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--ink-3);
+  background: transparent;
+  transition: color var(--fast) var(--step), background var(--fast) var(--step);
+}
+.blk-wrap.user .delegate-block {
+  top: 50%;
+  right: auto;
+  left: -7px;
+  transform: translateY(-50%);
+}
+.delegate-block:active {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.055);
+}
+.delegate-block:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: -5px;
+}
+@media (hover: hover) {
+  .delegate-block {
+    opacity: 0.32;
+  }
+  .blk-wrap:hover .delegate-block,
+  .delegate-block:focus-visible {
+    opacity: 1;
+  }
+}
+
 .blk.divider {
   display: flex;
   align-items: center;
@@ -1237,6 +1295,20 @@ body {
   flex: none;
   margin-top: 2px;
 }
+.detailactions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.detailhead .toprow .detailactions .key {
+  margin-top: 2px;
+}
+.key.delegatekey {
+  color: var(--ink-2);
+}
 .detailhead h2 {
   margin: 0;
   font-size: 21px;
@@ -1259,6 +1331,165 @@ body {
 }
 .detailhead .meta .pathchip {
   max-width: 100%;
+}
+
+/* Parent/child navigation is a compact piece of session chrome, not a dashboard graph. */
+.lineage {
+  margin-top: 14px;
+  padding: 8px;
+  border-radius: var(--r);
+  background: linear-gradient(166deg, rgba(39, 41, 46, 0.94), rgba(25, 27, 31, 0.96));
+  box-shadow: var(--raise);
+}
+.lineage button {
+  appearance: none;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.lineage button:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
+}
+.lineage button:disabled {
+  cursor: default;
+}
+.lineage-parent {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--recess);
+  box-shadow: var(--sink);
+}
+.lineage-source-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 7px;
+}
+.lineage-parent > svg {
+  color: #c9aedf;
+}
+.lineage-parent > span:not(.lineage-open) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.lineage-parent small,
+.lineage-label,
+.lineage-role,
+.lineage-status,
+.lineage-child > small {
+  font: 500 10px/1.35 'Geist Mono', ui-monospace, monospace;
+  color: var(--ink-3);
+}
+.lineage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 7px;
+}
+.lineage .lineage-return {
+  width: auto;
+  min-width: 110px;
+  padding: 0 12px;
+  color: var(--ink);
+  background: var(--grad-key);
+  box-shadow: var(--raise), inset 0 0 0 1px rgba(164, 207, 183, 0.18);
+  font: 600 11px/1.2 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+}
+.workspace-conflict {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: var(--r);
+  color: var(--clay);
+  background: linear-gradient(165deg, rgba(58, 41, 40, 0.72), rgba(27, 25, 27, 0.98));
+  box-shadow: var(--raise), inset 0 0 0 1px rgba(218, 160, 153, 0.16);
+}
+.workspace-conflict > svg { margin-top: 2px; }
+.workspace-conflict strong { color: var(--ink); font-size: 13px; }
+.workspace-conflict p {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.lineage-parent strong {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lineage-open {
+  color: var(--ink-3);
+  font: 500 10px/1 'Geist Mono', ui-monospace, monospace;
+}
+.lineage-children {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lineage-parent + .lineage-children {
+  margin-top: 8px;
+}
+.lineage-source-row + .lineage-children {
+  margin-top: 8px;
+}
+.lineage-label {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 5px 1px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.lineage-child {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+}
+.lineage-child:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--pressed);
+}
+.lineage-agent {
+  font: 650 10px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.lineage-agent[data-agent='claude'] { color: var(--agent-claude); }
+.lineage-agent[data-agent='codex'] { color: var(--agent-codex); }
+.lineage-role {
+  padding-left: 8px;
+  border-left: 1px solid var(--hair);
+  text-transform: capitalize;
+}
+.lineage-status {
+  justify-self: end;
+  color: var(--ink-2);
+}
+.lineage-status.running { color: var(--sage); }
+.lineage-status.failed,
+.lineage-status.cancelled { color: var(--clay); }
+.lineage-child > small {
+  grid-column: 1 / -1;
+  color: var(--clay);
 }
 
 /* ------------------------------------------------------------- the gate */
@@ -1409,7 +1640,7 @@ body {
 .sheetbar {
   position: relative;
   flex: none;
-  height: 42px;
+  height: 46px;
   display: grid;
   place-items: center;
 }
@@ -1437,9 +1668,9 @@ body {
   appearance: none;
   position: absolute;
   right: max(var(--gut), calc((100% - 640px) / 2 + var(--gut)));
-  top: 3px;
-  width: 38px;
-  height: 38px;
+  top: 1px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 50%;
   display: grid;
@@ -1521,6 +1752,326 @@ body {
 }
 .sheet .key.wide {
   margin-top: 14px;
+}
+
+/* ----------------------------------------------------------- delegate sheet
+   Same physical grammar as New Session: raised choices, recessed source + editor, no neon
+   orchestration-dashboard language. Agent tints live only on identity glyphs. */
+.delegate-sheet {
+  max-height: 92dvh;
+}
+.delegate-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+.delegate-title .sub {
+  margin-bottom: 12px;
+}
+.delegate-title h2:focus {
+  outline: none;
+}
+.delegate-mark {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+  color: var(--ink-2);
+}
+.delegate-source {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 9px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--recess);
+  box-shadow: var(--sink);
+}
+.delegate-source .k {
+  grid-row: 1 / span 2;
+  align-self: start;
+  padding-top: 3px;
+  color: var(--ink-3);
+  font: 600 9.5px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.delegate-source strong,
+.delegate-source .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delegate-source strong {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.delegate-source .mono {
+  color: var(--ink-3);
+  font-size: 10.5px;
+}
+.delegate-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.delegate-fieldset legend {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 8px;
+  padding: 0;
+  color: var(--ink-2);
+  font: 600 11px/1.2 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+.rolepick,
+.scopepick {
+  display: grid;
+  gap: 8px;
+}
+.rolepick {
+  grid-template-columns: 1fr 1fr;
+}
+.scopepick {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.rolepick .key,
+.scopepick .key {
+  min-width: 0;
+  height: auto;
+  min-height: 58px;
+  padding: 9px 10px;
+  justify-content: flex-start;
+  color: var(--ink-2);
+  text-align: left;
+}
+.rolepick .key > span,
+.scopepick .key {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.rolepick .key svg {
+  flex: none;
+  color: var(--ink-3);
+}
+.rolepick .key strong,
+.scopepick .key strong {
+  color: inherit;
+  font-size: 12.5px;
+  line-height: 1.1;
+}
+.rolepick .key small,
+.scopepick .key small {
+  color: var(--ink-3);
+  font: 400 9.5px/1.3 'Geist Mono', ui-monospace, monospace;
+  white-space: normal;
+}
+.rolepick .key.picked,
+.scopepick .key.picked {
+  color: var(--ink);
+  box-shadow: var(--raise), inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.rolepick .key.picked svg {
+  color: var(--sage);
+}
+.delegate-sheet .key.delegate-build {
+  margin-top: 16px;
+}
+.delegate-status {
+  min-height: 18px;
+  margin: 8px 2px 0;
+  color: var(--ink-3);
+  font: 400 11px/1.5 'Geist Mono', ui-monospace, monospace;
+  text-wrap: pretty;
+}
+.delegate-status.bad {
+  color: var(--clay);
+}
+.briefing-editor {
+  margin-top: 14px;
+}
+.briefing-head,
+.briefing-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.briefing-head {
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+.briefing-head label {
+  color: var(--ink-2);
+  font: 600 11px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+.briefing-head .tap,
+.briefing-meta .tap {
+  min-height: 40px;
+  padding: 0 8px;
+}
+.sheet textarea.field.briefing-field {
+  min-height: 260px;
+  max-height: 48dvh;
+  resize: vertical;
+  color: var(--ink-2);
+  font: 400 12px/1.55 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0;
+  white-space: pre-wrap;
+}
+.briefing-meta {
+  min-width: 0;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  color: var(--ink-3);
+  font: 400 9.5px/1.4 'Geist Mono', ui-monospace, monospace;
+}
+.briefing-meta .tap {
+  margin-left: auto;
+  color: var(--clay);
+  font: 500 10.5px/1 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+}
+.delegate-lockline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hair-soft);
+  color: var(--ink-3);
+  font: 400 10.5px/1.4 'Geist Mono', ui-monospace, monospace;
+}
+.delegate-confirm {
+  margin-top: 15px;
+  padding: 13px;
+  border-radius: var(--r);
+  background: linear-gradient(165deg, rgba(42, 44, 50, 0.95), rgba(24, 26, 30, 0.98));
+  box-shadow: var(--raise), inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+.delegate-confirm strong {
+  font-size: 13.5px;
+  font-weight: 620;
+}
+.delegate-confirm p:not(.delegate-status) {
+  margin: 5px 0 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.delegate-confirm .key.delegate-launch {
+  min-height: 50px;
+  margin-top: 12px;
+}
+
+/* ------------------------------------------------------------ reviewed return */
+.return-sheet { max-height: 92dvh; }
+.return-mark { color: var(--sage); }
+.return-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: var(--r-sm);
+  background: var(--recess);
+  box-shadow: var(--sink);
+}
+.return-route > svg { color: var(--sage); }
+.return-route span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.return-route small {
+  color: var(--ink-3);
+  font: 600 9.5px/1.1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.return-route strong {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.return-attribution {
+  margin: 8px 2px 0;
+  color: var(--ink-2);
+  font: 500 10.5px/1.5 'Geist Mono', ui-monospace, monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.return-attribution span {
+  margin-right: 7px;
+  color: var(--ink-3);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.return-prepare { margin-top: 16px; }
+.sheet textarea.field.return-field { min-height: 270px; }
+.takeover-confirm {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  min-height: 54px;
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  background: linear-gradient(165deg, rgba(54, 40, 39, 0.74), rgba(26, 26, 29, 0.97));
+  box-shadow: var(--raise), inset 0 0 0 1px rgba(218, 160, 153, 0.13);
+  cursor: pointer;
+}
+.takeover-confirm input { position: absolute; opacity: 0; pointer-events: none; }
+.takeover-check {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: transparent;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: var(--engrave);
+}
+.takeover-confirm input:checked + .takeover-check {
+  color: var(--sage);
+  box-shadow: var(--engrave), inset 0 0 0 1px rgba(164, 207, 183, 0.32);
+}
+.takeover-confirm input:focus-visible + .takeover-check {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
+}
+.takeover-confirm > span:last-child { min-width: 0; }
+.takeover-confirm strong { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 13px; }
+.takeover-confirm strong svg { color: var(--clay); }
+.takeover-confirm small { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.45; }
+.transfer-confirm {
+  background: linear-gradient(165deg, rgba(36, 51, 44, 0.78), rgba(24, 27, 28, 0.98));
+  box-shadow: var(--raise), inset 0 0 0 1px rgba(164, 207, 183, 0.14);
+}
+.transfer-confirm strong svg { color: var(--sage); }
+.return-confirm { margin-bottom: 2px; }
+.return-confirm .return-launch { min-height: 50px; margin-top: 12px; }
+.return-new-attempt {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 7px;
+  justify-content: center;
+  color: var(--clay);
 }
 
 .folders {
@@ -1957,11 +2508,47 @@ body {
   .agentpick {
     grid-template-columns: 1fr;
   }
+  .rolepick {
+    grid-template-columns: 1fr;
+  }
+  .scopepick {
+    grid-template-columns: 1fr;
+  }
+  .lineage-child {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .lineage-status {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .lineage-open {
+    display: none;
+  }
+  .lineage-row {
+    grid-template-columns: 1fr;
+  }
+  .lineage-source-row {
+    grid-template-columns: 1fr;
+  }
+  .lineage-source-row .lineage-return,
+  .lineage-row .lineage-return {
+    width: 100%;
+  }
   .sheet h2 {
     font-size: 20px;
   }
   .sheet .sub {
     margin-bottom: 12px;
+  }
+}
+
+@media (max-width: 440px) {
+  .detailhead .toprow {
+    flex-wrap: wrap;
+  }
+  .detailactions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 

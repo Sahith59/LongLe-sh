@@ -14,6 +14,7 @@ import type { EventLog, AppendInput } from './eventlog.js'
 import type { ApprovalStore } from './approvals.js'
 import type { DecisionOutcome, SessionStatus } from './sessions.js'
 import type { SessionRegistry } from './session-registry.js'
+import { WorkspaceLeaseError, type WorkspaceLeaseManager } from './workspace-leases.js'
 
 /**
  * Sessions the human started themselves — `claude` in a terminal, or the VS Code
@@ -97,6 +98,8 @@ export interface ExternalSessionsOptions {
   /** Test seams for the stop path: process verification and the kill itself. */
   isClaudeProcess?: (pid: number) => boolean
   kill?: (pid: number) => void
+  pause?: (pid: number) => void
+  resume?: (pid: number) => void
   /**
    * A terminal session finished (or was stopped). Its conversation survives in
    * Claude Code's storage under this resume id — the hand that receives the baton.
@@ -110,6 +113,7 @@ export interface ExternalSessionsOptions {
     title: string
     startedAt: number
   }) => void
+  workspace?: WorkspaceLeaseManager
 }
 
 interface ExternalSession {
@@ -136,6 +140,8 @@ interface ExternalSession {
   /** Carry-over of a partial trailing line between polls. */
   remainder: string
   timer: ReturnType<typeof setInterval> | null
+  workspaceConflict?: { cwd: string; ownerSessionId: string; processPaused: boolean }
+  suspended: boolean
 }
 
 /** Everything about a permission question beyond the tool itself. */
@@ -157,6 +163,8 @@ export interface PermissionContext {
    * at their keyboard instead of on their phone.
    */
   abandoned?: AbortSignal
+  /** True only when this hook response can actually prevent the pending tool. */
+  enforceWorkspace?: boolean
 }
 
 interface Waiting {
@@ -216,7 +224,11 @@ export class ExternalSessions {
   private readonly registry: SessionRegistry | undefined
   private readonly isClaudeProcess: (pid: number) => boolean
   private readonly kill: (pid: number) => void
+  private readonly pause: (pid: number) => void
+  private readonly resume: (pid: number) => void
   private readonly onEnded: ExternalSessionsOptions['onEnded']
+  private readonly workspace: WorkspaceLeaseManager | undefined
+  private readonly unsubscribeWorkspace: (() => void) | undefined
 
   constructor(opts: ExternalSessionsOptions) {
     this.eventLog = opts.eventLog
@@ -232,7 +244,11 @@ export class ExternalSessions {
     this.pollMs = opts.pollMs ?? 800
     this.isClaudeProcess = opts.isClaudeProcess ?? agentProcessCheck
     this.kill = opts.kill ?? ((pid) => process.kill(pid, 'SIGTERM'))
+    this.pause = opts.pause ?? ((pid) => process.kill(pid, 'SIGSTOP'))
+    this.resume = opts.resume ?? ((pid) => process.kill(pid, 'SIGCONT'))
     this.onEnded = opts.onEnded
+    this.workspace = opts.workspace
+    this.unsubscribeWorkspace = this.workspace?.subscribe(() => this.reconcileWorkspace())
     // A crashed daemon takes its hook waiters with it; those questions were
     // answered at the terminal long ago. Never resurrect them as a phantom inbox.
     /**
@@ -301,8 +317,10 @@ export class ExternalSessions {
         offset: existsSync(row.transcriptPath) ? statSync(row.transcriptPath).size : 0,
         remainder: '',
         timer: null,
+        suspended: false,
       }
       this.sessions.set(row.agentSessionId, session)
+      this.claimWorkspace(session)
       session.timer = setInterval(() => this.drain(session), this.pollMs)
       session.timer.unref?.()
       this.emit(session.sessionId, {
@@ -325,6 +343,7 @@ export class ExternalSessions {
       session.pid = pid
       this.persist(claudeSessionId, session)
     }
+    this.claimWorkspace(session)
   }
 
   /**
@@ -353,9 +372,37 @@ export class ExternalSessions {
       this.sessionEnd(claudeSessionId)
       return true
     }
+    let resumedForStop = false
     try {
+      if (session.suspended) {
+        this.resume(session.pid)
+        session.suspended = false
+        resumedForStop = true
+      }
       this.kill(session.pid)
     } catch {
+      // A stopped process must be continued before SIGTERM can complete. If termination then
+      // fails, put the workspace guard back instead of silently leaving a second writer awake.
+      // Should that defensive pause also fail, publish the weaker state honestly so the phone
+      // tells the person to stop it at the keyboard immediately.
+      if (resumedForStop && this.isClaudeProcess(session.pid)) {
+        try {
+          this.pause(session.pid)
+          session.suspended = true
+        } catch {
+          session.suspended = false
+        }
+      }
+      if (session.workspaceConflict !== undefined) {
+        session.workspaceConflict = {
+          ...session.workspaceConflict,
+          processPaused: session.suspended,
+        }
+        this.emit(session.sessionId, {
+          type: 'session.status',
+          payload: { status: session.status, live: true, workspaceConflict: session.workspaceConflict },
+        })
+      }
       return false
     }
     this.emit(session.sessionId, {
@@ -381,8 +428,15 @@ export class ExternalSessions {
     permissionMode?: string,
     opts: PermissionContext = {},
   ): Promise<HookDecision> {
-    const { dedupeKey, agent = 'claude', surface = 'terminal', abandoned } = opts
+    const { dedupeKey, agent = 'claude', surface = 'terminal', abandoned, enforceWorkspace } = opts
     const session = this.ensure(claudeSessionId, cwd, transcriptPath, agent, surface)
+
+    if (enforceWorkspace === true && session.workspaceConflict !== undefined) {
+      return Promise.resolve({
+        decision: 'deny',
+        reason: `Workspace conflict: ${session.workspaceConflict.ownerSessionId} already controls ${session.workspaceConflict.cwd}. Stop one session before writing.`,
+      })
+    }
 
     const joinKey = dedupeKey === undefined ? null : `${session.sessionId}:${dedupeKey}`
     if (joinKey !== null) {
@@ -638,6 +692,7 @@ export class ExternalSessions {
     session.status = 'ended'
     this.sessions.delete(claudeSessionId)
     this.registry?.forget(claudeSessionId)
+    this.workspace?.release(session.sessionId, 'system:external', 'external session ended')
 
     // Anything it was still asking about can never be answered now: the process that would
     // have received the verdict is gone. Clearing them here is what stops a finished session
@@ -680,6 +735,7 @@ export class ExternalSessions {
     resumable: boolean
     resumeId: string
     gate: SessionGate
+    workspaceConflict?: { cwd: string; ownerSessionId: string; processPaused: boolean }
   }[] {
     return [...this.sessions.entries()].map(([claudeSessionId, session]) => ({
       sessionId: session.sessionId,
@@ -696,6 +752,7 @@ export class ExternalSessions {
       // always offer `claude --resume <id>` for picking it up later.
       resumeId: claudeSessionId,
       gate: session.gate,
+      ...(session.workspaceConflict === undefined ? {} : { workspaceConflict: session.workspaceConflict }),
     }))
   }
 
@@ -725,6 +782,7 @@ export class ExternalSessions {
   shutdown(): void {
     if (this.sweepTimer !== null) clearInterval(this.sweepTimer)
     this.sweepTimer = null
+    this.unsubscribeWorkspace?.()
 
     /**
      * Say that these sessions are over BEFORE going away.
@@ -736,8 +794,24 @@ export class ExternalSessions {
      * This says "we can no longer see it", which is true and is the honest thing a phone needs;
      * it does not touch the terminal process, which may legitimately outlive us and be adopted
      * again on the next start.
-     */
+    */
     for (const [, session] of this.sessions) {
+      if (session.suspended && session.pid !== null) {
+        const currentOwner = this.workspace?.getByCwd(session.cwd) ?? null
+        // A managed owner is released before ExternalSessions shuts down, so that case resumes
+        // cleanly. If a different external writer still owns the checkout, however, waking this
+        // one would create the exact two-writer state the lease exists to prevent. Keep it
+        // guarded; the registry re-adopts it on daemon restart and ordinary lease reconciliation
+        // resumes it as soon as the real owner exits.
+        if (currentOwner === null || currentOwner.ownerId === session.sessionId) {
+          try {
+            this.resume(session.pid)
+            session.suspended = false
+          } catch {
+            // Process identity may have changed underneath us. Do not claim it resumed.
+          }
+        }
+      }
       this.emit(session.sessionId, { type: 'session.status', payload: { status: 'ended', live: false } })
       this.emit(session.sessionId, {
         type: 'session.ended',
@@ -788,6 +862,7 @@ export class ExternalSessions {
       offset: hasHistory && existsSync(transcriptPath) ? statSync(transcriptPath).size : 0,
       remainder: '',
       timer: null,
+      suspended: false,
     }
     this.sessions.set(claudeSessionId, session)
     this.persist(claudeSessionId, session)
@@ -810,6 +885,76 @@ export class ExternalSessions {
     session.timer.unref?.()
     this.drain(session)
     return session
+  }
+
+  /** Retry claims after startup reconciliation released dead managed-session ownership. */
+  reconcileWorkspace(): void {
+    for (const session of this.sessions.values()) this.claimWorkspace(session)
+  }
+
+  private claimWorkspace(session: ExternalSession): void {
+    if (this.workspace === undefined || session.cwd.trim() === '') return
+    try {
+      this.workspace.acquire({
+        sessionId: session.sessionId,
+        cwd: session.cwd,
+        ownerKind: 'external',
+        ownerOrigin: session.surface,
+        actor: 'system:external',
+      })
+      if (session.workspaceConflict !== undefined) {
+        if (session.suspended && session.pid !== null && this.isClaudeProcess(session.pid)) {
+          try {
+            this.resume(session.pid)
+            session.suspended = false
+          } catch {
+            // Keep the visible conflict until a later reconciliation can prove the process
+            // resumed. The lease remains with this session, so no other writer can enter.
+            session.workspaceConflict = {
+              cwd: session.cwd,
+              ownerSessionId: session.sessionId,
+              processPaused: true,
+            }
+            this.emit(session.sessionId, {
+              type: 'session.status',
+              payload: { status: session.status, live: true, workspaceConflict: session.workspaceConflict },
+            })
+            return
+          }
+        }
+        delete session.workspaceConflict
+        this.emit(session.sessionId, {
+          type: 'session.status',
+          payload: { status: session.status, live: true },
+        })
+      }
+    } catch (error) {
+      if (!(error instanceof WorkspaceLeaseError) || error.conflict === undefined) throw error
+      if (!session.suspended && session.pid !== null && this.isClaudeProcess(session.pid)) {
+        try {
+          this.pause(session.pid)
+          session.suspended = true
+        } catch {
+          // Hooked tool execution is still synchronously denied below. Report the weaker
+          // enforcement honestly instead of crashing the hook or claiming a paused process.
+        }
+      }
+      const next = {
+        cwd: error.conflict.cwd,
+        ownerSessionId: error.conflict.ownerId,
+        processPaused: session.suspended,
+      }
+      if (
+        session.workspaceConflict?.cwd === next.cwd &&
+        session.workspaceConflict.ownerSessionId === next.ownerSessionId &&
+        session.workspaceConflict.processPaused === next.processPaused
+      ) return
+      session.workspaceConflict = next
+      this.emit(session.sessionId, {
+        type: 'session.status',
+        payload: { status: session.status, live: true, workspaceConflict: next },
+      })
+    }
   }
 
   /** Ingest whatever the transcript has grown since the last look. */

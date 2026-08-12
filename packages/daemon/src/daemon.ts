@@ -1,7 +1,7 @@
-import { mkdirSync, existsSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, mkdirSync, existsSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { EventLog } from './eventlog.js'
 import { DeviceRegistry } from './auth.js'
 import { ApprovalStore } from './approvals.js'
@@ -16,6 +16,11 @@ import { PushNotifier } from './push.js'
 import { ExternalSessions } from './external.js'
 import { SessionRegistry } from './session-registry.js'
 import { StayAwake } from './awake.js'
+import { BriefingBuilder } from './briefing.js'
+import { DelegationStore } from './delegations.js'
+import { DelegationManager } from './delegation-manager.js'
+import { WorkspaceLeaseManager } from './workspace-leases.js'
+import { ReturnBuilder } from './return-builder.js'
 
 export interface DaemonOptions {
   /** Directories agents may work in. Nothing outside these can be targeted. */
@@ -44,6 +49,7 @@ export interface Daemon {
   registry: DeviceRegistry
   eventLog: EventLog
   approvals: ApprovalStore
+  delegations: DelegationManager
   port: number
   /** Approvals reconciled at startup because a previous run died holding them. */
   orphansClosed: number
@@ -53,6 +59,19 @@ export interface Daemon {
 }
 
 const DEFAULT_READ_ONLY_TOOLS = ['Read', 'Glob', 'Grep']
+
+function executableOnPath(command: string): boolean {
+  for (const directory of (process.env.PATH ?? '').split(delimiter)) {
+    if (directory === '') continue
+    try {
+      accessSync(join(directory, command), constants.X_OK)
+      return true
+    } catch {
+      // Keep searching the remaining PATH entries.
+    }
+  }
+  return false
+}
 
 /**
  * Assembles the whole laptop side: storage, auth, agent sessions, and the socket the phone
@@ -70,6 +89,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   const eventLog = new EventLog(join(dataDir, 'events.db'))
   const registry = new DeviceRegistry(join(dataDir, 'devices.db'))
   const approvals = new ApprovalStore(join(dataDir, 'approvals.db'))
+  const workspace = new WorkspaceLeaseManager(approvals.rawDb)
   const push = new PushNotifier({
     dbPath: join(dataDir, 'push.db'),
     keysPath: join(dataDir, 'vapid.json'),
@@ -98,6 +118,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   })
 
   const awake = new StayAwake({ log: (line) => write(line) })
+  let delegationManager: DelegationManager | null = null
 
   // One mirror for every session source — phone-started agents and terminal sessions
   // alike broadcast, notify, and narrate through the same path.
@@ -121,6 +142,9 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   }
 
   const mirror = (event: import('@longleash/protocol').SessionEvent): void => {
+    // Let orchestration commit child lifecycle before phones render the corresponding session
+    // event, so lineage and status never briefly contradict one another.
+    delegationManager?.handleSessionEvent(event)
     server.broadcastEvent(event)
     if (
       event.type === 'session.started' ||
@@ -152,19 +176,30 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     }
   }
 
+  const claudeAvailable = executableOnPath('claude')
+  const codexAvailable = executableOnPath('codex')
+  if (!claudeAvailable) write('Claude is not on PATH; Claude launch is unavailable.')
+  if (!codexAvailable) write('Codex is not on PATH; Codex launch is unavailable.')
+
   const sessions = new SessionManager({
     eventLog,
     approvals,
     allowedRoots: roots,
     agentFactories: {
-      claude: createClaudeAgentFactory({
-        allowedTools: options.allowedTools ?? DEFAULT_READ_ONLY_TOOLS,
-        isolateFromUserSettings: true,
-      }),
+      ...(claudeAvailable
+        ? {
+            claude: createClaudeAgentFactory({
+              allowedTools: options.allowedTools ?? DEFAULT_READ_ONLY_TOOLS,
+              isolateFromUserSettings: true,
+            }),
+          }
+        : {}),
       // Codex driven through its own app-server, so a session can be STARTED from the phone
       // rather than only observed. `untrusted` makes Codex ask about everything, which is the
       // point: a session started remotely must route its decisions back to that phone.
-      codex: createCodexAgentFactory({ approvalPolicy: 'untrusted', log: write }),
+      ...(codexAvailable
+        ? { codex: createCodexAgentFactory({ approvalPolicy: 'untrusted', log: write }) }
+        : {}),
     },
     onEvent: mirror,
     ...(options.denyOutsideRoot === undefined ? {} : { denyOutsideRoot: options.denyOutsideRoot }),
@@ -173,6 +208,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     ...(options.maxConcurrentSessions === undefined
       ? {}
       : { maxConcurrentSessions: options.maxConcurrentSessions }),
+    workspace,
   })
   server.attachSessions(sessions)
   server.attachFolders(new FolderIndex(roots))
@@ -187,6 +223,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     approvals: externalApprovals,
     registry: sessionRegistry,
     onEvent: mirror,
+    workspace,
     // A live socket means the app is open and can answer in seconds. A push REGISTRATION is
     // permanent and proves nothing about whether anyone is looking — treating it as presence
     // is what froze the keyboard for two minutes with the phone in a drawer.
@@ -209,6 +246,38 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   // restarted daemon inherits — is closed out and the phone is told, rather than showing a
   // question forever that nothing can answer.
   external.startSweeping()
+
+  const delegationStore = new DelegationStore(approvals.rawDb)
+  // Managed children never survive the daemon process. Externally-owned processes are readopted
+  // above and are the only valid live owners at this point; unfinished transfer reservations
+  // remain valid only while their delegation is durably `starting`.
+  workspace.reconcile({
+    activeSessionIds: external.listSessions().map((session) => session.sessionId),
+    validReservationIds: delegationStore
+      .list()
+      .filter((record) => record.status === 'starting')
+      .map((record) => record.delegationId),
+  })
+  external.reconcileWorkspace()
+  delegationManager = new DelegationManager({
+    store: delegationStore,
+    sessions,
+    briefings: new BriefingBuilder(eventLog),
+    sourceSessions: () => [
+      ...sessions.listSessions(),
+      ...external.listSessions().map((session) => ({ ...session, live: true })),
+    ],
+    onUpdate: (delegation) => server.broadcastDelegation(delegation),
+    returns: new ReturnBuilder(eventLog),
+    workspace,
+    pauseSession: async (session, actor, reason) => {
+      if (session.origin === 'terminal' || session.origin === 'vscode') {
+        return external.stop(session.sessionId, actor)
+      }
+      return sessions.pauseSession(session.sessionId, actor, reason)
+    },
+  })
+  server.attachDelegations(delegationManager)
 
   const hookSecret = randomBytes(24).toString('base64url')
   server.attachExternal(external, hookSecret)
@@ -238,6 +307,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     registry,
     eventLog,
     approvals,
+    delegations: delegationManager,
     port,
     orphansClosed: sessions.orphansClosed,
     posture: readPermissionPosture(),

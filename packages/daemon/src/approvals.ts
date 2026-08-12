@@ -81,7 +81,11 @@ export class ApprovalStore {
         title TEXT NOT NULL,
         status TEXT NOT NULL,
         started_at INTEGER NOT NULL,
-        agent_session_id TEXT
+        agent_session_id TEXT,
+        parent_session_id TEXT,
+        delegation_id TEXT,
+        delegation_role TEXT,
+        delegation_depth INTEGER
       );
 
       CREATE TABLE IF NOT EXISTS audit (
@@ -99,7 +103,13 @@ export class ApprovalStore {
       { name: 'target_path', definition: 'TEXT' },
       { name: 'outside_root', definition: 'INTEGER NOT NULL DEFAULT 0' },
     ])
-    ensureColumns(this.rawDb, 'sessions', [{ name: 'agent_session_id', definition: 'TEXT' }])
+    ensureColumns(this.rawDb, 'sessions', [
+      { name: 'agent_session_id', definition: 'TEXT' },
+      { name: 'parent_session_id', definition: 'TEXT' },
+      { name: 'delegation_id', definition: 'TEXT' },
+      { name: 'delegation_role', definition: 'TEXT' },
+      { name: 'delegation_depth', definition: 'INTEGER' },
+    ])
     this.now = opts.now ?? Date.now
   }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SessionEvent } from '@longleash/protocol'
@@ -13,6 +13,7 @@ import {
   terminalAgentOf,
   transcriptDeltas,
 } from '../src/external.js'
+import { WorkspaceLeaseManager } from '../src/workspace-leases.js'
 
 let dir: string
 let eventLog: EventLog
@@ -38,6 +39,9 @@ function manager(
     pushWaitMs?: number
     isClaude?: (pid: number) => boolean
     kill?: (pid: number) => void
+    workspace?: WorkspaceLeaseManager
+    pause?: (pid: number) => void
+    resume?: (pid: number) => void
   } = {},
 ): ExternalSessions {
   return new ExternalSessions({
@@ -50,6 +54,9 @@ function manager(
     pollMs: 25,
     isClaudeProcess: opts.isClaude ?? (() => true),
     kill: opts.kill ?? (() => {}),
+    ...(opts.workspace === undefined ? {} : { workspace: opts.workspace }),
+    ...(opts.pause === undefined ? {} : { pause: opts.pause }),
+    ...(opts.resume === undefined ? {} : { resume: opts.resume }),
   })
 }
 
@@ -170,6 +177,86 @@ describe('terminal sessions, adopted through hooks', () => {
     expect(verdict.decision).toBe('ask')
     expect(seen.some((e) => e.type === 'approval.requested')).toBe(false)
     external.shutdown()
+  })
+
+  it('suspends a newly observed external writer on checkout conflict, denies writes, then resumes after release', async () => {
+    const workspace = new WorkspaceLeaseManager(approvals.rawDb)
+    workspace.acquire({
+      sessionId: 'ses_managed', cwd: dir, ownerKind: 'session', ownerOrigin: 'phone', actor: 'dev_phone',
+    })
+    const paused: number[] = []
+    const resumed: number[] = []
+    const external = manager({
+      workspace,
+      pause: (pid) => paused.push(pid),
+      resume: (pid) => resumed.push(pid),
+    })
+    external.sessionStart('abc', dir, join(dir, 'n.jsonl'), 4242)
+    expect(paused).toEqual([4242])
+    expect(external.listSessions()[0]?.workspaceConflict).toMatchObject({
+      cwd: realpathSync(dir),
+      ownerSessionId: 'ses_managed',
+      processPaused: true,
+    })
+    await expect(external.preToolUse(
+      'abc', dir, join(dir, 'n.jsonl'), 'Write', { file_path: join(dir, 'x.ts') }, undefined,
+      { enforceWorkspace: true },
+    )).resolves.toMatchObject({ decision: 'deny', reason: expect.stringContaining('Workspace conflict') })
+    expect(seen.some((event) => event.type === 'approval.requested')).toBe(false)
+
+    workspace.release('ses_managed', 'dev_phone', 'finished')
+    await until(() => resumed.length === 1)
+    expect(resumed).toEqual([4242])
+    expect(external.listSessions()[0]?.workspaceConflict).toBeUndefined()
+    expect(workspace.getByCwd(dir)?.ownerId).toBe('ext_abc')
+    external.shutdown()
+  })
+
+  it('reports hook-only enforcement honestly when the OS process cannot be suspended', async () => {
+    const workspace = new WorkspaceLeaseManager(approvals.rawDb)
+    workspace.acquire({
+      sessionId: 'ses_managed', cwd: dir, ownerKind: 'session', ownerOrigin: 'phone', actor: 'dev_phone',
+    })
+    const external = manager({
+      workspace,
+      pause: () => { throw new Error('signal refused') },
+    })
+    expect(() => external.sessionStart('abc', dir, join(dir, 'n.jsonl'), 4242)).not.toThrow()
+    expect(external.listSessions()[0]?.workspaceConflict).toMatchObject({
+      ownerSessionId: 'ses_managed',
+      processPaused: false,
+    })
+    await expect(external.preToolUse(
+      'abc', dir, join(dir, 'n.jsonl'), 'Write', { file_path: join(dir, 'x.ts') }, undefined,
+      { enforceWorkspace: true },
+    )).resolves.toMatchObject({ decision: 'deny' })
+    external.shutdown()
+  })
+
+  it('re-pauses a conflicted writer when takeover cannot terminate it', () => {
+    const workspace = new WorkspaceLeaseManager(approvals.rawDb)
+    workspace.acquire({
+      sessionId: 'ses_managed', cwd: dir, ownerKind: 'session', ownerOrigin: 'phone', actor: 'dev_phone',
+    })
+    const paused: number[] = []
+    const resumed: number[] = []
+    const external = manager({
+      workspace,
+      pause: (pid) => paused.push(pid),
+      resume: (pid) => resumed.push(pid),
+      kill: () => { throw new Error('signal refused') },
+    })
+    external.sessionStart('abc', dir, join(dir, 'n.jsonl'), 4242)
+
+    expect(external.stop('ext_abc', 'dev_phone')).toBe(false)
+    expect(resumed).toEqual([4242])
+    expect(paused).toEqual([4242, 4242])
+    expect(external.listSessions()[0]?.workspaceConflict).toMatchObject({
+      ownerSessionId: 'ses_managed',
+      processPaused: true,
+    })
+    external.shutdown()
+    expect(resumed).toEqual([4242])
   })
 
   it('a daemon restart adopts a known session instead of duplicating it', () => {

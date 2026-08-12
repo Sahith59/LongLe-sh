@@ -75,7 +75,11 @@ async function waitFor(check: () => boolean, what: string, ms = 6000): Promise<v
   throw new Error(`timed out waiting for ${what}`)
 }
 
-const hello = () => inbox.find((m) => m.type === 'hello') as { sessions: Record<string, unknown>[] }
+const hello = () => inbox.find((m) => m.type === 'hello') as {
+  sessions: Record<string, unknown>[]
+  delegations: Record<string, unknown>[]
+  capabilities: Record<string, unknown>
+}
 
 /** Post to the daemon exactly as a hook script does — same endpoint, same secret. */
 async function hookPost(body: Record<string, unknown>): Promise<Response> {
@@ -214,5 +218,19 @@ describe('CHECKLIST end to end — a real daemon, a real socket', () => {
     // Checklist: an out-of-date phone must be able to say so rather than look broken.
     await connectPhone()
     expect(hello()).toHaveProperty('expectsApp')
+  })
+
+  it('the real daemon advertises durable delegation state and per-agent launch capability', async () => {
+    await connectPhone()
+    const greeting = hello()
+    expect(greeting.delegations).toEqual([])
+    expect(greeting.capabilities).toMatchObject({
+      delegation: {
+        preview: true,
+        targets: { claude: expect.any(Boolean), codex: expect.any(Boolean) },
+        maxDepth: 2,
+        maxActivePerSource: 3,
+      },
+    })
   })
 })

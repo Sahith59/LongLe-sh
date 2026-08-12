@@ -100,6 +100,9 @@ class CodexRun {
   private readonly queue: AgentStreamMessage[] = []
   private waiter: (() => void) | null = null
   private finished = false
+  private failure: Error | null = null
+  private stopping = false
+  private closedByServer = false
   private nextId = 1
   private buffer = ''
   private threadId: string | null = null
@@ -135,10 +138,13 @@ class CodexRun {
     this.child.stdout.on('data', (chunk: string) => this.onData(chunk))
     // Codex writes diagnostics to stderr. Losing them is fine; letting them kill us is not.
     this.child.stderr?.on('data', () => {})
-    this.child.on('exit', () => this.finish())
+    this.child.on('exit', (code, signal) => {
+      if (!this.stopping && !this.closedByServer) {
+        this.fail(new Error(`Codex app-server exited unexpectedly (${signal ?? code ?? 'unknown'}).`))
+      } else this.finish()
+    })
     this.child.on('error', (error) => {
-      this.emit({ type: 'text', text: `Codex could not start: ${error.message}` })
-      this.finish()
+      this.fail(new Error(`Codex could not start: ${error.message}`))
     })
 
     void this.start()
@@ -148,6 +154,7 @@ class CodexRun {
     return {
       events: this.iterate(),
       interrupt: async () => {
+        this.stopping = true
         /**
          * Ask Codex to stop cleanly, but never WAIT on that answer.
          *
@@ -204,17 +211,19 @@ class CodexRun {
       // Captured so the conversation can be reopened later, exactly like Claude's.
       this.request.onAgentSession(id)
 
-      await this.startTurn(this.request.prompt)
+      await this.startTurn(this.request.prompt, true)
     } catch (error) {
-      this.emit({
-        type: 'text',
-        text: `Codex session could not start: ${error instanceof Error ? error.message : String(error)}`,
-      })
-      this.finish()
+      const failure = new Error(
+        `Codex session could not start: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      // Preserve the useful diagnostic in the transcript, then reject the stream so the
+      // session/delegation lifecycle is honestly `errored`, never a misleading successful end.
+      this.emit({ type: 'text', text: failure.message })
+      this.fail(failure)
     }
   }
 
-  private async startTurn(text: string): Promise<void> {
+  private async startTurn(text: string, fatal = false): Promise<void> {
     if (this.threadId === null) return
     try {
       await this.call('turn/start', {
@@ -222,6 +231,7 @@ class CodexRun {
         input: [{ type: 'text', text }],
       })
     } catch (error) {
+      if (fatal) throw error
       this.emit({
         type: 'text',
         text: `Codex refused the turn: ${error instanceof Error ? error.message : String(error)}`,
@@ -369,6 +379,7 @@ class CodexRun {
       }
       case 'thread/closed':
       case 'thread/deleted': {
+        this.closedByServer = true
         this.finish()
         return
       }
@@ -453,6 +464,12 @@ class CodexRun {
     this.wake()
   }
 
+  private fail(error: Error): void {
+    if (this.finished) return
+    this.failure = error
+    this.finish()
+  }
+
   private wake(): void {
     this.waiter?.()
     this.waiter = null
@@ -461,7 +478,10 @@ class CodexRun {
   private async *iterate(): AsyncGenerator<AgentStreamMessage> {
     for (;;) {
       while (this.queue.length > 0) yield this.queue.shift() as AgentStreamMessage
-      if (this.finished) return
+      if (this.finished) {
+        if (this.failure !== null) throw this.failure
+        return
+      }
       await new Promise<void>((resolve) => {
         this.waiter = resolve
       })

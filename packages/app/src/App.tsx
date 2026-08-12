@@ -14,7 +14,10 @@ import {
   Download,
   Square,
   SquareTerminal,
+  GitBranchPlus,
+  ShieldAlert,
 } from 'lucide-react'
+import type { DelegationPreview, DelegationReturnPreview, DelegationSummary } from '@longleash/protocol'
 import {
   approvalsFor,
   createStore,
@@ -39,6 +42,16 @@ import { NewSessionSheet } from './ui/NewSessionSheet.js'
 import { SessionCard } from './ui/SessionCard.js'
 import { Transcript } from './ui/Transcript.js'
 import {
+  DelegateSheet,
+  type PreviewDelegationInput,
+  type StartDelegationInput,
+} from './ui/DelegateSheet.js'
+import { removeDelegationDraft } from './lib/delegation-draft.js'
+import {
+  matchesPendingDelegation,
+  type PendingDelegationLaunch,
+} from './lib/delegation-launch.js'
+import {
   EASE,
   EXIT,
   Key,
@@ -54,6 +67,8 @@ import { enablePush, pushPermission, syncPush } from './lib/push.js'
 import { QrScanner } from './ui/QrScanner.js'
 import { hasSessionLink, sessionFromSearch } from './lib/deep-link.js'
 import { isCurrentFolderReply } from './lib/folder-search.js'
+import { ReturnSheet, type ReturnDelegationInput } from './ui/ReturnSheet.js'
+import { removeReturnDraft } from './lib/delegation-return-draft.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
@@ -73,6 +88,23 @@ export default function App() {
     () => sessionFromSearch(window.location.search),
   )
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [delegationSource, setDelegationSource] = useState<{
+    sessionId: string
+    sourceSeq?: number
+  } | null>(null)
+  const [delegationPreview, setDelegationPreview] = useState<DelegationPreview | null>(null)
+  const [delegationError, setDelegationError] = useState<{ requestId: string; message: string } | null>(null)
+  const [delegations, setDelegations] = useState<Record<string, DelegationSummary>>({})
+  const [returnDelegationId, setReturnDelegationId] = useState<string | null>(null)
+  const [returnPreview, setReturnPreview] = useState<DelegationReturnPreview | null>(null)
+  const pendingReturn = useRef<{ requestId: string; idempotencyKey: string; delegationId: string } | null>(null)
+  const [delegationCapabilities, setDelegationCapabilities] = useState({
+    start: false,
+    targets: { claude: false, codex: false },
+    return: false,
+    workspace: 'legacy' as 'legacy' | 'sequential',
+  })
+  const pendingDelegation = useRef<PendingDelegationLaunch | null>(null)
   const [pushKey, setPushKey] = useState<string | null>(null)
   const [alerts, setAlerts] = useState<AlertsState | null>(null)
   /** Set when the laptop is running a newer release than this app bundle. */
@@ -125,10 +157,53 @@ export default function App() {
 
   useEffect(() => {
     if (!token) return
+    const settlePendingLaunch = (delegation: DelegationSummary, requestId?: string): void => {
+      const pending = pendingDelegation.current
+      if (!matchesPendingDelegation(pending, delegation, requestId)) return
+      if (delegation.status === 'failed' || delegation.status === 'cancelled') {
+        pendingDelegation.current = null
+        setDelegationError({
+          requestId: pending.requestId,
+          message: delegation.failure ?? 'The delegated child could not be started.',
+        })
+        return
+      }
+      if (delegation.targetSessionId === undefined) return
+      removeDelegationDraft(pending.sourceSessionId, pending.sourceSeq)
+      pendingDelegation.current = null
+      setDelegationPreview(null)
+      setDelegationError(null)
+      setDelegationSource(null)
+      setOpenSessionId(delegation.targetSessionId)
+    }
+    const settlePendingReturn = (delegation: DelegationSummary, requestId?: string): void => {
+      const pending = pendingReturn.current
+      if (pending === null || delegation.delegationId !== pending.delegationId) return
+      const correlated = requestId === pending.requestId || delegation.returnIdempotencyKey === pending.idempotencyKey
+      if (!correlated || delegation.status !== 'returned') return
+      removeReturnDraft(delegation.delegationId)
+      pendingReturn.current = null
+      setReturnPreview(null)
+      setDelegationError(null)
+      setReturnDelegationId(null)
+      setOpenSessionId(delegation.sourceSessionId)
+    }
     const client = connect(token, store, {
       onState: setState,
       onHello: (hello: Hello) => {
         setRoots(hello.roots)
+        const restoredDelegations = hello.delegations ?? []
+        setDelegations(
+          Object.fromEntries(restoredDelegations.map((delegation) => [delegation.delegationId, delegation])),
+        )
+        for (const delegation of restoredDelegations) settlePendingLaunch(delegation)
+        for (const delegation of restoredDelegations) settlePendingReturn(delegation)
+        setDelegationCapabilities({
+          start: hello.capabilities.delegation?.start === true,
+          targets: hello.capabilities.delegation?.targets ?? { claude: false, codex: false },
+          return: hello.capabilities.delegation?.return === true,
+          workspace: hello.capabilities.delegation?.workspace ?? 'legacy',
+        })
         // The laptop was released with a different build than this app. Almost always means
         // the phone is loading an old bundle from the relay, which otherwise presents itself
         // as features that simply do not exist.
@@ -159,6 +234,20 @@ export default function App() {
         // replace the results for what the person is currently typing.
         if (isCurrentFolderReply(folderQueryRef.current, query)) setFolders(results)
       },
+      onDelegationPreview: (preview) => {
+        setDelegationError(null)
+        setDelegationPreview(preview)
+      },
+      onDelegationReturnPreview: (preview) => {
+        setDelegationError(null)
+        setReturnPreview(preview)
+      },
+      onDelegationUpdate: (delegation, requestId) => {
+        setDelegations((current) => ({ ...current, [delegation.delegationId]: delegation }))
+        settlePendingLaunch(delegation, requestId)
+        settlePendingReturn(delegation, requestId)
+      },
+      onDelegationError: (requestId, message) => setDelegationError({ requestId, message }),
       onPath: setLinkPath,
     })
     clientRef.current = client
@@ -179,13 +268,13 @@ export default function App() {
 
   // A sheet that lets the page behind it scroll feels broken on a phone.
   useEffect(() => {
-    if (!sheetOpen) return
+    if (!sheetOpen && delegationSource === null && returnDelegationId === null) return
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = previous
     }
-  }, [sheetOpen])
+  }, [sheetOpen, delegationSource, returnDelegationId])
 
   const decide = useCallback(
     (approval: PendingApproval, verdict: 'allow' | 'deny', reply?: string) => {
@@ -313,7 +402,17 @@ export default function App() {
     (s) => s.status === 'ended' || s.status === 'errored' || !s.live,
   )
   const openSession = openSessionId ? snapshot.sessions[openSessionId] : undefined
+  const delegationSession = delegationSource
+    ? snapshot.sessions[delegationSource.sessionId]
+    : undefined
   const connected = state === 'connected'
+  const relatedDelegations = openSession
+    ? Object.values(delegations).filter(
+        (delegation) =>
+          delegation.sourceSessionId === openSession.sessionId ||
+          delegation.targetSessionId === openSession.sessionId,
+      )
+    : []
 
   return (
     <>
@@ -348,6 +447,22 @@ export default function App() {
               onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
               onTakeOver={(text) => clientRef.current?.takeOver(openSession.sessionId, text) ?? false}
               onSetGate={(gate) => clientRef.current?.setGate(openSession.sessionId, gate)}
+              delegations={relatedDelegations}
+              sessions={snapshot.sessions}
+              onOpenSession={setOpenSessionId}
+              onReviewReturn={(delegationId) => {
+                setDelegationError(null)
+                setReturnPreview(null)
+                setReturnDelegationId(delegationId)
+              }}
+              onDelegate={(sourceSeq) => {
+                setDelegationPreview(null)
+                setDelegationError(null)
+                setDelegationSource({
+                  sessionId: openSession.sessionId,
+                  ...(sourceSeq === undefined ? {} : { sourceSeq }),
+                })
+              }}
             />
           ) : (
             <ConsoleScreen
@@ -356,6 +471,7 @@ export default function App() {
               active={active}
               past={past}
               snapshot={snapshot}
+              delegations={Object.values(delegations)}
               diagnostic={diagnostic}
               error={error}
               onClearError={() => setError(null)}
@@ -384,6 +500,57 @@ export default function App() {
         }}
         onClose={() => setSheetOpen(false)}
       />
+      {delegationSource && delegationSession ? (
+        <DelegateSheet
+          open
+          session={delegationSession}
+          {...(delegationSource.sourceSeq === undefined ? {} : { sourceSeq: delegationSource.sourceSeq })}
+          connected={connected}
+          preview={delegationPreview}
+          previewError={delegationError}
+          onPreview={(input: PreviewDelegationInput) => {
+            setDelegationError(null)
+            return clientRef.current?.previewDelegation(input) ?? false
+          }}
+          launchEnabled={delegationCapabilities.start}
+          workspaceMode={delegationCapabilities.workspace}
+          availableTargets={delegationCapabilities.targets}
+          onStart={(input: StartDelegationInput) => {
+            setDelegationError(null)
+            pendingDelegation.current = {
+              requestId: input.requestId,
+              idempotencyKey: input.idempotencyKey,
+              sourceSessionId: input.sourceSessionId,
+              ...(input.sourceSeq === undefined ? {} : { sourceSeq: input.sourceSeq }),
+            }
+            return clientRef.current?.startDelegation(input) ?? false
+          }}
+          onClose={() => setDelegationSource(null)}
+        />
+      ) : null}
+      {returnDelegationId && delegations[returnDelegationId] ? (
+        <ReturnSheet
+          open
+          delegation={delegations[returnDelegationId]}
+          preview={returnPreview}
+          error={delegationError}
+          connected={connected && delegationCapabilities.return}
+          onPrepare={(input) => {
+            setDelegationError(null)
+            return clientRef.current?.prepareReturn(input) ?? false
+          }}
+          onReturn={(input: ReturnDelegationInput) => {
+            setDelegationError(null)
+            pendingReturn.current = {
+              requestId: input.requestId,
+              idempotencyKey: input.idempotencyKey,
+              delegationId: input.delegationId,
+            }
+            return clientRef.current?.returnDelegation(input) ?? false
+          }}
+          onClose={() => setReturnDelegationId(null)}
+        />
+      ) : null}
     </>
   )
 }
@@ -554,6 +721,7 @@ export function ConsoleScreen({
   active,
   past,
   snapshot,
+  delegations = [],
   diagnostic,
   error,
   onClearError,
@@ -570,6 +738,7 @@ export function ConsoleScreen({
   active: SessionView[]
   past: SessionView[]
   snapshot: ReturnType<ReturnType<typeof createStore>['getState']>
+  delegations?: DelegationSummary[]
   diagnostic: string | null
   error: string | null
   onClearError: () => void
@@ -638,6 +807,7 @@ export function ConsoleScreen({
                   key={session.sessionId}
                   session={session}
                   pending={approvalsFor(snapshot, session.sessionId).length}
+                  children={delegationCounts(delegations, session.sessionId)}
                   onOpen={() => onOpen(session.sessionId)}
                 />
               ))}
@@ -655,6 +825,7 @@ export function ConsoleScreen({
                   key={session.sessionId}
                   session={session}
                   pending={0}
+                  children={delegationCounts(delegations, session.sessionId)}
                   onOpen={() => onOpen(session.sessionId)}
                 />
               ))}
@@ -694,6 +865,17 @@ export function ConsoleScreen({
   )
 }
 
+function delegationCounts(delegations: DelegationSummary[], sourceSessionId: string) {
+  const children = delegations.filter((delegation) => delegation.sourceSessionId === sourceSessionId)
+  return {
+    total: children.length,
+    active: children.filter(
+      (delegation) => delegation.status === 'starting' || delegation.status === 'running',
+    ).length,
+    ready: children.filter((delegation) => delegation.status === 'ready').length,
+  }
+}
+
 export function DetailScreen({
   session,
   approvals,
@@ -709,6 +891,11 @@ export function DetailScreen({
   onSend,
   onTakeOver,
   onSetGate,
+  onDelegate,
+  delegations,
+  sessions,
+  onOpenSession,
+  onReviewReturn,
 }: {
   session: SessionView
   approvals: PendingApproval[]
@@ -724,6 +911,11 @@ export function DetailScreen({
   onSend: (text: string) => boolean
   onTakeOver: (text: string) => boolean
   onSetGate: (gate: 'ask' | 'auto') => void
+  onDelegate?: (sourceSeq?: number) => void
+  delegations?: DelegationSummary[]
+  sessions?: Record<string, SessionView>
+  onOpenSession?: (sessionId: string) => void
+  onReviewReturn?: (delegationId: string) => void
 }) {
   const [message, setMessage] = useState('')
   const still = useReducedMotion()
@@ -736,7 +928,7 @@ export function DetailScreen({
   // Typing wakes a dormant conversation, so the composer belongs to anything continuable —
   // not only to what happens to be running right now.
   const live = session.live && (session.status === 'running' || session.status === 'waiting')
-  const canType = live || session.resumable
+  const canType = (live || session.resumable) && session.workspaceConflict === undefined
   const readoutRef = useRef<HTMLDivElement | null>(null)
   const followTail = useRef(true)
 
@@ -765,17 +957,25 @@ export function DetailScreen({
             >
               {session.title || session.sessionId}
             </motion.h2>
-            {live ? (
-              <Key className="sm stopkey" onClick={onStop} label="Stop this agent">
-                <Square size={13} strokeWidth={2.6} fill="currentColor" aria-hidden="true" />
-                Stop
-              </Key>
-            ) : session.resumable ? (
-              <Key className="sm" onClick={onResume} label="Reopen this conversation">
-                <RotateCcw size={14} strokeWidth={2.4} aria-hidden="true" />
-                Reopen
-              </Key>
-            ) : null}
+            <div className="detailactions">
+              {onDelegate ? (
+                <Key className="sm delegatekey" onClick={() => onDelegate()} label="Delegate from this session">
+                  <GitBranchPlus size={14} strokeWidth={2.3} aria-hidden="true" />
+                  Delegate
+                </Key>
+              ) : null}
+              {live ? (
+                <Key className="sm stopkey" onClick={onStop} label="Stop this agent">
+                  <Square size={13} strokeWidth={2.6} fill="currentColor" aria-hidden="true" />
+                  Stop
+                </Key>
+              ) : session.resumable ? (
+                <Key className="sm" onClick={onResume} label="Reopen this conversation">
+                  <RotateCcw size={14} strokeWidth={2.4} aria-hidden="true" />
+                  Reopen
+                </Key>
+              ) : null}
+            </div>
           </div>
           <p className="meta">
             <Led status={session.status} />
@@ -829,6 +1029,36 @@ export function DetailScreen({
           ) : null}
         </div>
 
+        {session.workspaceConflict ? (
+          <div className="workspace-conflict" role="alert">
+            <ShieldAlert size={18} strokeWidth={2.2} aria-hidden="true" />
+            <div>
+              <strong>
+                {session.workspaceConflict.processPaused
+                  ? 'Checkout process paused to prevent two writers'
+                  : 'Conflict detected — process pause not verified'}
+              </strong>
+              <p>
+                Session <span className="mono">{session.workspaceConflict.ownerSessionId}</span> owns
+                <span className="mono"> {shortPath(session.workspaceConflict.cwd)}</span>.
+                {session.workspaceConflict.processPaused
+                  ? ' Stop or finish that session; this one resumes automatically when the lease is released.'
+                  : ' Permission requests are denied, but auto-approved activity cannot be guaranteed. Stop this session immediately before continuing.'}
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {onOpenSession && sessions ? (
+          <DelegationLineage
+            session={session}
+            delegations={delegations ?? []}
+            sessions={sessions}
+            onOpen={onOpenSession}
+            {...(onReviewReturn ? { onReviewReturn } : {})}
+          />
+        ) : null}
+
         {approvals.length > 0 ? (
           <section aria-live="polite">
             <SectionLabel count={approvals.length} urgent>
@@ -867,7 +1097,10 @@ export function DetailScreen({
             {session.blocks.length === 0 ? (
               <p className="empty">Nothing yet.</p>
             ) : (
-              <Transcript blocks={session.blocks} />
+              <Transcript
+                blocks={session.blocks}
+                {...(onDelegate ? { onDelegate: (block) => onDelegate(block.firstSeq) } : {})}
+              />
             )}
           </div>
           {session.error ? (
@@ -916,13 +1149,116 @@ export function DetailScreen({
           </div>
         ) : (
           <p className="note">
-            This conversation cannot be continued — it has no resume point. Start a new session
-            in the same folder to pick the work back up.
+            {session.workspaceConflict
+              ? 'This checkout is paused while another session owns it. No message or tool is sent from here.'
+              : 'This conversation cannot be continued — it has no resume point. Start a new session in the same folder to pick the work back up.'}
           </p>
         )}
       </div>
     </Screen>
   )
+}
+
+function DelegationLineage({
+  session,
+  delegations,
+  sessions,
+  onOpen,
+  onReviewReturn,
+}: {
+  session: SessionView
+  delegations: DelegationSummary[]
+  sessions: Record<string, SessionView>
+  onOpen: (sessionId: string) => void
+  onReviewReturn?: (delegationId: string) => void
+}) {
+  const incoming = delegations.find((delegation) => delegation.targetSessionId === session.sessionId)
+  const parentId = incoming?.sourceSessionId ?? session.relationship?.parentSessionId
+  const outgoing = delegations.filter((delegation) => delegation.sourceSessionId === session.sessionId)
+  if (parentId === undefined && outgoing.length === 0) return null
+
+  return (
+    <section className="lineage" aria-label="Delegated work">
+      {parentId ? (
+        <div className="lineage-source-row">
+          <button
+            type="button"
+            className="lineage-parent"
+            onClick={() => onOpen(parentId)}
+            disabled={sessions[parentId] === undefined}
+          >
+            <GitBranchPlus size={16} strokeWidth={2.3} aria-hidden="true" />
+            <span>
+              <small>Delegated from</small>
+              <strong>{sessions[parentId]?.title || 'Source session'}</strong>
+            </span>
+            <span className="lineage-open">Open source</span>
+          </button>
+          {incoming?.status === 'ready' && onReviewReturn ? (
+            <button
+              type="button"
+              className="lineage-return"
+              onClick={() => onReviewReturn(incoming.delegationId)}
+            >
+              Review return
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {outgoing.length > 0 ? (
+        <div className="lineage-children">
+          <div className="lineage-label">
+            <span>Delegated work</span>
+            <span className="mono">{outgoing.length}</span>
+          </div>
+          {outgoing.map((delegation) => {
+            const child = delegation.targetSessionId
+              ? sessions[delegation.targetSessionId]
+              : undefined
+            const canOpen = delegation.targetSessionId !== undefined && child !== undefined
+            return (
+              <div className="lineage-row" key={delegation.delegationId}>
+                <button
+                  type="button"
+                  className="lineage-child"
+                  onClick={() => delegation.targetSessionId && onOpen(delegation.targetSessionId)}
+                  disabled={!canOpen}
+                >
+                  <span className="lineage-agent" data-agent={delegation.targetAgent}>
+                    {AGENT_LABEL[delegation.targetAgent] ?? delegation.targetAgent}
+                  </span>
+                  <span className="lineage-role">{delegation.role}</span>
+                  <span className={`lineage-status ${delegation.status}`}>
+                    {delegationStatusLabel(delegation, child)}
+                  </span>
+                  {delegation.failure ? <small>{delegation.failure}</small> : null}
+                </button>
+                {delegation.status === 'ready' && onReviewReturn ? (
+                  <button
+                    type="button"
+                    className="lineage-return"
+                    onClick={() => onReviewReturn(delegation.delegationId)}
+                  >
+                    Review return
+                  </button>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function delegationStatusLabel(delegation: DelegationSummary, child?: SessionView): string {
+  if (delegation.status === 'ready') return 'ready to review'
+  if (delegation.status === 'starting') return 'starting…'
+  if (delegation.status !== 'running') return delegation.status
+  if (child?.status === 'waiting') return child.live ? 'waiting for you' : 'ready to reopen'
+  if (child?.status === 'errored') return 'failed'
+  if (child?.status === 'ended') return 'ready to review'
+  return 'working'
 }
 
 /* ------------------------------------------------------------------ the gate */

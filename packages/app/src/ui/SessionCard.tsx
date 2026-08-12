@@ -16,10 +16,12 @@ import { PathChip } from './PathChip.js'
 export function SessionCard({
   session,
   pending,
+  children,
   onOpen,
 }: {
   session: SessionView
   pending: number
+  children?: { total: number; active: number; ready: number }
   onOpen: () => void
 }) {
   const preview = session.output.trim().slice(-180)
@@ -64,6 +66,26 @@ export function SessionCard({
         <span className="sessiontag origintag" data-origin={session.origin}>
           {ORIGIN_LABEL[session.origin] ?? session.origin}
         </span>
+        {session.relationship ? (
+          <>
+            <span className="dot" aria-hidden="true">·</span>
+            <span className="sessiontag childtag">
+              child · {session.relationship.role}
+            </span>
+          </>
+        ) : null}
+        {children && children.total > 0 ? (
+          <>
+            <span className="dot" aria-hidden="true">·</span>
+            <span className="sessiontag parenttag">
+              parent · {children.active > 0
+                ? `${children.active} active`
+                : children.ready > 0
+                  ? `${children.ready} ready`
+                  : `${children.total} ${children.total === 1 ? 'child' : 'children'}`}
+            </span>
+          </>
+        ) : null}
       </p>
 
       {pending > 0 ? (

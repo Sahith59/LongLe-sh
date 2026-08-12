@@ -4,7 +4,12 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import type { WebSocket } from 'ws'
-import { parseClientMessage, PROTOCOL_VERSION, type SessionEvent } from '@longleash/protocol'
+import {
+  parseClientMessage,
+  PROTOCOL_VERSION,
+  type DelegationSummary,
+  type SessionEvent,
+} from '@longleash/protocol'
 import { timingSafeEqual } from 'node:crypto'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { PushNotifier } from './push.js'
@@ -14,6 +19,8 @@ import { PairingError } from './auth.js'
 import { SessionError, type SessionManager } from './sessions.js'
 import type { FolderIndex } from './folders.js'
 import { RelayLink } from './relay-link.js'
+import { BriefingBuilder, BriefingError } from './briefing.js'
+import { DelegationManagerError, type DelegationManager } from './delegation-manager.js'
 
 /** Application close codes (4000-4999 is the private range). */
 export const CLOSE_UNAUTHORIZED = 4401
@@ -94,13 +101,16 @@ export class LongLeashServer {
   private folders: FolderIndex | null = null
   private push: PushNotifier | null = null
   private external: ExternalSessions | null = null
+  private delegations: DelegationManager | null = null
   private hookSecret: string | null = null
   private readonly staticRoot: string | undefined
   private readonly relayUrl: string | undefined
   private readonly log: (line: string) => void
+  private readonly briefings: BriefingBuilder
 
   constructor(opts: ServerOptions) {
     this.eventLog = opts.eventLog
+    this.briefings = new BriefingBuilder(opts.eventLog)
     this.registry = opts.registry
     this.host = opts.host ?? '127.0.0.1'
     this.requestedPort = opts.port ?? 0
@@ -225,6 +235,10 @@ export class LongLeashServer {
             agent,
             surface,
             abandoned: gone.signal,
+            // Both supported hook shapes can veto a tool. Enforce the lease at the earliest
+            // boundary too, so auto-approved tools cannot slip through PreToolUse merely
+            // because they never produce a later PermissionRequest.
+            enforceWorkspace: true,
           },
         )
         // Printed so a surprising ask is diagnosable from the daemon terminal rather than
@@ -396,6 +410,10 @@ export class LongLeashServer {
     this.sessions = sessions
   }
 
+  attachDelegations(delegations: DelegationManager): void {
+    this.delegations = delegations
+  }
+
   /** Lets a phone find a project by name instead of typing an absolute path. */
   attachFolders(folders: FolderIndex): void {
     this.folders = folders
@@ -465,6 +483,13 @@ export class LongLeashServer {
   /** Fan out an event that some other component already persisted (e.g. SessionManager). */
   broadcastEvent(event: SessionEvent): void {
     this.broadcast(event)
+  }
+
+  /** Delegation lifecycle is device-wide, unlike transcript events which are per session. */
+  broadcastDelegation(delegation: DelegationSummary): void {
+    for (const connection of this.connections) {
+      this.sendTo(connection, { v: PROTOCOL_VERSION, type: 'delegation', delegation })
+    }
   }
 
   connectionCount(): number {
@@ -577,7 +602,20 @@ export class LongLeashServer {
       // Everything the daemon knows about, so a reloaded phone rebuilds instead of showing
       // nothing — including sessions the human started in a terminal.
       sessions: [...(this.sessions?.listSessions() ?? []), ...(this.external?.listSessions() ?? [])],
-      capabilities: { startSession: this.sessions !== null, stopSession: this.sessions !== null },
+      capabilities: {
+        startSession: this.sessions !== null,
+        stopSession: this.sessions !== null,
+        delegation: this.delegations?.capabilities() ?? {
+          preview: true,
+          start: false,
+          targets: { claude: false, codex: false },
+          maxDepth: 2,
+          maxActivePerSource: 0,
+          return: false,
+          workspace: 'legacy',
+        },
+      },
+      delegations: this.delegations?.list() ?? [],
       // Where this daemon can be reached when the LAN cannot see it.
       relay: this.relayUrl === undefined ? null : { url: this.relayUrl },
       // The VAPID public key a phone needs to subscribe for lock-screen alerts.
@@ -709,6 +747,165 @@ export class LongLeashServer {
         of: 'decision',
         approvalId: message.approvalId,
         outcome,
+      })
+      return
+    }
+
+    if (message.type === 'previewDelegation') {
+      try {
+        const preview = this.briefings.build({
+          sourceSessionId: message.sourceSessionId,
+          ...(message.sourceSeq === undefined ? {} : { sourceSeq: message.sourceSeq }),
+          targetAgent: message.targetAgent,
+          role: message.role,
+          contextScope: message.contextScope,
+        })
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'delegationPreview',
+          requestId: message.requestId,
+          ...preview,
+        })
+      } catch (error) {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          requestId: message.requestId,
+          code: error instanceof BriefingError ? error.reason : 'preview-failed',
+          message: error instanceof Error ? error.message.slice(0, 300) : 'Could not build the briefing.',
+        })
+      }
+      return
+    }
+
+    if (message.type === 'startDelegation') {
+      if (this.delegations === null) {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          requestId: message.requestId,
+          code: 'not-implemented',
+          message: 'Delegation launch is not available on this daemon build.',
+        })
+        return
+      }
+      void this.delegations
+        .start({
+          idempotencyKey: message.idempotencyKey,
+          sourceSessionId: message.sourceSessionId,
+          ...(message.sourceSeq === undefined ? {} : { sourceSeq: message.sourceSeq }),
+          targetAgent: message.targetAgent,
+          role: message.role,
+          contextScope: message.contextScope,
+          briefing: message.briefing,
+          createdBy: connection.deviceId,
+        })
+        .then(({ delegation, created }) => {
+          if (delegation.targetSessionId !== undefined) connection.sessions.add(delegation.targetSessionId)
+          this.sendTo(connection, {
+            v: PROTOCOL_VERSION,
+            type: 'delegation',
+            requestId: message.requestId,
+            created,
+            delegation,
+          })
+        })
+        .catch((error: unknown) => {
+          this.log(`delegation refused: ${error instanceof Error ? error.message : 'unknown'}`)
+          this.sendTo(connection, {
+            v: PROTOCOL_VERSION,
+            type: 'error',
+            requestId: message.requestId,
+            code: error instanceof DelegationManagerError ? error.reason : 'delegation-failed',
+            message: error instanceof Error ? error.message.slice(0, 300) : 'Could not start delegation.',
+          })
+        })
+      return
+    }
+
+    if (message.type === 'prepareReturn') {
+      if (this.delegations === null) {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          requestId: message.requestId,
+          code: 'not-implemented',
+          message: 'Reviewed returns are not available on this daemon build.',
+        })
+        return
+      }
+      try {
+        const preview = this.delegations.prepareReturn(message.delegationId)
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'delegationReturnPreview',
+          requestId: message.requestId,
+          delegationId: preview.delegationId,
+          parent: {
+            sessionId: preview.parent.sessionId,
+            agent: preview.parent.agent,
+            title: preview.parent.title,
+            cwd: preview.parent.cwd,
+            origin: preview.parent.origin,
+            live: preview.parent.live,
+          },
+          child: {
+            sessionId: preview.child.sessionId,
+            agent: preview.child.agent,
+            title: preview.child.title,
+          },
+          role: preview.role,
+          returnText: preview.returnText,
+          attribution: preview.attribution,
+          requiresTakeover: preview.requiresTakeover,
+          context: preview.context,
+        })
+      } catch (error) {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          requestId: message.requestId,
+          code: error instanceof DelegationManagerError ? error.reason : 'return-preview-failed',
+          message: error instanceof Error ? error.message.slice(0, 300) : 'Could not prepare the return.',
+        })
+      }
+      return
+    }
+
+    if (message.type === 'returnDelegation') {
+      if (this.delegations === null) {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          requestId: message.requestId,
+          code: 'not-implemented',
+          message: 'Reviewed returns are not available on this daemon build.',
+        })
+        return
+      }
+      void this.delegations.returnDelegation({
+        delegationId: message.delegationId,
+        idempotencyKey: message.idempotencyKey,
+        returnText: message.returnText,
+        takeoverConfirmed: message.takeoverConfirmed,
+        actor: connection.deviceId,
+      }).then(({ delegation, created }) => {
+        connection.sessions.add(delegation.sourceSessionId)
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'delegation',
+          requestId: message.requestId,
+          created,
+          delegation,
+        })
+      }).catch((error: unknown) => {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          requestId: message.requestId,
+          code: error instanceof DelegationManagerError ? error.reason : 'return-failed',
+          message: error instanceof Error ? error.message.slice(0, 300) : 'Could not deliver the return.',
+        })
       })
       return
     }

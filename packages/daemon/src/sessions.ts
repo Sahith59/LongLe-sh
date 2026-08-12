@@ -4,8 +4,16 @@ import { resolve, sep } from 'node:path'
 import type { AgentFactory, AgentRunHandle, PermissionDecision } from './agent.js'
 import type { ApprovalStore } from './approvals.js'
 import type { EventLog, AppendInput } from './eventlog.js'
-import { AgentKind, SessionOrigin, type SessionEvent } from '@longleash/protocol'
+import {
+  AgentKind,
+  SessionOrigin,
+  SessionRelationship,
+  type SessionEvent,
+  type SessionRelationship as SessionRelationshipValue,
+} from '@longleash/protocol'
 import { isSensitivePath } from './sensitive.js'
+import { WorkspaceLeaseError, type WorkspaceLeaseManager } from './workspace-leases.js'
+import { ensureColumns } from './migrate.js'
 
 const DEFAULT_APPROVAL_TTL_MS = 24 * 60 * 60_000
 
@@ -14,12 +22,41 @@ export type DecisionOutcome = 'decided' | 'already-decided' | 'unknown'
 
 export class SessionError extends Error {
   constructor(
-    readonly reason: 'cwd-not-allowed' | 'no-adapter' | 'invalid-input' | 'session-busy' | 'too-many-sessions',
+    readonly reason:
+      | 'cwd-not-allowed'
+      | 'no-adapter'
+      | 'invalid-input'
+      | 'session-busy'
+      | 'too-many-sessions'
+      | 'workspace-conflict',
     message: string,
   ) {
     super(message)
     this.name = 'SessionError'
   }
+}
+
+function relationshipFromRow(row: {
+  parent_session_id: string | null
+  delegation_id: string | null
+  delegation_role: string | null
+  delegation_depth: number | null
+}): { relationship?: SessionRelationshipValue } {
+  if (
+    row.parent_session_id === null ||
+    row.delegation_id === null ||
+    row.delegation_role === null ||
+    row.delegation_depth === null
+  ) {
+    return {}
+  }
+  const parsed = SessionRelationship.safeParse({
+    parentSessionId: row.parent_session_id,
+    delegationId: row.delegation_id,
+    role: row.delegation_role,
+    depth: row.delegation_depth,
+  })
+  return parsed.success ? { relationship: parsed.data } : {}
 }
 
 export interface SessionSummary {
@@ -32,6 +69,8 @@ export interface SessionSummary {
   origin: SessionOrigin
   /** Human-readable label — the opening request, so a list is scannable. */
   title: string
+  /** Present only when this session was created as a deliberately attributed child. */
+  relationship?: SessionRelationshipValue
 }
 
 /**
@@ -58,9 +97,17 @@ export interface StartSessionInput {
   agent: AgentKind
   cwd: string
   prompt: string
+  /** Delegation has already shown this prompt byte-for-byte to the human. */
+  preservePromptWhitespace?: boolean
+  /** A concise child label; the full briefing is intentionally not used as list chrome. */
+  title?: string
   origin?: SessionOrigin
+  /** DelegationManager supplies this when it creates a child through the ordinary runner. */
+  relationship?: SessionRelationshipValue
   /** Device that requested this, recorded in the audit log. */
   actor?: string
+  /** DelegationManager reserved the checkout while pausing the source. */
+  workspaceReservationId?: string
 }
 
 export interface AuditEntry {
@@ -86,6 +133,10 @@ export interface SessionManagerOptions {
    * whenever a broad root (like a home directory) is allowed.
    */
   excludeSensitive?: boolean
+  /** Durable one-writer ownership. Omit only in isolated unit tests or legacy embeddings. */
+  workspace?: WorkspaceLeaseManager
+  /** Maximum time a workspace handoff waits for the old agent process to drain. */
+  pauseTimeoutMs?: number
   /**
    * Refuse tools whose declared path escapes the allowlisted roots, without troubling the
    * human. Off by default so the person stays in charge; on for sandboxed use where "it can
@@ -109,6 +160,21 @@ interface LiveSession extends SessionSummary {
 }
 
 const newId = (prefix: string) => `${prefix}_${randomBytes(9).toString('base64url')}`
+
+function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    const timer = setTimeout(() => finish(false), timeoutMs)
+    timer.unref?.()
+    void promise.then(() => finish(true), () => finish(true))
+  })
+}
 
 /**
  * Tools that declare a path get it checked; shell commands do not, because parsing shell
@@ -146,6 +212,8 @@ export class SessionManager {
   private readonly denyOutsideRoot: boolean
   private readonly maxConcurrentSessions: number
   private readonly excludeSensitive: boolean
+  private readonly workspace: WorkspaceLeaseManager | undefined
+  private readonly pauseTimeoutMs: number
   private readonly sessions = new Map<string, LiveSession>()
   private readonly claimed = new Set<string>()
   /** Resolves when a session's next approval has been registered — lets tests avoid sleeps. */
@@ -162,6 +230,25 @@ export class SessionManager {
     this.denyOutsideRoot = opts.denyOutsideRoot ?? false
     this.maxConcurrentSessions = opts.maxConcurrentSessions ?? 10
     this.excludeSensitive = opts.excludeSensitive ?? false
+    this.workspace = opts.workspace
+    this.pauseTimeoutMs = opts.pauseTimeoutMs ?? 15_000
+    if (!Number.isFinite(this.pauseTimeoutMs) || this.pauseTimeoutMs < 1) {
+      throw new Error('pauseTimeoutMs must be a positive number')
+    }
+    this.approvals.rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS session_deliveries (
+        delivery_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'sending' CHECK (state IN ('sending', 'sent')),
+        created_at INTEGER NOT NULL
+      );
+    `)
+    // Rows written by the first reviewed-return build predate the explicit state. They were
+    // only committed after the vendor call returned, so treating those rows as sent is the
+    // faithful upgrade. New rows begin as `sending` and cross to `sent` after acceptance.
+    ensureColumns(this.approvals.rawDb, 'session_deliveries', [
+      { name: 'state', definition: "TEXT NOT NULL DEFAULT 'sent'" },
+    ])
     // A restart takes every agent process with it — but not the conversations. Anything with
     // a resume id becomes 'waiting': the transcript survives on disk and a reply wakes it (see
     // sendMessage). Only a session that never announced a resume id is truly over. Either way
@@ -215,6 +302,10 @@ export class SessionManager {
   /** How many stale approvals were reconciled at startup; surfaced so restarts are visible. */
   readonly orphansClosed: number = 0
 
+  supportsAgent(agent: 'claude' | 'codex'): boolean {
+    return this.agentFactories[agent] !== undefined
+  }
+
   async startSession(input: StartSessionInput): Promise<{ sessionId: string }> {
     const running = [...this.sessions.values()].filter(
       (s) => s.status === 'running' || s.status === 'waiting',
@@ -225,8 +316,8 @@ export class SessionManager {
         `Too many sessions running (${running}/${this.maxConcurrentSessions}). Stop one first.`,
       )
     }
-    const prompt = input.prompt.trim()
-    if (prompt.length === 0) throw new SessionError('invalid-input', 'Prompt must not be empty')
+    if (input.prompt.trim().length === 0) throw new SessionError('invalid-input', 'Prompt must not be empty')
+    const prompt = input.preservePromptWhitespace ? input.prompt : input.prompt.trim()
 
     // Validate at runtime too: this is a public entry point, not only reached via the WS schema.
     const agent = AgentKind.safeParse(input.agent)
@@ -237,27 +328,82 @@ export class SessionManager {
 
     const cwd = this.assertAllowedCwd(input.cwd)
     const origin = SessionOrigin.catch('daemon').parse(input.origin ?? 'daemon')
+    const parsedRelationship = input.relationship === undefined
+      ? undefined
+      : SessionRelationship.safeParse(input.relationship)
+    if (parsedRelationship !== undefined && !parsedRelationship.success) {
+      throw new SessionError('invalid-input', 'Delegated session attribution is incomplete or invalid.')
+    }
+    const relationship = parsedRelationship?.data
+    if (relationship !== undefined && relationship.depth > 2) {
+      throw new SessionError('invalid-input', 'V1 delegation depth must be 1 or 2.')
+    }
     const sessionId = newId('ses')
-    this.claimed.add(sessionId)
-
-    const title = prompt.slice(0, 80)
-    this.persistSession({
+    const actor = input.actor ?? 'daemon'
+    this.acquireWorkspace({
       sessionId,
-      agent: agent.data,
       cwd,
       origin,
-      title,
-      status: 'running',
-      startedAt: this.now(),
+      actor,
+      ...(input.workspaceReservationId === undefined
+        ? {}
+        : { reservationId: input.workspaceReservationId }),
     })
-    this.emit(sessionId, {
-      type: 'session.started',
-      payload: { agent: agent.data, cwd, title, origin },
-    })
-    this.audit(input.actor ?? 'daemon', 'session.start', `${agent.data} in ${cwd}`)
+    this.claimed.add(sessionId)
 
+    const suppliedTitle = input.title?.trim()
+    const title = (suppliedTitle === undefined || suppliedTitle === '' ? prompt : suppliedTitle).slice(0, 80)
     const waiting = new Map<string, (decision: PermissionDecision) => void>()
-    const handle = this.spawn(factory, sessionId, cwd, prompt, waiting)
+    let handle: AgentRunHandle
+    let persisted = false
+    try {
+      this.persistSession({
+        sessionId,
+        agent: agent.data,
+        cwd,
+        origin,
+        title,
+        status: 'running',
+        startedAt: this.now(),
+        ...(relationship === undefined ? {} : { relationship }),
+      })
+      persisted = true
+      this.emit(sessionId, {
+        type: 'session.started',
+        payload: {
+          agent: agent.data,
+          cwd,
+          title,
+          origin,
+          ...(relationship === undefined ? {} : { relationship }),
+        },
+      })
+      // The initial request is part of the conversation and needs its own durable sequence. Without
+      // it Delegate could reference follow-ups but not the task that created the session.
+      this.emit(sessionId, {
+        type: 'stream.delta',
+        payload: { kind: 'user', text: `\n\n› ${prompt}\n` },
+      })
+      this.audit(actor, 'session.start', `${agent.data} in ${cwd}`)
+      handle = this.spawn(factory, sessionId, cwd, prompt, waiting)
+    } catch (error) {
+      // Ownership is claimed before any durable lifecycle write. Every later synchronous
+      // failure must release it; otherwise one bad adapter or disk write bricks this checkout.
+      this.claimed.delete(sessionId)
+      try { this.workspace?.release(sessionId, 'system:session', 'agent startup failed') } catch { /* original error wins */ }
+      if (persisted) {
+        try {
+          this.markStatus(sessionId, 'errored')
+          this.emit(sessionId, {
+            type: 'session.errored',
+            payload: { message: error instanceof Error ? error.message : 'Agent failed to start' },
+          })
+        } catch {
+          // The original persistence/adapter failure remains the actionable root cause.
+        }
+      }
+      throw error
+    }
 
     const session: LiveSession = {
       sessionId,
@@ -267,6 +413,7 @@ export class SessionManager {
       startedAt: this.now(),
       origin,
       title,
+      ...(relationship === undefined ? {} : { relationship }),
       handle,
       waiting,
       done: Promise.resolve(),
@@ -336,6 +483,10 @@ export class SessionManager {
       status: string
       started_at: number
       agent_session_id: string | null
+      parent_session_id: string | null
+      delegation_id: string | null
+      delegation_role: string | null
+      delegation_depth: number | null
     }[]
     return rows.map((row) => {
       const live = this.sessions.get(row.session_id)
@@ -351,6 +502,7 @@ export class SessionManager {
         startedAt: row.started_at,
         resumable: row.agent_session_id !== null,
         ...(row.agent_session_id === null ? {} : { resumeId: row.agent_session_id }),
+        ...relationshipFromRow(row),
       }
     })
   }
@@ -396,10 +548,14 @@ export class SessionManager {
   }
 
   private persistSession(summary: SessionSummary): void {
+    const relationship = summary.relationship
     this.approvals.rawDb
       .prepare(
-        `INSERT INTO sessions (session_id, agent, cwd, origin, title, status, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO sessions (
+           session_id, agent, cwd, origin, title, status, started_at,
+           parent_session_id, delegation_id, delegation_role, delegation_depth
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET status = excluded.status`,
       )
       .run(
@@ -410,6 +566,10 @@ export class SessionManager {
         summary.title,
         summary.status,
         summary.startedAt,
+        relationship?.parentSessionId ?? null,
+        relationship?.delegationId ?? null,
+        relationship?.role ?? null,
+        relationship?.depth ?? null,
       )
   }
 
@@ -532,6 +692,17 @@ export class SessionManager {
     if (!session || (session.status !== 'running' && session.status !== 'waiting')) {
       return this.wake(sessionId, trimmed, actor)
     }
+    try {
+      this.acquireWorkspace({
+        sessionId,
+        cwd: session.cwd,
+        origin: session.origin,
+        actor,
+      })
+    } catch (error) {
+      if (error instanceof SessionError && error.reason === 'workspace-conflict') return false
+      throw error
+    }
     this.audit(actor, 'message.send', `${sessionId}: ${trimmed.slice(0, 80)}`)
     session.status = 'running'
     this.markStatus(sessionId, 'running')
@@ -542,12 +713,88 @@ export class SessionManager {
   }
 
   /**
+   * Deliver a reviewed orchestration boundary at most once from LongLeash's perspective.
+   * The durable marker is written before the vendor call and marked sent only after acceptance.
+   * A crash in that tiny gap is reported as `uncertain`: LongLeash will neither claim success
+   * nor automatically risk injecting the same return twice.
+   */
+  sendMessageOnce(input: {
+    sessionId: string
+    text: string
+    actor: string
+    deliveryId: string
+    workspaceReservationId?: string
+  }): 'sent' | 'already-sent' | 'uncertain' | 'not-running' {
+    const deliveryId = input.deliveryId.trim()
+    const text = input.text
+    if (deliveryId === '' || text.trim() === '') return 'not-running'
+    const existing = this.approvals.rawDb
+      .prepare('SELECT session_id, state FROM session_deliveries WHERE delivery_id = ?')
+      .get(deliveryId) as { session_id: string; state: 'sending' | 'sent' } | undefined
+    if (existing !== undefined) {
+      if (existing.session_id !== input.sessionId) return 'not-running'
+      return existing.state === 'sent' ? 'already-sent' : 'uncertain'
+    }
+
+    const session = this.sessions.get(input.sessionId)
+    if (!session || (session.status !== 'running' && session.status !== 'waiting')) {
+      return this.wake(input.sessionId, text, input.actor, {
+        deliveryId,
+        ...(input.workspaceReservationId === undefined
+          ? {}
+          : { reservationId: input.workspaceReservationId }),
+      })
+        ? 'sent'
+        : 'not-running'
+    }
+
+    try {
+      this.acquireWorkspace({
+        sessionId: input.sessionId,
+        cwd: session.cwd,
+        origin: session.origin,
+        actor: input.actor,
+        ...(input.workspaceReservationId === undefined
+          ? {}
+          : { reservationId: input.workspaceReservationId }),
+      })
+    } catch (error) {
+      if (error instanceof SessionError && error.reason === 'workspace-conflict') return 'not-running'
+      throw error
+    }
+    this.rememberDelivery(deliveryId, input.sessionId)
+    let acceptedByAgent = false
+    try {
+      this.audit(input.actor, 'message.return', `${input.sessionId}: ${deliveryId}`)
+      session.status = 'running'
+      this.markStatus(input.sessionId, 'running')
+      this.emit(input.sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${text}\n` } })
+      this.emit(input.sessionId, { type: 'session.status', payload: { status: 'running', live: true } })
+      session.handle.sendMessage(text)
+      acceptedByAgent = true
+      this.markDeliverySent(deliveryId)
+      return 'sent'
+    } catch (error) {
+      // Before the call crosses the adapter boundary, a clean retry is safe. Afterwards the
+      // `sending` row intentionally remains: a reconnect reports uncertainty instead of
+      // duplicating work because a follow-up database write failed.
+      if (!acceptedByAgent) this.forgetDelivery(deliveryId)
+      throw error
+    }
+  }
+
+  /**
    * A conversation without a live process is dormant, not dead: the agent's transcript is on
    * disk and the SDK can resume it. So a reply revives the agent with that reply as its next
    * prompt — the alternative was telling the human to start over and lose everything, which is
    * exactly what happened when a daemon restart stranded a "waiting" session.
    */
-  private wake(sessionId: string, text: string, actor: string): boolean {
+  private wake(
+    sessionId: string,
+    text: string,
+    actor: string,
+    opts: { deliveryId?: string; reservationId?: string } = {},
+  ): boolean {
     const row = this.approvals.rawDb
       .prepare('SELECT * FROM sessions WHERE session_id = ?')
       .get(sessionId) as
@@ -574,10 +821,31 @@ export class SessionManager {
       return false
     }
 
+    try {
+      this.acquireWorkspace({
+        sessionId,
+        cwd,
+        origin: SessionOrigin.catch('daemon').parse(row.origin),
+        actor,
+        ...(opts.reservationId === undefined ? {} : { reservationId: opts.reservationId }),
+      })
+    } catch (error) {
+      if (error instanceof SessionError && error.reason === 'workspace-conflict') return false
+      throw error
+    }
+
     this.audit(actor, 'session.wake', `${sessionId}: ${text.slice(0, 80)}`)
     this.supersede(sessionId)
     const waiting = new Map<string, (decision: PermissionDecision) => void>()
-    const handle = this.spawn(factory, sessionId, cwd, text, waiting, row.agent_session_id)
+    if (opts.deliveryId !== undefined) this.rememberDelivery(opts.deliveryId, sessionId)
+    let handle: AgentRunHandle
+    try {
+      handle = this.spawn(factory, sessionId, cwd, text, waiting, row.agent_session_id)
+    } catch (error) {
+      if (opts.deliveryId !== undefined) this.forgetDelivery(opts.deliveryId)
+      this.workspace?.release(sessionId, 'system:session', 'agent wake failed')
+      throw error
+    }
     const session: LiveSession = {
       sessionId,
       agent: agent.data,
@@ -590,12 +858,59 @@ export class SessionManager {
       waiting,
       done: Promise.resolve(),
     }
+    this.sessions.set(sessionId, session)
+    this.claimed.add(sessionId)
+    session.done = this.consume(session)
+    // The adapter has accepted the prompt now. If any durable write below fails, keep both the
+    // live session and the `sending` marker so recovery says "uncertain" rather than resending.
+    if (opts.deliveryId !== undefined) this.markDeliverySent(opts.deliveryId)
     this.markStatus(sessionId, 'running')
     this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${text}\n` } })
     this.emit(sessionId, { type: 'session.status', payload: { status: 'running', live: true } })
-    session.done = this.consume(session)
-    this.sessions.set(sessionId, session)
-    this.claimed.add(sessionId)
+    return true
+  }
+
+  /** Pause without replaying a prompt, preserving the native resume point for a safe handoff. */
+  async pauseSession(sessionId: string, actor: string, reason: string): Promise<boolean> {
+    const session = this.sessions.get(sessionId)
+    if (!session || (session.status !== 'running' && session.status !== 'waiting')) {
+      const row = this.approvals.rawDb
+        .prepare('SELECT agent_session_id FROM sessions WHERE session_id = ?')
+        .get(sessionId) as { agent_session_id: string | null } | undefined
+      return row?.agent_session_id !== null && row !== undefined
+    }
+    const resumeId = this.resumeIdOf(sessionId)
+    if (resumeId === undefined) return false
+    this.audit(actor, 'session.pause', `${sessionId}: ${reason.slice(0, 160)}`)
+    session.superseded = true
+    // Ask the adapter to stop, but trust only the event stream closing as evidence that the
+    // writer is gone. The deadline prevents a broken vendor adapter from freezing the phone's
+    // handoff forever; on timeout the existing writer keeps its lease and remains visible.
+    void Promise.resolve()
+      .then(() => session.handle.interrupt())
+      .catch(() => {})
+    const drained = await settlesWithin(session.done, this.pauseTimeoutMs)
+    if (!drained) {
+      session.superseded = false
+      this.audit(actor, 'session.pause-failed', `${sessionId}: adapter did not stop within ${this.pauseTimeoutMs}ms`)
+      return false
+    }
+    this.sessions.delete(sessionId)
+    this.claimed.delete(sessionId)
+    this.releasePending(session, 'Session paused for workspace handoff')
+    this.markStatus(sessionId, 'waiting')
+    this.emit(sessionId, {
+      type: 'session.status',
+      payload: {
+        status: 'waiting',
+        live: false,
+        resumable: true,
+        resumeId,
+        detail: reason,
+      },
+    })
+    // A reservation may already own the row; release is intentionally a no-op in that case.
+    this.workspace?.release(sessionId, actor, reason)
     return true
   }
 
@@ -609,10 +924,16 @@ export class SessionManager {
       return this.closeDormant(sessionId, actor)
     }
     this.audit(actor, 'session.stop', sessionId)
-    try {
-      await session.handle.interrupt()
-    } catch {
-      // An agent that cannot be interrupted cleanly is still torn down below.
+    // We commit the terminal event below. The draining generator must not append a second,
+    // contradictory ending after Stop has already been acknowledged.
+    session.superseded = true
+    void Promise.resolve()
+      .then(() => session.handle.interrupt())
+      .catch(() => {})
+    if (!(await settlesWithin(session.done, this.pauseTimeoutMs))) {
+      session.superseded = false
+      this.audit(actor, 'session.stop-failed', `${sessionId}: adapter did not stop within ${this.pauseTimeoutMs}ms`)
+      return false
     }
     session.status = 'ended'
     this.markStatus(sessionId, 'ended')
@@ -625,6 +946,7 @@ export class SessionManager {
         ...(this.resumeIdOf(sessionId) === undefined ? {} : { resumeId: this.resumeIdOf(sessionId) }),
       },
     })
+    this.workspace?.release(sessionId, actor, 'session stopped')
     return true
   }
 
@@ -643,16 +965,40 @@ export class SessionManager {
    */
   async shutdown(): Promise<void> {
     const live = [...this.sessions.values()]
-    await Promise.all(
-      live.map(async (session) => {
-        try {
-          await session.handle.interrupt()
-        } catch {
-          // An agent that will not interrupt cleanly still gets awaited below.
-        }
-      }),
-    )
-    await Promise.all(live.map((session) => session.done.catch(() => {})))
+    // A daemon shutdown is an interruption, not successful task completion. Suppress each
+    // iterator's ordinary end event, then persist whether the conversation can be resumed.
+    for (const session of live) session.superseded = true
+    for (const session of live) {
+      void Promise.resolve()
+        .then(() => session.handle.interrupt())
+        .catch(() => {})
+    }
+    // Shutdown is allowed to outlive an uncooperative adapter, but never indefinitely. The
+    // daemon owns those processes and process exit is the final backstop after state is saved.
+    await Promise.all(live.map((session) => settlesWithin(session.done, this.pauseTimeoutMs)))
+    for (const session of live) {
+      const resumeId = this.resumeIdOf(session.sessionId)
+      if (resumeId !== undefined) {
+        this.markStatus(session.sessionId, 'waiting')
+        this.emit(session.sessionId, {
+          type: 'session.status',
+          payload: {
+            status: 'waiting',
+            live: false,
+            resumable: true,
+            resumeId,
+            detail: 'interrupted by daemon shutdown',
+          },
+        })
+      } else {
+        this.markStatus(session.sessionId, 'errored')
+        this.emit(session.sessionId, {
+          type: 'session.errored',
+          payload: { message: 'Daemon stopped before the agent created a resume point.' },
+        })
+      }
+      this.workspace?.release(session.sessionId, 'system:shutdown', 'daemon shutdown')
+    }
   }
 
   /** Stopping a dormant conversation: nothing to interrupt, but "this is over" must stick. */
@@ -671,6 +1017,7 @@ export class SessionManager {
         ...(this.resumeIdOf(sessionId) === undefined ? {} : { resumeId: this.resumeIdOf(sessionId) }),
       },
     })
+    this.workspace?.release(sessionId, actor, 'dormant session closed')
     return true
   }
 
@@ -695,10 +1042,66 @@ export class SessionManager {
       .all(limit) as AuditEntry[]
   }
 
+  /** Typed orchestration layers share the same append-only machine audit. */
+  recordAudit(actor: string, action: string, detail: string): void {
+    this.audit(actor, action, detail)
+  }
+
   private audit(actor: string, action: string, detail: string): void {
     this.approvals.rawDb
       .prepare('INSERT INTO audit (at, actor, action, detail) VALUES (?, ?, ?, ?)')
       .run(this.now(), actor, action, detail.slice(0, 500))
+  }
+
+  private acquireWorkspace(input: {
+    sessionId: string
+    cwd: string
+    origin: SessionOrigin
+    actor: string
+    reservationId?: string
+  }): void {
+    if (this.workspace === undefined) return
+    try {
+      if (input.reservationId !== undefined) {
+        this.workspace.claimReservation({
+          reservationId: input.reservationId,
+          sessionId: input.sessionId,
+          cwd: input.cwd,
+          ownerKind: 'session',
+          ownerOrigin: input.origin,
+          actor: input.actor,
+        })
+      } else {
+        this.workspace.acquire({
+          sessionId: input.sessionId,
+          cwd: input.cwd,
+          ownerKind: 'session',
+          ownerOrigin: input.origin,
+          actor: input.actor,
+        })
+      }
+    } catch (error) {
+      if (error instanceof WorkspaceLeaseError) {
+        throw new SessionError('workspace-conflict', error.message)
+      }
+      throw error
+    }
+  }
+
+  private rememberDelivery(deliveryId: string, sessionId: string): void {
+    this.approvals.rawDb
+      .prepare("INSERT INTO session_deliveries (delivery_id, session_id, state, created_at) VALUES (?, ?, 'sending', ?)")
+      .run(deliveryId, sessionId, this.now())
+  }
+
+  private markDeliverySent(deliveryId: string): void {
+    this.approvals.rawDb
+      .prepare("UPDATE session_deliveries SET state = 'sent' WHERE delivery_id = ? AND state = 'sending'")
+      .run(deliveryId)
+  }
+
+  private forgetDelivery(deliveryId: string): void {
+    this.approvals.rawDb.prepare('DELETE FROM session_deliveries WHERE delivery_id = ?').run(deliveryId)
   }
 
   private releasePending(session: LiveSession, message: string): void {
@@ -855,6 +1258,7 @@ export class SessionManager {
       }
     } finally {
       this.claimed.delete(session.sessionId)
+      this.workspace?.release(session.sessionId, 'system:session', 'agent process ended')
       // A dead agent can never answer: close out anything it left pending.
       this.releasePending(session, 'Session ended before a decision')
       // Leave the live map: a finished run kept lingering here and shadowed the stored row,

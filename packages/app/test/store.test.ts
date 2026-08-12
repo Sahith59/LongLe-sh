@@ -57,6 +57,41 @@ describe('session list', () => {
     expect(stateOf(store).sessions.ses_1?.origin).toBe('unknown')
   })
 
+  it('retains delegated parent attribution from both events and hello seeds', () => {
+    const store = createStore()
+    const relationship = {
+      delegationId: 'del_1',
+      parentSessionId: 'ses_parent',
+      role: 'review' as const,
+      depth: 1,
+    }
+    store.apply(
+      ev({
+        v: 1,
+        seq: 1,
+        sessionId: 'ses_child',
+        ts: 1,
+        type: 'session.started',
+        payload: { agent: 'codex', cwd: '/proj/api', relationship },
+      }),
+    )
+    expect(stateOf(store).sessions.ses_child?.relationship).toEqual(relationship)
+
+    const reloaded = createStore()
+    reloaded.seedSessions([
+      {
+        sessionId: 'ses_child',
+        agent: 'codex',
+        cwd: '/proj/api',
+        title: 'review',
+        origin: 'phone',
+        status: 'running',
+        relationship,
+      },
+    ])
+    expect(stateOf(reloaded).sessions.ses_child?.relationship).toEqual(relationship)
+  })
+
   it('learns from the ending event whether this can be carried on', () => {
     // The regression: `resumable` used to arrive ONLY in hello, so a phone already
     // watching a session kept "no resume point" forever after a stop — even though
@@ -344,6 +379,19 @@ describe('readable transcript', () => {
     const blocks = stateOf(store).sessions.ses_1?.blocks ?? []
     expect(blocks).toHaveLength(1)
     expect(blocks[0]?.text).toBe('Hello there')
+    expect(blocks[0]).toMatchObject({ firstSeq: 2, lastSeq: 3 })
+  })
+
+  it('keeps discrete message sequence ids stable for future delegation selection', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(userDelta('ses_1', 7, '\n\n› review this\n'))
+    store.apply(toolDelta('ses_1', 8, 'Read: parser.ts'))
+    const blocks = stateOf(store).sessions.ses_1?.blocks ?? []
+    expect(blocks).toMatchObject([
+      { kind: 'user', firstSeq: 7, lastSeq: 7 },
+      { kind: 'tool', firstSeq: 8, lastSeq: 8 },
+    ])
   })
 
   it('never merges a tool call into prose', () => {

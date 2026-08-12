@@ -1,4 +1,6 @@
 import { humanSaid } from '@longleash/protocol'
+import { GitBranchPlus } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { Block } from '../lib/store.js'
 import { splitTool, toolIcon } from './format.js'
 import { PathChip } from './PathChip.js'
@@ -12,7 +14,13 @@ import { Prose } from './prose.js'
  * agent that reads six files then answers should look like "it did some work,
  * then said this" — not like a log file with a sentence buried in it.
  */
-export function Transcript({ blocks }: { blocks: Block[] }) {
+export function Transcript({
+  blocks,
+  onDelegate,
+}: {
+  blocks: Block[]
+  onDelegate?: (block: Block) => void
+}) {
   const groups = groupBlocks(blocks)
   return (
     <>
@@ -20,7 +28,7 @@ export function Transcript({ blocks }: { blocks: Block[] }) {
         group.kind === 'actions' ? (
           <ActionGroup key={i} items={group.items} />
         ) : (
-          <TranscriptBlock key={i} block={group.block} />
+          <TranscriptBlock key={i} block={group.block} {...(onDelegate ? { onDelegate } : {})} />
         ),
       )}
     </>
@@ -68,7 +76,13 @@ function ActionGroup({ items }: { items: string[] }) {
   )
 }
 
-export function TranscriptBlock({ block }: { block: Block }) {
+export function TranscriptBlock({
+  block,
+  onDelegate,
+}: {
+  block: Block
+  onDelegate?: (block: Block) => void
+}) {
   if (block.kind === 'user') {
     // Also clean at render time: event-log history written by an older daemon may already
     // contain Codex's IDE envelope. A release should repair what the person sees now rather
@@ -77,9 +91,9 @@ export function TranscriptBlock({ block }: { block: Block }) {
     if (text === '') return null
     if (text === '— reopened —') return <div className="blk divider">reopened</div>
     return (
-      <div className="blk mine">
-        {text}
-      </div>
+      <Delegatable block={block} {...(onDelegate ? { onDelegate } : {})}>
+        <div className="blk mine">{text}</div>
+      </Delegatable>
     )
   }
 
@@ -88,8 +102,33 @@ export function TranscriptBlock({ block }: { block: Block }) {
   }
 
   return (
-    <div className="blk say">
-      <Prose text={block.text} />
+    <Delegatable block={block} {...(onDelegate ? { onDelegate } : {})}>
+      <div className="blk say"><Prose text={block.text} /></div>
+    </Delegatable>
+  )
+}
+
+function Delegatable({
+  block,
+  onDelegate,
+  children,
+}: {
+  block: Block
+  onDelegate?: (block: Block) => void
+  children: ReactNode
+}) {
+  if (!onDelegate) return children
+  return (
+    <div className={`blk-wrap ${block.kind}`}>
+      {children}
+      <button
+        type="button"
+        className="delegate-block"
+        onClick={() => onDelegate(block)}
+        aria-label={`Delegate ${block.kind === 'user' ? 'this user message' : 'this agent response'}`}
+      >
+        <GitBranchPlus size={15} strokeWidth={2.2} aria-hidden="true" />
+      </button>
     </div>
   )
 }

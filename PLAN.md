@@ -40,6 +40,17 @@ We own every product surface: daemon, phone app, relay, protocol, installer, ext
 
 ~29 solo dev-days total. **No API key or paid API account is needed anywhere:** the Agent SDK inherits the Claude Code CLI's subscription OAuth (spike S0 confirmed `apiKeySource: "none"`), so agent runs draw on the user's existing Claude plan allowance, not a billed API account. The SDK's reported `total_cost_usd` is the token-equivalent value, not a charge. Keep contract-test runs few to respect plan rate limits.
 
+## Agent-to-agent delegation roadmap
+
+The original Phase E delivered multiple agent adapters. The next product layer—controlled
+Claude↔Claude, Claude↔Codex, Codex↔Claude, and Codex↔Codex delegation—is specified in
+[`docs/DELEGATION.md`](docs/DELEGATION.md). That document is the source of truth for the approved
+Delegate → isolated parallel specialists → Crew rollout, its safety invariants, and release gates.
+
+**Current status (2026-08-12):** Delegate Phases 0–1D are implementation-complete. Physical-phone
+UX review, all four live Claude/Codex handoffs, and the 20-delegation dogfood gate remain required
+before release; the evidence and exact remaining checks are recorded in the delegation ledger.
+
 Verification spikes before building on them: **S0** Agent SDK under subscription OAuth — PASSED, gate for Phase A; S1–S5 from v1 (push payload audit → now ours by construction; killed-state actions; concurrent-resume assumption; Gemini ACP quality; relay push viability → moot, we own the relay).
 
 ## Costs (honest)

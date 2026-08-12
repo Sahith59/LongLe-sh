@@ -80,7 +80,12 @@ function start(
     ...(opts.resume === undefined ? {} : { resume: opts.resume }),
   })
   void (async () => {
-    for await (const event of handle.events) events.push(event)
+    try {
+      for await (const event of handle.events) events.push(event)
+    } catch {
+      // SessionManager is the production owner of this stream and records the error. Individual
+      // adapter tests only assert transport behavior, so consume terminal failures here.
+    }
   })()
   return { server, events, approvals, autoApproved, agentSessionIds, handle }
 }

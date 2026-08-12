@@ -11,6 +11,10 @@ import type { AgentFactory, AgentRunRequest, PermissionDecision } from '../src/a
 import { LongLeashServer, CLOSE_UNAUTHORIZED, CLOSE_REVOKED } from '../src/server.js'
 import { PushNotifier } from '../src/push.js'
 import { ExternalSessions } from '../src/external.js'
+import { BriefingBuilder } from '../src/briefing.js'
+import { DelegationManager } from '../src/delegation-manager.js'
+import { DelegationStore } from '../src/delegations.js'
+import { ReturnBuilder } from '../src/return-builder.js'
 
 /** Minimal controllable agent so server tests stay deterministic. */
 class DemoAgent {
@@ -31,6 +35,10 @@ class DemoAgent {
   }
   say(text: string): void {
     this.queue.push({ type: 'text', text })
+    this.wake()
+  }
+  completeTurn(text: string): void {
+    this.queue.push({ type: 'text', text }, { type: 'turn-end' })
     this.wake()
   }
   finish(): void {
@@ -143,6 +151,21 @@ async function nextMessages(ws: WebSocket, count: number): Promise<Record<string
   }
 }
 
+async function nextMatching(
+  ws: WebSocket,
+  predicate: (message: Record<string, unknown>) => boolean,
+): Promise<Record<string, unknown>> {
+  const buffer = inbox.get(ws)
+  if (!buffer) throw new Error('socket was not created via connect()')
+  const start = Date.now()
+  for (;;) {
+    const index = buffer.findIndex((message) => message.type !== 'hello' && predicate(message))
+    if (index >= 0) return buffer.splice(index, 1)[0]!
+    if (Date.now() - start > CLIENT_TIMEOUT_MS) throw new Error('timed out waiting for matching message')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
 function opened(ws: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
     ws.once('open', () => resolve())
@@ -199,6 +222,303 @@ describe('auth on connect', () => {
     const closed = expectClosed(ws)
     h.registry.revokeDevice(h.deviceId)
     expect(await closed).toBe(CLOSE_REVOKED)
+  })
+})
+
+describe('delegation preview', () => {
+  let h: Harness
+  beforeEach(async () => {
+    h = await startHarness()
+    h.log.appendBatch('ses_parent', [
+      {
+        type: 'session.started',
+        payload: {
+          agent: 'claude',
+          cwd: '/work/project',
+          title: 'Pairing repair',
+          origin: 'terminal',
+        },
+      },
+      { type: 'stream.delta', payload: { kind: 'user', text: 'Verify pairing on a phone.' } },
+      { type: 'stream.delta', payload: { kind: 'text', text: 'I reproduced the failure.' } },
+    ])
+  })
+  afterEach(async () => {
+    await h.server.close()
+    h.log.close()
+    h.registry.close()
+  })
+
+  it('returns an exact briefing without requiring a session manager or launching an agent', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const response = nextMessages(ws, 1)
+    ws.send(
+      JSON.stringify({
+        v: 1,
+        type: 'previewDelegation',
+        requestId: 'preview-1',
+        sourceSessionId: 'ses_parent',
+        sourceSeq: 2,
+        targetAgent: 'codex',
+        role: 'review',
+        contextScope: 'selected',
+      }),
+    )
+    const [preview] = await response
+    expect(preview).toMatchObject({
+      type: 'delegationPreview',
+      requestId: 'preview-1',
+      sourceSeq: 2,
+      targetAgent: 'codex',
+      role: 'review',
+      contextScope: 'selected',
+    })
+    expect(preview?.briefing).toContain('Verify pairing on a phone.')
+    ws.close()
+  })
+
+  it('correlates selection failures to the request that caused them', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const response = nextMessages(ws, 1)
+    ws.send(
+      JSON.stringify({
+        v: 1,
+        type: 'previewDelegation',
+        requestId: 'preview-bad',
+        sourceSessionId: 'ses_parent',
+        sourceSeq: 99,
+        targetAgent: 'codex',
+        role: 'review',
+        contextScope: 'selected',
+      }),
+    )
+    expect(await response).toEqual([
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'preview-bad',
+        code: 'selected-message-not-found',
+      }),
+    ])
+    ws.close()
+  })
+})
+
+describe('delegation launch over the authenticated wire', () => {
+  let h: Harness
+  let approvals: ApprovalStore
+  let sessions: SessionManager
+  let manager: DelegationManager
+  let claude: DemoAgent
+  let codex: DemoAgent
+  let root: string
+  let dir: string
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'longleash-server-delegation-'))
+    root = realpathSync(dir)
+    h = await startHarness()
+    approvals = new ApprovalStore(':memory:')
+    claude = new DemoAgent()
+    codex = new DemoAgent()
+    h.log.appendBatch('ses_parent', [
+      {
+        type: 'session.started',
+        payload: { agent: 'claude', cwd: root, title: 'Repair pairing', origin: 'vscode' },
+      },
+      { type: 'stream.delta', payload: { kind: 'user', text: 'Verify pairing end to end.' } },
+    ])
+    let lifecycle: DelegationManager | undefined
+    sessions = new SessionManager({
+      eventLog: h.log,
+      approvals,
+      allowedRoots: [root],
+      agentFactories: { claude: claude.factory, codex: codex.factory },
+      onEvent: (event) => {
+        lifecycle?.handleSessionEvent(event)
+        h.server.broadcastEvent(event)
+      },
+    })
+    const source = {
+      sessionId: 'ses_parent',
+      agent: 'claude' as const,
+      cwd: root,
+      status: 'ended' as const,
+      startedAt: 1,
+      origin: 'vscode' as const,
+      title: 'Repair pairing',
+      live: false,
+      resumable: true,
+    }
+    sessions.adoptEndedSession({
+      sessionId: source.sessionId,
+      agent: source.agent,
+      cwd: source.cwd,
+      title: source.title,
+      origin: source.origin,
+      startedAt: source.startedAt,
+      agentSessionId: 'native_parent',
+    })
+    manager = new DelegationManager({
+      store: new DelegationStore(approvals.rawDb),
+      sessions,
+      briefings: new BriefingBuilder(h.log),
+      returns: new ReturnBuilder(h.log),
+      sourceSessions: () => [source, ...sessions.listSessions()],
+      onUpdate: (delegation) => h.server.broadcastDelegation(delegation),
+    })
+    lifecycle = manager
+    h.server.attachSessions(sessions)
+    h.server.attachDelegations(manager)
+  })
+
+  afterEach(async () => {
+    await sessions.shutdown()
+    await h.server.close()
+    h.log.close()
+    h.registry.close()
+    approvals.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('advertises target capabilities, launches once, survives hello, and stops independently', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const hello = await helloOf(ws)
+    expect(hello).toMatchObject({
+      capabilities: {
+        delegation: {
+          preview: true,
+          start: true,
+          targets: { claude: true, codex: true },
+          maxDepth: 2,
+        },
+      },
+      delegations: [],
+    })
+
+    const launch = {
+      v: 1,
+      type: 'startDelegation',
+      requestId: 'launch-1',
+      idempotencyKey: 'one-phone-tap',
+      sourceSessionId: 'ses_parent',
+      targetAgent: 'codex',
+      role: 'review',
+      contextScope: 'recent',
+      briefing: 'Exact edited phone briefing',
+      confirmed: true,
+      workspaceTransferConfirmed: true,
+    }
+    ws.send(JSON.stringify(launch))
+    const first = await nextMatching(ws, (message) => message.requestId === 'launch-1')
+    expect(first).toMatchObject({
+      type: 'delegation',
+      created: true,
+      delegation: { status: 'running', sourceSessionId: 'ses_parent', targetAgent: 'codex' },
+    })
+    const childId = (first.delegation as { targetSessionId: string }).targetSessionId
+    expect(childId).toMatch(/^ses_/)
+
+    ws.send(JSON.stringify({ ...launch, requestId: 'launch-retry' }))
+    const retry = await nextMatching(ws, (message) => message.requestId === 'launch-retry')
+    expect(retry).toMatchObject({
+      type: 'delegation',
+      created: false,
+      delegation: { targetSessionId: childId },
+    })
+    expect(sessions.listSessions().filter((session) => session.relationship)).toHaveLength(1)
+
+    const reconnect = connect(h.port, h.token)
+    await opened(reconnect)
+    expect(await helloOf(reconnect)).toMatchObject({
+      delegations: [expect.objectContaining({ targetSessionId: childId, status: 'running' })],
+    })
+
+    ws.send(JSON.stringify({ v: 1, type: 'stopSession', sessionId: childId }))
+    expect(await nextMatching(ws, (message) => {
+      const delegation = message.delegation as { status?: unknown } | undefined
+      return message.type === 'delegation' && delegation?.status === 'cancelled'
+    })).toMatchObject({
+      delegation: { targetSessionId: childId, status: 'cancelled' },
+    })
+    expect(await nextMatching(ws, (message) => message.type === 'ack' && message.of === 'stopSession'))
+      .toMatchObject({ outcome: 'stopped' })
+    ws.close()
+    reconnect.close()
+  })
+
+  it('prepares and returns the reviewed child result over the authenticated wire exactly once', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const launch = {
+      v: 1,
+      type: 'startDelegation',
+      requestId: 'launch-return',
+      idempotencyKey: 'launch-return-op',
+      sourceSessionId: 'ses_parent',
+      targetAgent: 'codex',
+      role: 'review',
+      contextScope: 'recent',
+      briefing: 'Review this exact task.',
+      confirmed: true,
+      workspaceTransferConfirmed: true,
+    }
+    ws.send(JSON.stringify(launch))
+    const started = await nextMatching(ws, (message) => message.requestId === 'launch-return')
+    const delegation = started.delegation as { delegationId: string; targetSessionId: string }
+
+    codex.completeTurn('Child completed result; tools are not included.')
+    await nextMatching(ws, (message) => {
+      const update = message.delegation as { delegationId?: string; status?: string } | undefined
+      return update?.delegationId === delegation.delegationId && update.status === 'ready'
+    })
+
+    ws.send(JSON.stringify({
+      v: 1, type: 'prepareReturn', requestId: 'prepare-return', delegationId: delegation.delegationId,
+    }))
+    const preview = await nextMatching(ws, (message) => message.requestId === 'prepare-return')
+    expect(preview).toMatchObject({
+      type: 'delegationReturnPreview',
+      delegationId: delegation.delegationId,
+      returnText: 'Child completed result; tools are not included.',
+      requiresTakeover: false,
+      parent: { sessionId: 'ses_parent' },
+      child: { sessionId: delegation.targetSessionId },
+    })
+
+    const edited = '\nKeep these reviewed bytes exactly.\n'
+    const delivery = {
+      v: 1,
+      type: 'returnDelegation',
+      requestId: 'deliver-return',
+      idempotencyKey: 'deliver-return-op',
+      delegationId: delegation.delegationId,
+      returnText: edited,
+      confirmed: true,
+      takeoverConfirmed: false,
+    }
+    ws.send(JSON.stringify(delivery))
+    expect(await nextMatching(ws, (message) => message.requestId === 'deliver-return')).toMatchObject({
+      type: 'delegation', created: true,
+      delegation: {
+        delegationId: delegation.delegationId,
+        status: 'returned',
+        returnIdempotencyKey: 'deliver-return-op',
+      },
+    })
+    expect(claude.lastRequest.resume).toBe('native_parent')
+    expect(claude.lastRequest.prompt).toBe(
+      `Returned from Codex · Review\nChild session: Review · Repair pairing\nDelegation: ${delegation.delegationId}\n\n${edited}`,
+    )
+
+    ws.send(JSON.stringify({ ...delivery, requestId: 'deliver-return-retry' }))
+    expect(await nextMatching(ws, (message) => message.requestId === 'deliver-return-retry')).toMatchObject({
+      type: 'delegation', created: false,
+      delegation: { status: 'returned', returnIdempotencyKey: 'deliver-return-op' },
+    })
+    ws.close()
   })
 })
 
@@ -454,15 +774,16 @@ describe('typed operations: decisions and remote start', () => {
   it('starts a session remotely inside an allowlisted root', async () => {
     const ws = connect(h.port, h.token)
     await opened(ws)
-    // Two messages now: the session.started event a connected phone must receive so a new
-    // session appears without a reload, and the ack for the request itself.
-    const messages = nextMessages(ws, 2)
+    // Three messages now: session.started makes the card appear, the initial user delta keeps
+    // the full task selectable in history, and the ack confirms the requested operation.
+    const messages = nextMessages(ws, 3)
     ws.send(JSON.stringify({ v: 1, type: 'startSession', agent: 'claude', root, prompt: 'build it' }))
     const arrived = await messages
     const ack = arrived.find((m) => m.type === 'ack')
     expect(ack).toMatchObject({ type: 'ack', outcome: 'started' })
     expect(String(ack?.sessionId)).toMatch(/^ses_/)
     expect(arrived.some((m) => m.type === 'session.started')).toBe(true)
+    expect(arrived.some((m) => m.type === 'stream.delta')).toBe(true)
     ws.close()
   })
 

@@ -11,9 +11,16 @@ import { createRoot } from 'react-dom/client'
 import { AnimatePresence } from 'motion/react'
 import { ConsoleScreen, DetailScreen, Rail } from './App.js'
 import { NewSessionSheet } from './ui/NewSessionSheet.js'
-import type { PendingApproval, SessionView, StoreState } from './lib/store.js'
+import { DelegateSheet, type PreviewDelegationInput } from './ui/DelegateSheet.js'
+import { ReturnSheet } from './ui/ReturnSheet.js'
+import type { DelegationPreview, DelegationReturnPreview, DelegationSummary } from '@longleash/protocol'
+import type { Block, PendingApproval, SessionView, StoreState } from './lib/store.js'
 import type { FolderHit } from './lib/client.js'
 import './styles.css'
+
+/** Preview fixtures still carry the same stable sequence metadata as a real replayed transcript. */
+const demoBlocks = (blocks: Omit<Block, 'firstSeq' | 'lastSeq'>[]): Block[] =>
+  blocks.map((block, index) => ({ ...block, firstSeq: index + 1, lastSeq: index + 1 }))
 
 const sticknotes: SessionView = {
   sessionId: 's-1',
@@ -23,7 +30,7 @@ const sticknotes: SessionView = {
   title: 'Add a delete button to each note',
   origin: 'phone',
   status: 'waiting',
-  blocks: [
+  blocks: demoBlocks([
     {
       kind: 'text',
       text: "I'll add a delete control to each note card. Let me look at how the notes are rendered first.",
@@ -42,7 +49,7 @@ const sticknotes: SessionView = {
     },
     { kind: 'tool', text: 'Bash: npm run build' },
     { kind: 'text', text: 'Build passes. Want me to commit this?' },
-  ],
+  ]),
   output:
     'Good call. I added a confirm step: the first tap turns the button into "Delete?" and only a second tap within three seconds removes the note.',
   resumeId: '5b642291-c45b-4b9a-aa8b-3cfdcb1091bc',
@@ -178,7 +185,7 @@ const monster: SessionView = {
     'Refactor-the-entire-authentication-subsystem-including-the-token-refresh-path-and-migrate-every-caller',
   origin: 'vscode',
   status: 'running',
-  blocks: [
+  blocks: demoBlocks([
     {
       kind: 'text',
       text: 'Checksum mismatch on `a3f9e2b1c8d74e0fa6b5c9d2e7f10345a3f9e2b1c8d74e0fa6b5c9d2e7f10345` — that token has no spaces at all and must not push the card sideways.',
@@ -190,7 +197,7 @@ const monster: SessionView = {
     { kind: 'thinking', text: 'The caller list is longer than expected; worth checking the adapter layer before editing anything.' },
     { kind: 'user', text: '— reopened —' },
     { kind: 'user', text: 'goaheadbutdonottouchtheproductionconfigfileunderanycircumstanceswhatsoever' },
-  ],
+  ]),
   output: 'Checksum mismatch on a3f9e2b1c8d74e0fa6b5c9d2e7f10345 — that token has no spaces at all.',
   activity: [],
   resumable: true,
@@ -216,7 +223,7 @@ const sticky: SessionView = {
   title: 'Can you find the sticknotes app in this root directory.?',
   origin: 'phone',
   status: 'waiting',
-  blocks: [
+  blocks: demoBlocks([
     {
       kind: 'text',
       text: 'Found it. The demo logins are `priya@bold.test` / `marcus@bold.test` / `noor@bold.test`, password `demo1234`.',
@@ -244,7 +251,7 @@ const sticky: SessionView = {
       ].join('\n'),
     },
     { kind: 'tool', text: 'Read: /Users/sahithreddythummala/Sticknotes-app/server.js' },
-  ],
+  ]),
   output: 'Want me to add auth on top?',
   activity: [],
   resumable: true,
@@ -314,8 +321,202 @@ function Flow() {
   )
 }
 
+function DelegatePreview() {
+  const [preview, setPreview] = useState<DelegationPreview | null>(null)
+  const build = (input: PreviewDelegationInput): boolean => {
+    const briefing = [
+      'Delegated by the user through LongLeash.',
+      'Source: Claude · Add a delete button to each note',
+      'Workspace: /Users/sahith/Desktop/sticknotes',
+      'Role: review',
+      '',
+      'Objective',
+      'Review the work in the delegated context for correctness, regressions, and missing coverage.',
+      '',
+      'Relevant context',
+      '<delegated_context>',
+      '[USER · event 6]',
+      'make sure it asks before deleting',
+      '</delegated_context>',
+      '',
+      'Expected deliverable',
+      'Return prioritized findings with concrete evidence.',
+    ].join('\n')
+    setPreview({
+      v: 1,
+      type: 'delegationPreview',
+      requestId: input.requestId,
+      source: {
+        sessionId: sticknotes.sessionId,
+        agent: 'claude',
+        cwd: sticknotes.cwd,
+        title: sticknotes.title,
+        origin: 'phone',
+      },
+      sourceSeq: input.sourceSeq ?? 6,
+      targetAgent: input.targetAgent,
+      role: input.role,
+      contextScope: input.contextScope,
+      briefing,
+      context: {
+        includedFirstSeq: 6,
+        includedLastSeq: 6,
+        includedBlocks: 1,
+        omittedEvents: 0,
+        omittedCharacters: 0,
+        truncated: false,
+        characterCount: briefing.length,
+        maxCharacters: 24_000,
+      },
+    })
+    return true
+  }
+  return (
+    <>
+      <Rail connected via="lan" onBack={noop} />
+      <DetailScreen
+        session={sticknotes}
+        approvals={[]}
+        connected
+        diagnostic={null}
+        error={null}
+        onClearError={noop}
+        onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
+        onStop={noop}
+        onResume={noop}
+        onSend={never}
+        onTakeOver={never}
+        onSetGate={noop}
+        onDelegate={noop}
+      />
+      <DelegateSheet
+        open
+        session={sticknotes}
+        sourceSeq={6}
+        connected
+        preview={preview}
+        previewError={null}
+        onPreview={build}
+        launchEnabled
+        workspaceMode="sequential"
+        availableTargets={{ claude: true, codex: true }}
+        onStart={never}
+        onClose={noop}
+      />
+    </>
+  )
+}
+
+const returnChild: SessionView = {
+  ...sticknotes,
+  sessionId: 's-child',
+  agent: 'codex',
+  title: 'Review · Add a delete button to each note',
+  status: 'waiting',
+  relationship: {
+    delegationId: 'del-return-preview',
+    parentSessionId: sticknotes.sessionId,
+    role: 'review',
+    depth: 1,
+  },
+}
+
+const returnDelegation: DelegationSummary = {
+  delegationId: 'del-return-preview',
+  idempotencyKey: 'launch-return-preview',
+  sourceSessionId: sticknotes.sessionId,
+  targetSessionId: returnChild.sessionId,
+  targetAgent: 'codex',
+  role: 'review',
+  contextScope: 'selected',
+  depth: 1,
+  status: 'ready',
+  createdAt: 1,
+  updatedAt: 2,
+}
+
+const returnResult = [
+  'The confirmation behavior is correct and the build passes.',
+  '',
+  'One regression remains: keyboard focus is not restored to the delete trigger after the three-second confirmation window expires.',
+  '',
+  'Recommended return:',
+  '- restore focus after cancel and successful deletion',
+  '- add a fake-timer test for the confirmation timeout',
+].join('\n')
+
+const returnPreview: DelegationReturnPreview = {
+  v: 1,
+  type: 'delegationReturnPreview',
+  requestId: 'prepare-return-preview',
+  delegationId: returnDelegation.delegationId,
+  parent: {
+    sessionId: sticknotes.sessionId,
+    agent: sticknotes.agent as 'claude',
+    title: sticknotes.title,
+    cwd: sticknotes.cwd,
+    origin: sticknotes.origin as 'phone',
+    live: false,
+  },
+  child: {
+    sessionId: returnChild.sessionId,
+    agent: 'codex',
+    title: returnChild.title,
+  },
+  role: 'review',
+  returnText: returnResult,
+  attribution: `Returned from Codex · Review\nChild session: ${returnChild.title}`,
+  requiresTakeover: false,
+  context: {
+    includedFirstSeq: 7,
+    includedLastSeq: 10,
+    omittedCharacters: 0,
+    truncated: false,
+    characterCount: returnResult.length,
+    maxCharacters: 24_000,
+  },
+}
+
+function ReturnPreviewScreen() {
+  return (
+    <>
+      <Rail connected via="lan" onBack={noop} />
+      <DetailScreen
+        session={returnChild}
+        approvals={[]}
+        connected
+        diagnostic={null}
+        error={null}
+        onClearError={noop}
+        onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
+        onStop={noop}
+        onResume={noop}
+        onSend={never}
+        onTakeOver={never}
+        onSetGate={noop}
+      />
+      <ReturnSheet
+        open
+        delegation={returnDelegation}
+        preview={returnPreview}
+        error={null}
+        connected
+        onPrepare={never}
+        onReturn={never}
+        onClose={noop}
+      />
+    </>
+  )
+}
+
 function Preview() {
   if (screen === 'flow') return <Flow />
+  if (screen === 'delegate') return <DelegatePreview />
+  if (screen === 'return') return <ReturnPreviewScreen />
 
   if (screen === 'question') {
     return (

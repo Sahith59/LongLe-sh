@@ -1,4 +1,4 @@
-import type { AskedQuestion, SessionEvent } from '@longleash/protocol'
+import type { AskedQuestion, SessionEvent, SessionRelationship } from '@longleash/protocol'
 
 export type SessionStatus = 'running' | 'waiting' | 'ended' | 'errored'
 
@@ -13,6 +13,9 @@ export type BlockKind = 'text' | 'tool' | 'thinking' | 'user'
 export interface Block {
   kind: BlockKind
   text: string
+  /** Durable source-event range. Selection uses this, never a display-array index. */
+  firstSeq: number
+  lastSeq: number
 }
 
 export interface SessionView {
@@ -42,6 +45,9 @@ export interface SessionView {
   permissionMode?: string
   /** LongLeash's own gate: 'ask' pages the phone, 'auto' stays silent. */
   gate?: 'ask' | 'auto'
+  /** Present when this session was deliberately created from another LongLeash session. */
+  relationship?: SessionRelationship
+  workspaceConflict?: { cwd: string; ownerSessionId: string; processPaused?: boolean }
   error?: string
 }
 
@@ -82,6 +88,8 @@ export interface SessionSeed {
   resumable?: boolean
   resumeId?: string
   gate?: 'ask' | 'auto'
+  relationship?: SessionRelationship
+  workspaceConflict?: { cwd: string; ownerSessionId: string; processPaused?: boolean }
 }
 
 export interface StoreOptions {
@@ -164,6 +172,7 @@ export function createStore(options: StoreOptions = {}) {
           title?: string
           origin?: string
           resumeId?: string
+          relationship?: SessionRelationship
         }
         session.agent = payload.agent
         session.live = true
@@ -171,6 +180,7 @@ export function createStore(options: StoreOptions = {}) {
         session.title = payload.title ?? ''
         session.origin = payload.origin ?? 'unknown'
         if (payload.resumeId) session.resumeId = payload.resumeId
+        if (payload.relationship) session.relationship = payload.relationship
         break
       }
       case 'stream.delta': {
@@ -184,10 +194,13 @@ export function createStore(options: StoreOptions = {}) {
         if (last && last.kind === kind && (kind === 'text' || kind === 'thinking')) {
           session.blocks = [
             ...session.blocks.slice(0, -1),
-            { kind, text: last.text + payload.text },
+            { kind, text: last.text + payload.text, firstSeq: last.firstSeq, lastSeq: event.seq },
           ]
         } else {
-          session.blocks = [...session.blocks, { kind, text: payload.text }]
+          session.blocks = [
+            ...session.blocks,
+            { kind, text: payload.text, firstSeq: event.seq, lastSeq: event.seq },
+          ]
         }
         session.blocks = trimBlocks(session.blocks, maxOutput)
         if (kind === 'text') session.output = (session.output + payload.text).slice(-maxOutput)
@@ -235,6 +248,7 @@ export function createStore(options: StoreOptions = {}) {
           live?: boolean
           resumable?: boolean
           resumeId?: string
+          workspaceConflict?: { cwd: string; ownerSessionId: string; processPaused?: boolean }
         }
         if (payload.status === 'waiting' || payload.status === 'running') {
           session.status = payload.status
@@ -248,6 +262,8 @@ export function createStore(options: StoreOptions = {}) {
         if (payload.title !== undefined && payload.title !== '') session.title = payload.title
         if (payload.permissionMode !== undefined) session.permissionMode = payload.permissionMode
         if (payload.gate !== undefined) session.gate = payload.gate
+        if (payload.workspaceConflict !== undefined) session.workspaceConflict = payload.workspaceConflict
+        else delete session.workspaceConflict
         break
       }
       case 'session.ended': {
@@ -293,6 +309,9 @@ export function createStore(options: StoreOptions = {}) {
       session.live = seed.live ?? true
       if (seed.resumeId) session.resumeId = seed.resumeId
       if (seed.gate) session.gate = seed.gate
+      if (seed.relationship) session.relationship = seed.relationship
+      if (seed.workspaceConflict) session.workspaceConflict = seed.workspaceConflict
+      else delete session.workspaceConflict
       if (session.status === 'ended' || session.status === 'errored' || !session.live) {
         clearSessionApprovals(session.sessionId)
       }

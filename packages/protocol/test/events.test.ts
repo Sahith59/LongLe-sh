@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   PROTOCOL_VERSION,
+  DelegationPreviewSchema,
+  DelegationUpdateSchema,
   parseEvent,
   parseClientMessage,
   type SessionEvent,
@@ -26,6 +28,45 @@ describe('event envelope', () => {
     if (ev.type === 'session.started') {
       expect(ev.payload.cwd).toBe('/Users/x/proj')
     }
+  })
+
+  it('round-trips an attributed delegated child without flattening partial metadata', () => {
+    const ev = parseEvent({
+      ...baseEvent,
+      type: 'session.started',
+      payload: {
+        agent: 'codex',
+        cwd: '/Users/x/proj',
+        title: 'review the parser',
+        relationship: {
+          delegationId: 'del_1',
+          parentSessionId: 'ses_parent',
+          role: 'review',
+          depth: 1,
+        },
+      },
+    })
+    if (ev.type !== 'session.started') expect.unreachable('wrong type')
+    expect(ev.payload.relationship).toEqual({
+      delegationId: 'del_1',
+      parentSessionId: 'ses_parent',
+      role: 'review',
+      depth: 1,
+    })
+  })
+
+  it('rejects incomplete delegated-session attribution', () => {
+    expect(() =>
+      parseEvent({
+        ...baseEvent,
+        type: 'session.started',
+        payload: {
+          agent: 'codex',
+          cwd: '/Users/x/proj',
+          relationship: { delegationId: 'del_1', role: 'review' },
+        },
+      }),
+    ).toThrowError()
   })
 
   it('round-trips a stream.delta event', () => {
@@ -173,6 +214,132 @@ describe('client messages', () => {
         prompt: '',
       }),
     ).toThrowError()
+  })
+
+  it('parses an attributed delegation preview request', () => {
+    const msg = parseClientMessage({
+      v: PROTOCOL_VERSION,
+      type: 'previewDelegation',
+      requestId: 'preview-1',
+      sourceSessionId: 'ses_parent',
+      sourceSeq: 18,
+      targetAgent: 'codex',
+      role: 'review',
+      contextScope: 'selected',
+    })
+    expect(msg).toMatchObject({ type: 'previewDelegation', sourceSeq: 18, targetAgent: 'codex' })
+  })
+
+  it('rejects unsupported delegation roles and target agents', () => {
+    expect(() =>
+      parseClientMessage({
+        v: PROTOCOL_VERSION,
+        type: 'previewDelegation',
+        requestId: 'preview-1',
+        sourceSessionId: 'ses_parent',
+        targetAgent: 'gemini',
+        role: 'browse-everything',
+        contextScope: 'task',
+      }),
+    ).toThrowError()
+  })
+
+  it('requires an explicit confirmation and bounds the exact launch briefing', () => {
+    const valid = {
+      v: PROTOCOL_VERSION,
+      type: 'startDelegation',
+      requestId: 'launch-1',
+      idempotencyKey: 'stable-phone-operation',
+      sourceSessionId: 'ses_parent',
+      targetAgent: 'codex',
+      role: 'review',
+      contextScope: 'recent',
+      briefing: 'Review the pairing lifecycle.',
+      confirmed: true,
+      workspaceTransferConfirmed: true,
+    }
+    expect(parseClientMessage(valid)).toMatchObject({ type: 'startDelegation', confirmed: true })
+    expect(() => parseClientMessage({ ...valid, confirmed: false })).toThrowError()
+    expect(() => parseClientMessage({ ...valid, workspaceTransferConfirmed: false })).toThrowError()
+    expect(() => parseClientMessage({ ...valid, briefing: 'x'.repeat(24_001) })).toThrowError()
+  })
+
+  it('parses reviewed return preview and requires explicit delivery confirmation', () => {
+    expect(parseClientMessage({
+      v: PROTOCOL_VERSION,
+      type: 'prepareReturn',
+      requestId: 'return-preview-1',
+      delegationId: 'del_1',
+    })).toMatchObject({ type: 'prepareReturn', delegationId: 'del_1' })
+
+    const delivery = {
+      v: PROTOCOL_VERSION,
+      type: 'returnDelegation',
+      requestId: 'return-1',
+      idempotencyKey: 'return-op-1',
+      delegationId: 'del_1',
+      returnText: 'Reviewed result.',
+      confirmed: true,
+      takeoverConfirmed: false,
+    }
+    expect(parseClientMessage(delivery)).toMatchObject({ type: 'returnDelegation', confirmed: true })
+    expect(() => parseClientMessage({ ...delivery, confirmed: false })).toThrowError()
+    expect(() => parseClientMessage({ ...delivery, returnText: 'x'.repeat(24_001) })).toThrowError()
+  })
+
+  it('validates the public delegation lifecycle without exposing its private briefing', () => {
+    const update = DelegationUpdateSchema.parse({
+      v: PROTOCOL_VERSION,
+      type: 'delegation',
+      requestId: 'launch-1',
+      created: true,
+      delegation: {
+        delegationId: 'del_1',
+        idempotencyKey: 'phone-op-1',
+        sourceSessionId: 'ses_parent',
+        targetSessionId: 'ses_child',
+        targetAgent: 'codex',
+        role: 'review',
+        contextScope: 'recent',
+        depth: 1,
+        status: 'running',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    })
+    expect(update.delegation).not.toHaveProperty('briefing')
+  })
+
+  it('validates the exact preview shape sent back to the phone', () => {
+    expect(
+      DelegationPreviewSchema.parse({
+        v: PROTOCOL_VERSION,
+        type: 'delegationPreview',
+        requestId: 'preview-1',
+        source: {
+          sessionId: 'ses_parent',
+          agent: 'claude',
+          cwd: '/work/project',
+          title: 'Fix pairing',
+          origin: 'terminal',
+        },
+        sourceSeq: 18,
+        targetAgent: 'codex',
+        role: 'review',
+        contextScope: 'selected',
+        briefing: 'Review this.',
+        context: {
+          includedFirstSeq: 18,
+          includedLastSeq: 18,
+          includedBlocks: 1,
+          omittedEvents: 0,
+          omittedCharacters: 0,
+          truncated: false,
+          characterCount: 12,
+          maxCharacters: 24_000,
+        },
+      }),
+    ).toMatchObject({ type: 'delegationPreview', requestId: 'preview-1' })
   })
 
   it('parses a push subscription exactly as the browser serialises one', () => {
