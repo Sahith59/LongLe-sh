@@ -21,6 +21,7 @@ import { DelegationStore } from './delegations.js'
 import { DelegationManager } from './delegation-manager.js'
 import { WorkspaceLeaseManager } from './workspace-leases.js'
 import { ReturnBuilder } from './return-builder.js'
+import { WorktreeManager } from './worktrees.js'
 
 export interface DaemonOptions {
   /** Directories agents may work in. Nothing outside these can be targeted. */
@@ -90,6 +91,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   const registry = new DeviceRegistry(join(dataDir, 'devices.db'))
   const approvals = new ApprovalStore(join(dataDir, 'approvals.db'))
   const workspace = new WorkspaceLeaseManager(approvals.rawDb)
+  const worktrees = new WorktreeManager(join(dataDir, 'worktrees'))
   const push = new PushNotifier({
     dbPath: join(dataDir, 'push.db'),
     keysPath: join(dataDir, 'vapid.json'),
@@ -209,6 +211,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       ? {}
       : { maxConcurrentSessions: options.maxConcurrentSessions }),
     workspace,
+    worktrees,
   })
   server.attachSessions(sessions)
   server.attachFolders(new FolderIndex(roots))

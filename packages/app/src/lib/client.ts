@@ -15,6 +15,8 @@ import {
   type DelegationRole,
   type DelegationTargetAgent,
   type SessionEvent,
+  type SessionSettings,
+  type WorkspaceMode,
 } from '@longleash/protocol'
 import type { SessionSeed, Store } from './store.js'
 
@@ -209,6 +211,12 @@ export interface Hello {
   capabilities: {
     startSession: boolean
     stopSession: boolean
+    parallelWorkspaces?: 'git-worktree'
+    sessionSettings?: Record<'claude' | 'codex', {
+      models: string[]
+      efforts: string[]
+      thinking: string[]
+    }>
     delegation?: {
       preview: boolean
       start: boolean
@@ -232,6 +240,8 @@ export interface Hello {
   expectsApp?: string | null
 }
 
+export type AgentSettingsCatalog = NonNullable<Hello['capabilities']['sessionSettings']>
+
 export interface FolderHit {
   path: string
   label: string
@@ -248,6 +258,8 @@ export interface ClientCallbacks {
   onError: (message: string) => void
   /** Folder search results, so a project can be picked by name rather than typed as a path. */
   onFolders: (query: string, results: FolderHit[]) => void
+  onSessionStarted?: (requestId: string | undefined, sessionId: string) => void
+  onSessionStartError?: (requestId: string | undefined, message: string) => void
   /** Exact deterministic briefing returned for editing; this never means a child was started. */
   onDelegationPreview?: (preview: DelegationPreview) => void
   onDelegationReturnPreview?: (preview: DelegationReturnPreview) => void
@@ -466,6 +478,10 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     }
     if (message.type === 'ack' && message.of === 'startSession' && typeof message.sessionId === 'string') {
       subscribe(message.sessionId)
+      callbacks.onSessionStarted?.(
+        typeof message.requestId === 'string' ? message.requestId : undefined,
+        message.sessionId,
+      )
       return
     }
     if (
@@ -518,7 +534,12 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     }
     if (message.type === 'error') {
       const detail = String(message.message ?? message.code ?? 'Something went wrong')
-      if (typeof message.requestId === 'string' && callbacks.onDelegationError) {
+      if (message.of === 'startSession') {
+        callbacks.onSessionStartError?.(
+          typeof message.requestId === 'string' ? message.requestId : undefined,
+          detail,
+        )
+      } else if (typeof message.requestId === 'string' && callbacks.onDelegationError) {
         callbacks.onDelegationError(message.requestId, detail)
       } else callbacks.onError(detail)
       return
@@ -624,8 +645,22 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
 
   return {
     subscribe,
-    startSession: (root: string, prompt: string, agent: 'claude' | 'codex' = 'claude') => {
-      const sent = send({ v: PROTOCOL_VERSION, type: 'startSession', agent, root, prompt })
+    startSession: (
+      root: string,
+      prompt: string,
+      agent: 'claude' | 'codex' = 'claude',
+      options: { workspaceMode?: WorkspaceMode; settings?: SessionSettings; requestId?: string } = {},
+    ) => {
+      const sent = send({
+        v: PROTOCOL_VERSION,
+        type: 'startSession',
+        agent,
+        root,
+        prompt,
+        workspaceMode: options.workspaceMode ?? 'auto',
+        ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
+        ...(options.settings === undefined ? {} : { settings: options.settings }),
+      })
       if (!sent) callbacks.onError('Not connected to your laptop — the task was not sent.')
       return sent
     },

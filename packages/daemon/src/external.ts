@@ -100,6 +100,9 @@ export interface ExternalSessionsOptions {
   kill?: (pid: number) => void
   pause?: (pid: number) => void
   resume?: (pid: number) => void
+  /** Test seam for proving a signalled process actually released its native transcript. */
+  waitForExit?: (pid: number, timeoutMs: number) => Promise<boolean>
+  stopTimeoutMs?: number
   /**
    * A terminal session finished (or was stopped). Its conversation survives in
    * Claude Code's storage under this resume id — the hand that receives the baton.
@@ -226,6 +229,8 @@ export class ExternalSessions {
   private readonly kill: (pid: number) => void
   private readonly pause: (pid: number) => void
   private readonly resume: (pid: number) => void
+  private readonly waitForExit: (pid: number, timeoutMs: number) => Promise<boolean>
+  private readonly stopTimeoutMs: number
   private readonly onEnded: ExternalSessionsOptions['onEnded']
   private readonly workspace: WorkspaceLeaseManager | undefined
   private readonly unsubscribeWorkspace: (() => void) | undefined
@@ -246,6 +251,8 @@ export class ExternalSessions {
     this.kill = opts.kill ?? ((pid) => process.kill(pid, 'SIGTERM'))
     this.pause = opts.pause ?? ((pid) => process.kill(pid, 'SIGSTOP'))
     this.resume = opts.resume ?? ((pid) => process.kill(pid, 'SIGCONT'))
+    this.stopTimeoutMs = opts.stopTimeoutMs ?? 8_000
+    this.waitForExit = opts.waitForExit ?? ((pid, timeoutMs) => this.pollForExit(pid, timeoutMs))
     this.onEnded = opts.onEnded
     this.workspace = opts.workspace
     this.unsubscribeWorkspace = this.workspace?.subscribe(() => this.reconcileWorkspace())
@@ -278,6 +285,10 @@ export class ExternalSessions {
     // Take back whatever is still genuinely running. Must come AFTER the orphan sweep so a
     // re-adopted session does not inherit a question nobody can answer any more.
     this.readopt()
+  }
+
+  hasLiveSession(sessionId: string): boolean {
+    return [...this.sessions.values()].some((session) => session.sessionId === sessionId)
   }
 
   /**
@@ -351,7 +362,7 @@ export class ExternalSessions {
    * trusted after re-verifying it still belongs to a claude process, because PIDs
    * get recycled and killing a stranger's process is unforgivable.
    */
-  stop(externalSessionId: string, decidedBy: string): boolean {
+  async stop(externalSessionId: string, decidedBy: string): Promise<boolean> {
     const entry = [...this.sessions.entries()].find(([, s]) => s.sessionId === externalSessionId)
     if (!entry) return false
     const [claudeSessionId, session] = entry
@@ -405,6 +416,14 @@ export class ExternalSessions {
       }
       return false
     }
+    const exited = await this.waitForExit(session.pid, this.stopTimeoutMs)
+    if (!exited) {
+      this.emit(session.sessionId, {
+        type: 'stream.delta',
+        payload: { kind: 'text', text: '— the IDE/terminal process did not close; takeover was cancelled —' },
+      })
+      return false
+    }
     this.emit(session.sessionId, {
       type: 'stream.delta',
       payload: { kind: 'text', text: `— stopped from your phone by ${decidedBy} —` },
@@ -413,6 +432,46 @@ export class ExternalSessions {
     // here as well is idempotent and keeps the phone honest if that hook never runs.
     this.sessionEnd(claudeSessionId)
     return true
+  }
+
+  /** Hold the checkout across IDE shutdown and managed-agent resume, closing the race window. */
+  async prepareTakeover(
+    externalSessionId: string,
+    reservationId: string,
+    actor: string,
+  ): Promise<boolean> {
+    const entry = [...this.sessions.values()].find((session) => session.sessionId === externalSessionId)
+    if (entry === undefined) return false
+    try {
+      this.workspace?.reserveTransfer({
+        reservationId,
+        cwd: entry.cwd,
+        fromSessionId: entry.sessionId,
+        actor,
+      })
+    } catch {
+      return false
+    }
+    const stopped = await this.stop(externalSessionId, actor)
+    if (stopped) return true
+    this.workspace?.restoreReservation({
+      reservationId,
+      sessionId: entry.sessionId,
+      cwd: entry.cwd,
+      ownerKind: 'external',
+      ownerOrigin: entry.surface,
+      actor,
+    })
+    return false
+  }
+
+  private async pollForExit(pid: number, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (!this.isClaudeProcess(pid)) return true
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    return !this.isClaudeProcess(pid)
   }
 
   /**

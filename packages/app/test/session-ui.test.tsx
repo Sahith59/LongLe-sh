@@ -123,7 +123,7 @@ describe('session controls visible on a phone-sized flow', () => {
     expect(html).not.toContain('Stop this agent')
   })
 
-  it('does not offer codex resume while VS Code still owns the live writer', () => {
+  it('shows a copyable handoff for a live VS Code session with an explicit release guard', () => {
     const html = renderToStaticMarkup(
       <DetailScreen
         session={{
@@ -147,8 +147,10 @@ describe('session controls visible on a phone-sized flow', () => {
       />,
     )
     expect(html).toContain('Stop this agent')
-    expect(html).not.toContain('Continue in a terminal')
-    expect(html).not.toContain('codex resume')
+    expect(html).toContain('codex resume')
+    expect(html).toContain('Copy command')
+    expect(html).toContain('Release current run')
+    expect(html).toContain('VS Code')
   })
 
   it('offers codex resume after the previous writer has stopped', () => {
@@ -174,7 +176,8 @@ describe('session controls visible on a phone-sized flow', () => {
         onSetGate={() => {}}
       />,
     )
-    expect(html).toContain('Continue in a terminal')
+    expect(html).toContain('codex resume')
+    expect(html).toContain('Copy command')
   })
 
   it('shows a safe release handoff as soon as a phone session has its native id', () => {
@@ -202,9 +205,9 @@ describe('session controls visible on a phone-sized flow', () => {
     )
     expect(html).toContain('codex resume')
     expect(html).toContain('thread-live')
-    expect(html).toContain('Release for terminal')
-    expect(html).toContain('Copy unlocks when it is fully stopped')
-    expect(html).toContain('one writer')
+    expect(html).toContain('Release current run')
+    expect(html).toContain('Copy command')
+    expect(html).toContain('prevents active-writer conflicts')
   })
 
   it('shows handoff progress instead of silently omitting a new phone session command', () => {

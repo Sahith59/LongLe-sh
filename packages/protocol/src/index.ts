@@ -11,6 +11,60 @@ export type AgentKind = z.infer<typeof AgentKind>
 export const SessionOrigin = z.enum(['phone', 'daemon', 'terminal', 'vscode', 'external'])
 export type SessionOrigin = z.infer<typeof SessionOrigin>
 
+/** How a phone-started session should obtain write ownership of its project. */
+export const WorkspaceMode = z.enum(['auto', 'shared', 'isolated'])
+export type WorkspaceMode = z.infer<typeof WorkspaceMode>
+
+/** Provider settings that are supported by both the wire and the managed adapters. */
+export const AgentEffort = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
+export type AgentEffort = z.infer<typeof AgentEffort>
+
+export const ThinkingMode = z.enum(['adaptive', 'disabled', 'fixed'])
+export type ThinkingMode = z.infer<typeof ThinkingMode>
+
+export const SessionSettings = z
+  .object({
+    /** Omitted means the provider's current default; model ids never enter a shell command. */
+    model: z.string().trim().min(1).max(120).optional(),
+    effort: AgentEffort.optional(),
+    thinking: z
+      .object({
+        mode: ThinkingMode,
+        /** Claude's explicit thinking budget. Only valid with `fixed`. */
+        budgetTokens: z.number().int().min(1_024).max(128_000).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.thinking?.mode === 'fixed' && value.thinking.budgetTokens === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['thinking', 'budgetTokens'],
+        message: 'A fixed thinking mode requires a token budget.',
+      })
+    }
+    if (value.thinking?.mode !== 'fixed' && value.thinking?.budgetTokens !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['thinking', 'budgetTokens'],
+        message: 'A token budget is only valid with fixed thinking.',
+      })
+    }
+  })
+export type SessionSettings = z.infer<typeof SessionSettings>
+
+/** The checkout actually used by an agent, plus the project the person selected. */
+export const SessionWorkspace = z
+  .object({
+    mode: z.enum(['shared', 'isolated']),
+    sourceCwd: z.string().min(1),
+    branch: z.string().min(1).optional(),
+  })
+  .strict()
+export type SessionWorkspace = z.infer<typeof SessionWorkspace>
+
 export const Verdict = z.enum(['allow', 'deny'])
 export type Verdict = z.infer<typeof Verdict>
 
@@ -81,6 +135,8 @@ const sessionStartedPayload = z
      */
     resumeId: z.string().optional(),
     relationship: SessionRelationship.optional(),
+    settings: SessionSettings.optional(),
+    workspace: SessionWorkspace.optional(),
   })
   .passthrough()
 
@@ -276,6 +332,9 @@ const startSessionMessage = z
     agent: AgentKind,
     root: z.string().min(1),
     prompt: z.string().min(1),
+    requestId: z.string().min(1).max(120).optional(),
+    workspaceMode: WorkspaceMode.default('auto'),
+    settings: SessionSettings.optional(),
   })
   .passthrough()
 

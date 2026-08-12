@@ -10,7 +10,7 @@ import {
   type DelegationSummary,
   type SessionEvent,
 } from '@longleash/protocol'
-import { timingSafeEqual } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { PushNotifier } from './push.js'
 import { surfaceOf, terminalAgentOf, type ExternalSessions } from './external.js'
@@ -605,6 +605,19 @@ export class LongLeashServer {
       capabilities: {
         startSession: this.sessions !== null,
         stopSession: this.sessions !== null,
+        parallelWorkspaces: 'git-worktree',
+        sessionSettings: {
+          claude: {
+            models: ['sonnet', 'opus', 'haiku'],
+            efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+            thinking: ['adaptive', 'disabled', 'fixed'],
+          },
+          codex: {
+            models: ['gpt-5.6', 'gpt-5.4', 'gpt-5.3-codex'],
+            efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+            thinking: [],
+          },
+        },
         delegation: this.delegations?.capabilities() ?? {
           preview: true,
           start: false,
@@ -980,29 +993,39 @@ export class LongLeashServer {
     }
 
     if (message.type === 'takeOver') {
-      // The baton pass: if the terminal process still runs, end it (verified pid),
-      // which adopts the conversation; then wake it through the SDK with this text.
-      if (this.external !== null && message.sessionId.startsWith('ext_')) {
-        this.external.stop(message.sessionId, connection.deviceId)
-      }
-      const delivered = this.sessions.sendMessage(message.sessionId, message.text, connection.deviceId)
-      this.log(`takeOver ${message.sessionId} -> ${delivered ? 'taken' : 'refused'}`)
-      this.sendTo(connection, {
-        v: PROTOCOL_VERSION,
-        type: 'ack',
-        of: 'takeOver',
-        sessionId: message.sessionId,
-        outcome: delivered ? 'taken-over' : 'cannot-take-over',
-      })
-      if (!delivered) {
+      const reservationId = `takeover-${randomBytes(9).toString('base64url')}`
+      const sessions = this.sessions
+      void (async () => {
+        const liveExternal = this.external?.hasLiveSession(message.sessionId) === true
+        let released = true
+        if (liveExternal && this.external !== null) {
+          released = await this.external.prepareTakeover(
+            message.sessionId,
+            reservationId,
+            connection.deviceId,
+          )
+        }
+        const delivered = released && (liveExternal
+          ? sessions.takeOver(message.sessionId, message.text, connection.deviceId, reservationId)
+          : sessions.sendMessage(message.sessionId, message.text, connection.deviceId))
+        this.log(`takeOver ${message.sessionId} -> ${delivered ? 'taken' : 'refused'}`)
         this.sendTo(connection, {
           v: PROTOCOL_VERSION,
-          type: 'error',
-          code: 'cannot-take-over',
-          message:
-            'Could not take this session over — its terminal may still be closing, or its folder is not in the allowed roots. Try again in a moment.',
+          type: 'ack',
+          of: 'takeOver',
+          sessionId: message.sessionId,
+          outcome: delivered ? 'taken-over' : 'cannot-take-over',
         })
-      }
+        if (!delivered) {
+          this.sendTo(connection, {
+            v: PROTOCOL_VERSION,
+            type: 'error',
+            code: 'cannot-take-over',
+            message:
+              'The IDE or terminal did not fully release this conversation, so LongLeash left it there instead of risking two writers. Close it on the laptop, then try again.',
+          })
+        }
+      })()
       return
     }
 
@@ -1019,20 +1042,32 @@ export class LongLeashServer {
        * one second after `reopened`, which is exactly how this was finally caught.
        */
       if (message.sessionId.startsWith('ext_') && this.external !== null) {
-        const stopped = this.external.stop(message.sessionId, connection.deviceId)
-        if (stopped) {
-          this.log(`stop terminal ${message.sessionId} -> stopped`)
-          this.sendTo(connection, {
-            v: PROTOCOL_VERSION,
-            type: 'ack',
-            of: 'stopSession',
-            sessionId: message.sessionId,
-            outcome: 'stopped',
+        const sessions = this.sessions
+        void this.external.stop(message.sessionId, connection.deviceId).then((stopped) => {
+          if (stopped) {
+            this.log(`stop terminal ${message.sessionId} -> stopped`)
+            this.sendTo(connection, {
+              v: PROTOCOL_VERSION,
+              type: 'ack',
+              of: 'stopSession',
+              sessionId: message.sessionId,
+              outcome: 'stopped',
+            })
+            return
+          }
+          // Not the terminal manager's any more — ask the manager that may have resumed it.
+          this.log(`stop ${message.sessionId} -> not a live terminal session; trying the agent`)
+          void sessions.stopSession(message.sessionId, connection.deviceId).then((managedStopped) => {
+            this.sendTo(connection, {
+              v: PROTOCOL_VERSION,
+              type: 'ack',
+              of: 'stopSession',
+              sessionId: message.sessionId,
+              outcome: managedStopped ? 'stopped' : 'not-running',
+            })
           })
-          return
-        }
-        // Not the terminal manager's any more — fall through and ask the one that resumed it.
-        this.log(`stop ${message.sessionId} -> not a live terminal session; trying the agent`)
+        })
+        return
       }
       void this.sessions.stopSession(message.sessionId, connection.deviceId).then((stopped) => {
         this.sendTo(connection, {
@@ -1054,6 +1089,8 @@ export class LongLeashServer {
           prompt: message.prompt,
           origin: 'phone',
           actor: connection.deviceId,
+          workspaceMode: message.workspaceMode,
+          ...(message.settings === undefined ? {} : { settings: message.settings }),
         })
         .then(({ sessionId }) => {
           this.log(`session ${sessionId} started by ${connection.deviceId}`)
@@ -1063,6 +1100,7 @@ export class LongLeashServer {
             of: 'startSession',
             outcome: 'started',
             sessionId,
+            ...(message.requestId === undefined ? {} : { requestId: message.requestId }),
           })
         })
         .catch((err: unknown) => {
@@ -1073,6 +1111,9 @@ export class LongLeashServer {
             type: 'error',
             code: err instanceof SessionError ? err.reason : 'start-failed',
             message: err instanceof Error ? err.message.slice(0, 300) : 'Could not start session',
+            of: 'startSession',
+            ...(message.requestId === undefined ? {} : { requestId: message.requestId }),
+            ...(err instanceof SessionError && err.detail !== undefined ? { detail: err.detail } : {}),
           })
         })
       return

@@ -51,6 +51,9 @@ class FakeAgent {
   get prompt(): string {
     return this.request.prompt
   }
+  get settings() {
+    return this.request.settings
+  }
 
   /** Ask for permission the way the SDK's canUseTool does, and record what came back. */
   async requestTool(name: string, input: unknown = { path: 'x.ts' }): Promise<PermissionDecision> {
@@ -1101,6 +1104,29 @@ describe('replying to a dormant conversation wakes it', () => {
     expect(fresh.runs).toEqual(['claude_1'])
     expect(fresh.prompt).toBe('and now add a test')
     expect(revived.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('running')
+  })
+
+  it('pins model, effort, and thinking when a conversation wakes after restart', async () => {
+    const { sessionId } = await h.manager.startSession({
+      agent: 'claude',
+      cwd: h.root,
+      prompt: 'reason carefully',
+      settings: {
+        model: 'opus',
+        effort: 'high',
+        thinking: { mode: 'adaptive' },
+      },
+    })
+    const fresh = new FakeAgent()
+    const revived = revive(fresh)
+    expect(revived.sendMessage(sessionId, 'continue', 'dev_phone')).toBe(true)
+    expect(fresh.settings).toEqual({
+      model: 'opus',
+      effort: 'high',
+      thinking: { mode: 'adaptive' },
+    })
+    expect(revived.listSessions().find((session) => session.sessionId === sessionId)?.settings)
+      .toEqual(fresh.settings)
   })
 
   it('the woken conversation continues in the same event stream, as the same session', async () => {

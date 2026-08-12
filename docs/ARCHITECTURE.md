@@ -1,89 +1,248 @@
-# LongLeash Architecture
+# LongLeash architecture
 
-One sentence: **a TypeScript daemon on your laptop is the single source of truth for every dev session; your phone is a thin, always-assumed-disconnected client; everything between them is end-to-end encrypted.**
+LongLeash keeps authority on the developer's laptop. The phone is a reconnecting control surface;
+the relay is an untrusted ciphertext router; Claude Code and Codex remain the agent runtimes.
 
+This document describes the implementation that exists now. Planned work belongs in
+[PLAN.md](../PLAN.md) or the [Delegate roadmap](DELEGATION.md), not in the current architecture.
+
+## System map
+
+```mermaid
+flowchart TB
+    subgraph Phone["Phone or desktop browser"]
+        PWA["React + Vite PWA"]
+        Keys["Per-device credentials<br/>browser storage"]
+        SW["Service worker<br/>updates + Web Push"]
+        PWA --- Keys
+        PWA --- SW
+    end
+
+    subgraph Transport["Transport choices"]
+        LAN["LAN direct WebSocket"]
+        CF["Cloudflare Worker + Durable Object<br/>static app + ciphertext rooms"]
+    end
+
+    subgraph Laptop["Developer laptop"]
+        Daemon["longleashd<br/>Fastify + WebSocket"]
+        Auth["Pairing + device auth"]
+        Events[("SQLite<br/>events · approvals · audit")]
+        Sessions["SessionManager"]
+        External["ExternalSessions<br/>provider lifecycle hooks"]
+        Delegation["DelegationManager"]
+        Leases["Workspace leases"]
+        Worktrees["Git worktree manager"]
+        Claude["Claude managed adapter<br/>official Agent SDK"]
+        Codex["Codex managed adapter<br/>codex app-server JSON-RPC"]
+
+        Daemon --- Auth
+        Daemon --- Events
+        Daemon --- Sessions
+        Daemon --- External
+        Daemon --- Delegation
+        Sessions --- Leases
+        Delegation --- Leases
+        Sessions --> Worktrees
+        Sessions --> Claude
+        Sessions --> Codex
+    end
+
+    PWA <-->|"authenticated + encrypted"| LAN
+    LAN <--> Daemon
+    PWA <-->|"E2E-encrypted frames"| CF
+    CF <-->|"outbound laptop connection"| Daemon
 ```
-┌─────────────────────────────┐
-│  LongLeash web app (PWA)    │  React + Vite + TypeScript
-│  Inbox · Sessions · Activity│  installable, $0, any device
-└──────────────┬──────────────┘
-               │  E2E-encrypted, cursor-addressed event streams
-               │  (LAN direct, or via relay from anywhere)
-┌──────────────┴──────────────┐
-│   longleash-relay (optional)│  Node WSS · routes ciphertext only ·
-│   self-hostable, Docker     │  zero knowledge, stores no credentials
-└──────────────┬──────────────┘
-               │
-┌──────────────┴──────────────┐
-│   longleashd (laptop)       │  Node / TypeScript daemon (launchd)
-│  ┌───────────────────────┐  │
-│  │ typed API (no exec)   │  │  Fastify + WebSocket
-│  │ event log             │  │  SQLite (better-sqlite3, WAL)
-│  │ device auth + pairing │  │  QR challenge · hashed tokens
-│  │ audit log             │  │
-│  └───────────┬───────────┘  │
-│      adapters│               │
-│  ┌───────────┴───────────┐  │
-│  │ Claude   → Agent SDK  │  │  canUseTool approvals, streaming
-│  │ Gemini/Codex → ACP    │  │  one protocol, many agents
-│  │ Terminals → tmux -C   │  │  control mode, screen-exact mirror
-│  │ VS Code  → extension  │  │  thin sensor/actuator
-│  └───────────────────────┘  │
-└─────────────────────────────┘
+
+The HTTPS relay origin is the dependable anywhere URL and serves the current PWA bundle. LAN mode
+is an optional shorter path when browser and network policy permit it. Both paths carry the same
+typed protocol; neither gives the phone a generic shell.
+
+## Current components
+
+| Component | Implementation | Responsibility |
+| --- | --- | --- |
+| Phone app | React 19, Vite, TypeScript PWA | Pairing, session list/detail, approvals, questions, messages, Stop, Delegate, handoffs, device/update diagnostics |
+| Laptop daemon | Node.js, TypeScript, Fastify, WebSocket | The only authority for auth, sessions, approvals, leases, audit, relay connection, and local files |
+| Durable state | SQLite via `better-sqlite3`, WAL | Cursor-addressed events, resumable session metadata, approvals, devices, delegation records, and workspace claims |
+| Protocol | Zod-validated messages | Rejects malformed operations and makes capability/version changes explicit |
+| Managed Claude | Official Claude Agent SDK | Structured streaming, tool permission callbacks, questions, Stop, and native resume IDs |
+| Managed Codex | `codex app-server` JSON-RPC | Structured threads, turns, streaming items, approvals, Stop, and native resume IDs |
+| External session discovery | Claude/Codex lifecycle hooks plus provider transcript formats | Observes supported Terminal/VS Code sessions without scraping terminal pixels or chat webviews |
+| Relay | Cloudflare Worker and one Durable Object per room | Serves static PWA assets and moves ciphertext between one daemon and paired devices |
+| Notifications | Web Push | Wakes a phone with identifiers only; the app fetches current content after reconnecting |
+| Parallel workspace provider | Git worktrees and per-session branches | Gives multiple managed writers isolated files while preserving one writer per physical checkout |
+| Delegation | `DelegationManager` above `SessionManager` | Builds reviewed briefings/returns and enforces parent/child attribution, idempotency, depth, and workspace transfer |
+
+## Pairing and connection
+
+```mermaid
+sequenceDiagram
+    participant D as Laptop daemon
+    participant R as Relay
+    participant P as Phone PWA
+
+    D->>D: Create short-lived one-time challenge
+    D->>R: Hold an opaque pairing room
+    D-->>P: QR carries challenge ID + temporary secret
+    P->>R: Join pairing room using derived identity
+    P->>D: Sealed pairing request
+    D->>D: Validate once, create device credentials
+    D-->>P: Sealed credentials + relay identity
+    D->>R: Hold paired-device room
+    P->>R: Reconnect with paired-device room
+    Note over D,P: Relay sees opaque room tags, frame sizes, timing, joins, and leaves—not plaintext
 ```
 
-## Components and technology choices
+Challenges are ephemeral and single-use. The daemon stores device tokens as hashes and can revoke
+one device or all devices. Revocation also drops live connections.
 
-| Component | Technology | Why this choice |
-|---|---|---|
-| `longleashd` daemon | Node.js + TypeScript, Fastify, WebSocket | Single source of truth on the laptop; survives the IDE closing; TS end-to-end keeps one language across the whole product |
-| Event storage | SQLite via better-sqlite3, WAL mode | Crash-safe, zero-ops, synchronous single-writer matches the daemon design; every session is an append-only, cursor-replayable event stream |
-| Agent control (Claude) | official Claude Agent SDK | Structured approvals (`canUseTool`), streaming, session resume — never screen-scraping (screen-scrapers die on every agent UI update; that killed prior projects) |
-| Agent control (others) | ACP — Agent Client Protocol | One client implementation covers Gemini CLI, Codex, and every future ACP agent |
-| Terminal capture | tmux control mode (`tmux -C`) | The only honest way to mirror and drive terminals on macOS; screen-exact, resize-safe |
-| Phone app | React + Vite PWA (installable web app) | Free forever, no store review or sideloading, instant updates, works on desktop browsers too — adoption matters more for an open-source tool than iOS lock-screen action buttons. Native wrappers stay an option later; nothing else changes if we add them |
-| Sync protocol | zod-validated event schemas, cursor-addressed streams | The phone assumes it is always disconnected and catches up from its last cursor — mobile networks are treated as hostile, not exceptional |
-| Relay | small Node WSS service, Docker, self-hostable | NAT traversal without a third party in the trust path: it routes ciphertext it cannot read and stores no credentials |
-| Pairing & auth | QR one-time challenge, per-device random tokens (stored hashed, timing-safe compare), instant revocation | A stolen database leaks no tokens; a lost phone is one tap to revoke |
-| Notifications | Web Push with self-generated VAPID keys, payloads carry IDs only | No vendor account or fee; nothing sensitive transits push infrastructure — the app fetches real state over the encrypted channel |
-| Testing | vitest, TDD, failure-mode tests mandatory | Every guarantee is a test that existed before the code; CI on every push |
+On the LAN, pairing and normal traffic can travel directly. With a relay configured, the QR points
+at the HTTPS relay-served app so one installed address continues working away from home.
 
-## The approval flow (the product in one trace)
+## Session ownership model
 
-1. An agent on the laptop wants to run a gated tool → the Agent SDK parks it in our `canUseTool` callback.
-2. The daemon writes an approval event to the session's stream and fires a push (IDs only).
-3. Your phone shows it on the lock screen. You tap Approve/Deny (or open the inbox for the full diff).
-4. The decision travels back encrypted, resolves the pending callback, and the agent continues.
-5. Every mutating action lands in the audit log; both desk and phone render the same event stream.
+Every writable process claims one canonical realpath checkout. Ownership is durable because daemon
+restarts and external provider processes do not occur in a neat order.
 
-## How an agent session actually runs
+```mermaid
+stateDiagram-v2
+    [*] --> Free
+    Free --> Reserved: launch or takeover begins
+    Reserved --> Managed: managed adapter starts
+    Reserved --> External: verified external writer is adopted
+    Reserved --> Free: start or takeover fails
+    Managed --> Free: stop, finish, error, or shutdown
+    External --> Reserved: confirmed phone takeover
+    External --> Free: provider process exits
+    Reserved --> External: takeover fails and live writer is restored
+```
 
-`SessionManager` owns every session. Starting one resolves the requested directory through
-symlinks and refuses anything outside your allowlisted roots — so remote start cannot reach
-`/etc`, cannot climb out with `..`, and cannot be tricked by a sibling path that merely shares
-a prefix. The directory is then **pinned** for the session's life, because resuming an agent
-from a different working directory silently forks a fresh, empty session.
+The daemon never equates “a signal was sent” with “the process exited.” An external takeover
+reserves the checkout, signals the verified provider process, waits for exit, and only then resumes
+the native conversation as managed. Failure restores the live owner or releases the reservation.
 
-While it runs, the adapter contract (`AgentFactory`) is all `SessionManager` knows about the
-agent, so Claude via the official SDK, ACP agents, and the deterministic test double are
-interchangeable. Output becomes `stream.delta` events; tools that ask permission become
-approvals that **block the agent until a human answers**; tools that were auto-approved still
-surface in the activity feed, because a permission callback alone would leave them invisible.
+For a second ordinary phone-managed session in the same Git project, `workspaceMode: auto` creates
+an isolated worktree when the physical checkout is occupied. Dirty tracked changes cause a clear
+refusal; non-ignored untracked files are copied as untracked files; ignored dependencies are not
+duplicated. Worktrees remain after a session ends until the person reviews them.
 
-Failure is designed for, not hoped against: an agent that dies mid-stream marks the session
-errored while keeping its partial output, any approval it left pending is closed out rather
-than hanging forever, unanswered approvals expire into a safe deny, repeated decisions are
-idempotent, and approvals left pending by a crashed daemon are reconciled at startup instead
-of appearing as a phantom inbox.
+## Approval flow
 
-## Security model, in five rules
+```mermaid
+sequenceDiagram
+    participant A as Agent runtime
+    participant X as Managed adapter or external hook
+    participant D as Laptop daemon
+    participant P as Phone PWA
+    participant H as Human
 
-1. Typed operations only — there is no generic "run this command" endpoint; the API's shape is the security boundary.
-2. The relay never sees plaintext and never stores credentials.
-3. Push payloads carry IDs, never content.
-4. Tokens are random 256-bit values stored only as hashes, compared timing-safe, revocable instantly (revocation also drops live connections).
-5. Remote session start is restricted to allowlisted project roots — and so is what tools may touch: a tool declaring a path has it resolved and checked, with anything reaching outside the project flagged to you or refused outright. Shell commands are not parsed, because guessing at shell syntax would be security theatre; you see the whole command and decide.
+    A->>X: Tool or question needs a decision
+    X->>D: Typed permission request
+    D->>D: Persist pending approval
+    D-->>P: Encrypted event + ID-only push
+    P-->>H: Show session, tool, input, and choices
+    H->>P: Approve, deny, answer, or hand back
+    P->>D: Authenticated idempotent decision
+    D->>D: Persist resolution and close stale copies
+    D-->>X: Provider-specific structured response
+    X-->>A: Continue, deny, or return to native prompt
+```
 
-## What we deliberately do not build
+Unanswered approvals expire safely instead of hanging forever. Repeated decisions are idempotent.
+Pending approvals are reconciled when sessions end or the daemon restarts so historical state
+cannot masquerade as live authority.
 
-Terminal emulators (xterm.js), multiplexers (tmux), crypto primitives (libsodium), or agent runtimes — we integrate the proven ones. And we never scrape TUIs: structured protocols only.
+Provider settings may pre-approve some actions before an external hook is consulted. LongLeash
+cannot retroactively gate those actions; it records observable activity and reports the weakened
+posture. See [Requirements](REQUIREMENTS.md#one-honest-caveat-about-approvals).
+
+## Conversation portability
+
+A LongLeash session stores its own durable ID and, when available, the provider's native Claude or
+Codex conversation ID. Native IDs produce copyable resume commands for every origin.
+
+- Terminal handoff resumes in the selected project directory.
+- VS Code workspace handoff opens the project first. Claude uses `--ide`; Codex resumes in the
+  invoking terminal.
+- A live writer must be released before its resume command is executed.
+- LongLeash does not and cannot inject a transcript into a sealed vendor VS Code chat webview.
+
+See [Session portability](SESSION-PORTABILITY.md) for the user-facing behavior and limits.
+
+## Reconnect and replay
+
+The phone is designed as if it is always about to disconnect:
+
+1. durable events receive a per-session monotonic sequence;
+2. the client records the last cursor it applied;
+3. reconnect subscribes from that cursor;
+4. the daemon replays durable events before live tailing;
+5. an unrecoverable gap is explicit rather than silently dropping output;
+6. `live` process state is separate from conversational status, so old replay cannot resurrect a
+   dead Stop button or stale approval.
+
+Backpressure is bounded. A slow client receives a resync requirement instead of causing unbounded
+daemon memory growth.
+
+## Security model
+
+### Trusted
+
+- the developer's laptop and operating-system account;
+- the locally running daemon and its data directory;
+- the provider CLIs/accounts the developer chose to install;
+- a paired phone while it remains in the developer's control.
+
+### Not trusted with plaintext
+
+- the hosted/self-hosted relay;
+- push infrastructure;
+- networks between the phone and laptop.
+
+### Enforced invariants
+
+1. **Typed operations only.** No generic remote `exec`, terminal byte stream, or arbitrary process
+   control API exists.
+2. **Allowlisted roots.** Session starts resolve symlinks/realpaths and cannot escape the roots the
+   laptop owner named.
+3. **Per-device revocation.** Random device credentials are hashed at rest and compared safely.
+4. **End-to-end encrypted relay frames.** The relay has neither content keys nor agent credentials.
+5. **ID-only pushes.** Notification services receive no transcript, command, approval, or path.
+6. **One writer per checkout.** Concurrency requires filesystem isolation, not optimistic prompting.
+7. **Human-owned delegation.** An agent cannot grant permission, claim consent, or silently deliver
+   another agent's briefing/return.
+8. **Audited mutations.** Decisions, session lifecycle changes, delegation, device changes, and
+   ownership transfers are recorded locally.
+
+### Honest limits
+
+- A compromised trusted laptop has the same access as its logged-in user; encryption in transit
+  cannot fix endpoint compromise.
+- The relay can observe traffic timing, size, room joins, and availability.
+- Provider hook and transcript contracts can change across CLI releases.
+- Web Push delivery and background execution are controlled by phone/browser policy.
+- A sleeping, powered-off, rebooted-at-FileVault, or disconnected laptop cannot answer.
+
+## Local files and operational state
+
+Default installed locations:
+
+| Path | Contents |
+| --- | --- |
+| `~/.longleash-app` | Installed Git checkout and built PWA |
+| `~/.local/bin/longleash` | Small launcher pointing at the installed checkout |
+| `~/.longleash` | Databases, daemon logs, hook endpoint, relay config, push keys, and preserved worktrees |
+| `~/.claude/settings.json` | Claude lifecycle hook registration, backed up before first edit |
+| `${CODEX_HOME:-~/.codex}/config.toml` | Codex lifecycle hook registration, backed up before first edit |
+
+Do not publish the data directory or provider configuration. Use `longleash devices` and
+`longleash revoke` instead of manually editing auth records.
+
+## Deliberate non-features
+
+- No TUI or VS Code chat-webview scraping.
+- No generic remote shell.
+- No automatic commits, merges, pushes, worktree deletion, or conflict resolution.
+- No hidden autonomous agent-to-agent loop.
+- No attempt to bypass provider hook review or operating-system security.
+- No claim that an automated suite replaces the [real-device acceptance gate](ACCEPTANCE.md).

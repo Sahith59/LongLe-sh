@@ -136,7 +136,67 @@ Pass when no decided or closed-session approval returns. Old conversations may r
 **Earlier** as history, but they must be visually inactive, offer **Reopen** only when resumable,
 and never show Stop unless a real agent process exists.
 
-## 8. Final release gate
+## 8. Safe parallel sessions in one Git project
+
+Use a disposable Git repository inside an allowlisted root. Do not run this test against valuable
+uncommitted work.
+
+1. Start a phone-managed Claude or Codex session there and leave it live/waiting.
+2. Start a second session for the same directory with **Same checkout**. Confirm it does not start,
+   names/links the controlling session without exposing an internal `ext_…` identifier, and leaves
+   the first session usable.
+3. Retry with **Safe parallel**. Confirm the second starts, shows its isolated branch/workspace, and
+   both sessions can receive messages independently.
+4. On the laptop, inspect without changing either checkout:
+
+   ```sh
+   git worktree list
+   git branch --list 'longleash/*'
+   ```
+
+5. Have each agent create a differently named harmless file. Confirm each file exists only in the
+   checkout owned by that agent and neither agent overwrote the other.
+6. Repeat once with a dirty tracked file and an occupied checkout. Confirm isolation refuses with a
+   useful explanation rather than silently starting from stale `HEAD`.
+
+Pass when one physical checkout never has two writers, Safe parallel creates a separate worktree,
+the first session remains controllable after a rejected launch, and no worktree is automatically
+committed, merged, pushed, or removed.
+
+## 9. Handoff and verified external takeover
+
+1. For live phone-, Terminal-, and VS Code-origin Claude and Codex sessions, open the handoff panel.
+2. Confirm Terminal and **VS Code workspace** choices produce visible, copyable commands whenever a
+   provider conversation ID exists.
+3. While a session is live, copy but do not run its command. Tap **Release current run**, wait for
+   the session to become non-live, then run the command once and confirm context is retained.
+4. From a fresh Terminal/VS Code session, send a phone message. Confirm the explicit
+   **End there & continue here** sheet appears; cancel once and verify the original still works.
+5. Confirm on a second attempt. Verify the original provider process exits before the phone-managed
+   writer begins and that no “active writer” failure occurs.
+
+Pass when no transfer happens without confirmation, a failed exit leaves the original owner intact,
+and successful transfer preserves the conversation. A VS Code vendor panel may show exit 143 after
+an explicitly confirmed transfer; LongLeash must never claim that it injected the resumed session
+back into the sealed native chat panel.
+
+## 10. Session settings and launch acknowledgement
+
+1. Open **New session**, expand **Model & reasoning**, and confirm every control remains reachable at
+   320 px width with the phone keyboard visible.
+2. Start Claude with provider-default model, one supported effort, and adaptive thinking.
+3. Start Codex with provider-default model and one supported effort; confirm no separate Claude
+   thinking control is offered.
+4. Confirm each launch sheet remains open and shows progress until the daemon acknowledges the
+   session, then opens exactly one new session.
+5. Stop/reopen a managed session and confirm its selected settings remain labeled and are reused.
+6. Try an intentionally invalid/unavailable custom model ID. Confirm a useful provider error appears
+   and the UI does not spin forever or create duplicate sessions after one retry.
+
+Pass when controls are mobile-safe, settings reach the correct provider, persisted values survive
+wake/restart, failures settle visibly, and approval/filesystem safety cannot be disabled there.
+
+## 11. Final release gate
 
 Run again:
 
@@ -144,7 +204,7 @@ Run again:
 longleash doctor
 ```
 
-The release passes only when all build identities still match, both hooks are current, all seven
+The release passes only when all build identities still match, both hooks are current, all ten
 flows above passed on real devices, and the phone shows no stale decisions. If anything fails,
 capture the exact time, agent, origin, phone screenshot, and these diagnostics before restarting:
 

@@ -1,4 +1,10 @@
-import type { AskedQuestion, SessionEvent, SessionRelationship } from '@longleash/protocol'
+import type {
+  AskedQuestion,
+  SessionEvent,
+  SessionRelationship,
+  SessionSettings,
+  SessionWorkspace,
+} from '@longleash/protocol'
 
 export type SessionStatus = 'running' | 'waiting' | 'ended' | 'errored'
 
@@ -47,6 +53,8 @@ export interface SessionView {
   gate?: 'ask' | 'auto'
   /** Present when this session was deliberately created from another LongLeash session. */
   relationship?: SessionRelationship
+  settings?: SessionSettings
+  workspace?: SessionWorkspace
   workspaceConflict?: { cwd: string; ownerSessionId: string; processPaused?: boolean }
   error?: string
 }
@@ -89,6 +97,8 @@ export interface SessionSeed {
   resumeId?: string
   gate?: 'ask' | 'auto'
   relationship?: SessionRelationship
+  settings?: SessionSettings
+  workspace?: SessionWorkspace
   workspaceConflict?: { cwd: string; ownerSessionId: string; processPaused?: boolean }
 }
 
@@ -173,6 +183,8 @@ export function createStore(options: StoreOptions = {}) {
           origin?: string
           resumeId?: string
           relationship?: SessionRelationship
+          settings?: SessionSettings
+          workspace?: SessionWorkspace
         }
         session.agent = payload.agent
         session.live = true
@@ -181,6 +193,8 @@ export function createStore(options: StoreOptions = {}) {
         session.origin = payload.origin ?? 'unknown'
         if (payload.resumeId) session.resumeId = payload.resumeId
         if (payload.relationship) session.relationship = payload.relationship
+        if (payload.settings) session.settings = payload.settings
+        if (payload.workspace) session.workspace = payload.workspace
         break
       }
       case 'stream.delta': {
@@ -310,6 +324,8 @@ export function createStore(options: StoreOptions = {}) {
       if (seed.resumeId) session.resumeId = seed.resumeId
       if (seed.gate) session.gate = seed.gate
       if (seed.relationship) session.relationship = seed.relationship
+      if (seed.settings) session.settings = seed.settings
+      if (seed.workspace) session.workspace = seed.workspace
       if (seed.workspaceConflict) session.workspaceConflict = seed.workspaceConflict
       else delete session.workspaceConflict
       if (session.status === 'ended' || session.status === 'errored' || !session.live) {

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { EventEmitter } from 'node:events'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createCodexAgentFactory } from '../src/adapters/codex.js'
+import type { SessionSettings } from '@longleash/protocol'
 import type { AgentStreamMessage, PermissionDecision } from '../src/agent.js'
 
 /**
@@ -56,7 +57,7 @@ interface Harness {
 
 function start(
   decide: (toolName: string) => PermissionDecision = () => ({ behavior: 'allow' }),
-  opts: { prompt?: string; resume?: string } = {},
+  opts: { prompt?: string; resume?: string; settings?: SessionSettings } = {},
 ): Harness {
   const server = new FakeAppServer()
   const events: AgentStreamMessage[] = []
@@ -78,6 +79,7 @@ function start(
     onAutoApprovedTool: (toolName) => autoApproved.push(toolName),
     onAgentSession: (id) => agentSessionIds.push(id),
     ...(opts.resume === undefined ? {} : { resume: opts.resume }),
+    ...(opts.settings === undefined ? {} : { settings: opts.settings }),
   })
   void (async () => {
     try {
@@ -137,6 +139,16 @@ describe('the Codex adapter — the handshake Codex actually requires', () => {
     const params = h.server.sentMethod('turn/start')!.params as Record<string, unknown>
     expect(params.threadId).toBe('thr-1')
     expect(params.input).toEqual([{ type: 'text', text: 'fix the retry logic' }])
+  })
+
+  it('pins model and reasoning effort on both the thread and every turn', async () => {
+    const h = start(undefined, { settings: { model: 'gpt-5.6', effort: 'high' } })
+    await handshake(h)
+    expect(h.server.sentMethod('thread/start')?.params).toMatchObject({ model: 'gpt-5.6' })
+    expect(h.server.sentMethod('turn/start')?.params).toMatchObject({
+      model: 'gpt-5.6',
+      effort: 'high',
+    })
   })
 
   it('captures the thread id so the conversation can be reopened later', async () => {

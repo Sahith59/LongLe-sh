@@ -6,14 +6,20 @@ import type { ApprovalStore } from './approvals.js'
 import type { EventLog, AppendInput } from './eventlog.js'
 import {
   AgentKind,
+  SessionSettings,
   SessionOrigin,
   SessionRelationship,
+  WorkspaceMode,
   type SessionEvent,
   type SessionRelationship as SessionRelationshipValue,
+  type SessionSettings as SessionSettingsValue,
+  type SessionWorkspace,
+  type WorkspaceMode as WorkspaceModeValue,
 } from '@longleash/protocol'
 import { isSensitivePath } from './sensitive.js'
 import { WorkspaceLeaseError, type WorkspaceLeaseManager } from './workspace-leases.js'
 import { ensureColumns } from './migrate.js'
+import { WorktreeError, type WorktreeManager } from './worktrees.js'
 
 const DEFAULT_APPROVAL_TTL_MS = 24 * 60 * 60_000
 
@@ -28,8 +34,11 @@ export class SessionError extends Error {
       | 'invalid-input'
       | 'session-busy'
       | 'too-many-sessions'
-      | 'workspace-conflict',
+      | 'workspace-conflict'
+      | 'workspace-isolation-failed'
+      | 'unsupported-setting',
     message: string,
+    readonly detail?: { ownerSessionId?: string; cwd?: string },
   ) {
     super(message)
     this.name = 'SessionError'
@@ -59,6 +68,32 @@ function relationshipFromRow(row: {
   return parsed.success ? { relationship: parsed.data } : {}
 }
 
+function settingsFromRow(raw: string | null): { settings?: SessionSettingsValue } {
+  if (raw === null) return {}
+  try {
+    const parsed = SessionSettings.safeParse(JSON.parse(raw))
+    return parsed.success ? { settings: parsed.data } : {}
+  } catch {
+    return {}
+  }
+}
+
+function workspaceFromRow(row: {
+  cwd: string
+  workspace_mode: string
+  source_cwd: string | null
+  workspace_branch: string | null
+}): SessionWorkspace {
+  if (row.workspace_mode === 'isolated') {
+    return {
+      mode: 'isolated',
+      sourceCwd: row.source_cwd ?? row.cwd,
+      ...(row.workspace_branch === null ? {} : { branch: row.workspace_branch }),
+    }
+  }
+  return { mode: 'shared', sourceCwd: row.source_cwd ?? row.cwd }
+}
+
 export interface SessionSummary {
   sessionId: string
   agent: AgentKind
@@ -71,6 +106,8 @@ export interface SessionSummary {
   title: string
   /** Present only when this session was created as a deliberately attributed child. */
   relationship?: SessionRelationshipValue
+  settings?: SessionSettingsValue
+  workspace?: SessionWorkspace
 }
 
 /**
@@ -108,6 +145,9 @@ export interface StartSessionInput {
   actor?: string
   /** DelegationManager reserved the checkout while pausing the source. */
   workspaceReservationId?: string
+  /** `auto` shares an idle checkout and creates a Git worktree only when another writer owns it. */
+  workspaceMode?: WorkspaceModeValue
+  settings?: SessionSettingsValue
 }
 
 export interface AuditEntry {
@@ -135,6 +175,8 @@ export interface SessionManagerOptions {
   excludeSensitive?: boolean
   /** Durable one-writer ownership. Omit only in isolated unit tests or legacy embeddings. */
   workspace?: WorkspaceLeaseManager
+  /** Creates isolated Git checkouts when safe parallelism is requested. */
+  worktrees?: WorktreeManager
   /** Maximum time a workspace handoff waits for the old agent process to drain. */
   pauseTimeoutMs?: number
   /**
@@ -213,6 +255,7 @@ export class SessionManager {
   private readonly maxConcurrentSessions: number
   private readonly excludeSensitive: boolean
   private readonly workspace: WorkspaceLeaseManager | undefined
+  private readonly worktrees: WorktreeManager | undefined
   private readonly pauseTimeoutMs: number
   private readonly sessions = new Map<string, LiveSession>()
   private readonly claimed = new Set<string>()
@@ -231,6 +274,7 @@ export class SessionManager {
     this.maxConcurrentSessions = opts.maxConcurrentSessions ?? 10
     this.excludeSensitive = opts.excludeSensitive ?? false
     this.workspace = opts.workspace
+    this.worktrees = opts.worktrees
     this.pauseTimeoutMs = opts.pauseTimeoutMs ?? 15_000
     if (!Number.isFinite(this.pauseTimeoutMs) || this.pauseTimeoutMs < 1) {
       throw new Error('pauseTimeoutMs must be a positive number')
@@ -248,6 +292,12 @@ export class SessionManager {
     // faithful upgrade. New rows begin as `sending` and cross to `sent` after acceptance.
     ensureColumns(this.approvals.rawDb, 'session_deliveries', [
       { name: 'state', definition: "TEXT NOT NULL DEFAULT 'sent'" },
+    ])
+    ensureColumns(this.approvals.rawDb, 'sessions', [
+      { name: 'workspace_mode', definition: "TEXT NOT NULL DEFAULT 'shared'" },
+      { name: 'source_cwd', definition: 'TEXT' },
+      { name: 'workspace_branch', definition: 'TEXT' },
+      { name: 'settings_json', definition: 'TEXT' },
     ])
     // A restart takes every agent process with it — but not the conversations. Anything with
     // a resume id becomes 'waiting': the transcript survives on disk and a reply wakes it (see
@@ -326,8 +376,20 @@ export class SessionManager {
     const factory = this.agentFactories[agent.data]
     if (!factory) throw new SessionError('no-adapter', `No adapter for agent "${agent.data}"`)
 
-    const cwd = this.assertAllowedCwd(input.cwd)
+    const sourceCwd = this.assertAllowedCwd(input.cwd)
     const origin = SessionOrigin.catch('daemon').parse(input.origin ?? 'daemon')
+    const workspaceMode = WorkspaceMode.catch('auto').parse(input.workspaceMode ?? 'auto')
+    const parsedSettings = SessionSettings.safeParse(input.settings ?? {})
+    if (!parsedSettings.success) {
+      throw new SessionError('invalid-input', parsedSettings.error.issues[0]?.message ?? 'Invalid session settings.')
+    }
+    const settings = Object.keys(parsedSettings.data).length === 0 ? undefined : parsedSettings.data
+    if (agent.data === 'codex' && settings?.thinking !== undefined) {
+      throw new SessionError(
+        'unsupported-setting',
+        'Thinking mode is controlled by Codex through reasoning effort. Choose an effort, or leave it on Default.',
+      )
+    }
     const parsedRelationship = input.relationship === undefined
       ? undefined
       : SessionRelationship.safeParse(input.relationship)
@@ -340,15 +402,52 @@ export class SessionManager {
     }
     const sessionId = newId('ses')
     const actor = input.actor ?? 'daemon'
-    this.acquireWorkspace({
-      sessionId,
-      cwd,
-      origin,
-      actor,
-      ...(input.workspaceReservationId === undefined
-        ? {}
-        : { reservationId: input.workspaceReservationId }),
-    })
+    let cwd = sourceCwd
+    let sessionWorkspace: SessionWorkspace = { mode: 'shared', sourceCwd }
+    const isolate = () => {
+      if (this.worktrees === undefined) {
+        throw new SessionError(
+          'workspace-isolation-failed',
+          'Safe parallel checkout support is unavailable in this daemon build.',
+        )
+      }
+      try {
+        const prepared = this.worktrees.prepare(sourceCwd, sessionId)
+        cwd = prepared.cwd
+        sessionWorkspace = { mode: 'isolated', sourceCwd, branch: prepared.branch }
+      } catch (error) {
+        if (error instanceof WorktreeError) {
+          throw new SessionError('workspace-isolation-failed', error.message)
+        }
+        throw error
+      }
+    }
+    if (workspaceMode === 'isolated') isolate()
+    try {
+      this.acquireWorkspace({
+        sessionId,
+        cwd,
+        origin,
+        actor,
+        ...(input.workspaceReservationId === undefined
+          ? {}
+          : { reservationId: input.workspaceReservationId }),
+      })
+    } catch (error) {
+      // `auto` preserves the ordinary checkout for the first writer and transparently moves
+      // a second writer to its own branch. The retry is against a different canonical path,
+      // so the one-writer invariant remains intact.
+      if (
+        workspaceMode === 'auto' &&
+        this.worktrees !== undefined &&
+        input.workspaceReservationId === undefined &&
+        error instanceof SessionError &&
+        error.reason === 'workspace-conflict'
+      ) {
+        isolate()
+        this.acquireWorkspace({ sessionId, cwd, origin, actor })
+      } else throw error
+    }
     this.claimed.add(sessionId)
 
     const suppliedTitle = input.title?.trim()
@@ -366,6 +465,8 @@ export class SessionManager {
         status: 'running',
         startedAt: this.now(),
         ...(relationship === undefined ? {} : { relationship }),
+        ...(settings === undefined ? {} : { settings }),
+        workspace: sessionWorkspace,
       })
       persisted = true
       this.emit(sessionId, {
@@ -376,6 +477,8 @@ export class SessionManager {
           title,
           origin,
           ...(relationship === undefined ? {} : { relationship }),
+          ...(settings === undefined ? {} : { settings }),
+          workspace: sessionWorkspace,
         },
       })
       // The initial request is part of the conversation and needs its own durable sequence. Without
@@ -385,7 +488,7 @@ export class SessionManager {
         payload: { kind: 'user', text: `\n\n› ${prompt}\n` },
       })
       this.audit(actor, 'session.start', `${agent.data} in ${cwd}`)
-      handle = this.spawn(factory, sessionId, cwd, prompt, waiting)
+      handle = this.spawn(factory, sessionId, cwd, prompt, waiting, undefined, settings)
     } catch (error) {
       // Ownership is claimed before any durable lifecycle write. Every later synchronous
       // failure must release it; otherwise one bad adapter or disk write bricks this checkout.
@@ -414,6 +517,8 @@ export class SessionManager {
       origin,
       title,
       ...(relationship === undefined ? {} : { relationship }),
+      ...(settings === undefined ? {} : { settings }),
+      workspace: sessionWorkspace,
       handle,
       waiting,
       done: Promise.resolve(),
@@ -487,6 +592,10 @@ export class SessionManager {
       delegation_id: string | null
       delegation_role: string | null
       delegation_depth: number | null
+      workspace_mode: string
+      source_cwd: string | null
+      workspace_branch: string | null
+      settings_json: string | null
     }[]
     return rows.map((row) => {
       const live = this.sessions.get(row.session_id)
@@ -503,6 +612,8 @@ export class SessionManager {
         resumable: row.agent_session_id !== null,
         ...(row.agent_session_id === null ? {} : { resumeId: row.agent_session_id }),
         ...relationshipFromRow(row),
+        ...settingsFromRow(row.settings_json),
+        workspace: workspaceFromRow(row),
       }
     })
   }
@@ -526,8 +637,11 @@ export class SessionManager {
   }): void {
     this.approvals.rawDb
       .prepare(
-        `INSERT INTO sessions (session_id, agent, cwd, origin, title, status, started_at, agent_session_id)
-         VALUES (?, ?, ?, ?, ?, 'ended', ?, ?)
+        `INSERT INTO sessions (
+           session_id, agent, cwd, origin, title, status, started_at, agent_session_id,
+           workspace_mode, source_cwd
+         )
+         VALUES (?, ?, ?, ?, ?, 'ended', ?, ?, 'shared', ?)
          ON CONFLICT(session_id) DO UPDATE SET
            status = 'ended',
            agent = excluded.agent,
@@ -544,6 +658,7 @@ export class SessionManager {
         input.title,
         input.startedAt,
         input.agentSessionId,
+        input.cwd,
       )
   }
 
@@ -553,9 +668,10 @@ export class SessionManager {
       .prepare(
         `INSERT INTO sessions (
            session_id, agent, cwd, origin, title, status, started_at,
-           parent_session_id, delegation_id, delegation_role, delegation_depth
+           parent_session_id, delegation_id, delegation_role, delegation_depth,
+           workspace_mode, source_cwd, workspace_branch, settings_json
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET status = excluded.status`,
       )
       .run(
@@ -570,6 +686,10 @@ export class SessionManager {
         relationship?.delegationId ?? null,
         relationship?.role ?? null,
         relationship?.depth ?? null,
+        summary.workspace?.mode ?? 'shared',
+        summary.workspace?.sourceCwd ?? summary.cwd,
+        summary.workspace?.branch ?? null,
+        summary.settings === undefined ? null : JSON.stringify(summary.settings),
       )
   }
 
@@ -604,12 +724,14 @@ export class SessionManager {
     prompt: string,
     waiting: Map<string, (decision: PermissionDecision) => void>,
     resume?: string,
+    settings?: SessionSettingsValue,
   ) {
     return factory({
       sessionId,
       cwd,
       prompt,
       ...(resume === undefined ? {} : { resume }),
+      ...(settings === undefined ? {} : { settings }),
       canUseTool: (toolName, toolInput) =>
         this.requestApproval(sessionId, cwd, waiting, toolName, toolInput),
       onAutoApprovedTool: (toolName, toolInput) => {
@@ -652,7 +774,15 @@ export class SessionManager {
     const row = this.approvals.rawDb
       .prepare('SELECT * FROM sessions WHERE session_id = ?')
       .get(sessionId) as
-      | { agent: string; cwd: string; origin: string; title: string; started_at: number; agent_session_id: string | null }
+      | {
+          agent: string
+          cwd: string
+          origin: string
+          title: string
+          started_at: number
+          agent_session_id: string | null
+          workspace_mode: string
+        }
       | undefined
     if (!row) return false
     // Without a resume point there is nothing to carry on from; saying otherwise would
@@ -666,7 +796,7 @@ export class SessionManager {
     // The directory must still be permitted: an allowlist change must not be bypassable
     // by reopening something started under the old configuration.
     try {
-      this.assertAllowedCwd(row.cwd)
+      this.assertSessionCwd(row.cwd, row.workspace_mode)
     } catch {
       return false
     }
@@ -710,6 +840,15 @@ export class SessionManager {
     this.emit(sessionId, { type: 'session.status', payload: { status: 'running', live: true } })
     session.handle.sendMessage(trimmed)
     return true
+  }
+
+  /** Continue an adopted external conversation while atomically claiming its handoff lease. */
+  takeOver(sessionId: string, text: string, actor: string, reservationId: string): boolean {
+    const delivered = this.wake(sessionId, text.trim(), actor, { reservationId })
+    if (!delivered) {
+      this.workspace?.releaseReservation(reservationId, actor, 'external takeover could not start')
+    }
+    return delivered
   }
 
   /**
@@ -798,7 +937,18 @@ export class SessionManager {
     const row = this.approvals.rawDb
       .prepare('SELECT * FROM sessions WHERE session_id = ?')
       .get(sessionId) as
-      | { agent: string; cwd: string; origin: string; title: string; started_at: number; agent_session_id: string | null }
+      | {
+          agent: string
+          cwd: string
+          origin: string
+          title: string
+          started_at: number
+          agent_session_id: string | null
+          workspace_mode: string
+          source_cwd: string | null
+          workspace_branch: string | null
+          settings_json: string | null
+        }
       | undefined
     if (!row || row.agent_session_id === null) return false
 
@@ -816,7 +966,7 @@ export class SessionManager {
     // The allowlist of today governs, not the one this session was started under.
     let cwd: string
     try {
-      cwd = this.assertAllowedCwd(row.cwd)
+      cwd = this.assertSessionCwd(row.cwd, row.workspace_mode)
     } catch {
       return false
     }
@@ -840,7 +990,8 @@ export class SessionManager {
     if (opts.deliveryId !== undefined) this.rememberDelivery(opts.deliveryId, sessionId)
     let handle: AgentRunHandle
     try {
-      handle = this.spawn(factory, sessionId, cwd, text, waiting, row.agent_session_id)
+      const savedSettings = settingsFromRow(row.settings_json).settings
+      handle = this.spawn(factory, sessionId, cwd, text, waiting, row.agent_session_id, savedSettings)
     } catch (error) {
       if (opts.deliveryId !== undefined) this.forgetDelivery(opts.deliveryId)
       this.workspace?.release(sessionId, 'system:session', 'agent wake failed')
@@ -854,6 +1005,8 @@ export class SessionManager {
       startedAt: row.started_at,
       origin: SessionOrigin.catch('daemon').parse(row.origin),
       title: row.title,
+      ...settingsFromRow(row.settings_json),
+      workspace: workspaceFromRow(row),
       handle,
       waiting,
       done: Promise.resolve(),
@@ -1082,7 +1235,11 @@ export class SessionManager {
       }
     } catch (error) {
       if (error instanceof WorkspaceLeaseError) {
-        throw new SessionError('workspace-conflict', error.message)
+        throw new SessionError('workspace-conflict',
+          'Another active session owns this checkout. Choose Safe parallel to create an isolated Git branch, or open and stop the controlling session.', {
+          ...(error.conflict?.ownerId === undefined ? {} : { ownerSessionId: error.conflict.ownerId }),
+          ...(error.conflict?.cwd === undefined ? {} : { cwd: error.conflict.cwd }),
+        })
       }
       throw error
     }
@@ -1307,6 +1464,20 @@ export class SessionManager {
     const permitted = this.allowedRoots.some((root) => real === root || real.startsWith(root + sep))
     if (!permitted) {
       throw new SessionError('cwd-not-allowed', `Directory is not allowed: ${cwd}`)
+    }
+    return real
+  }
+
+  private assertSessionCwd(cwd: string, workspaceMode: string): string {
+    if (workspaceMode !== 'isolated') return this.assertAllowedCwd(cwd)
+    let real: string
+    try {
+      real = realpathSync(resolve(cwd))
+    } catch {
+      throw new SessionError('cwd-not-allowed', `The isolated checkout no longer exists: ${cwd}`)
+    }
+    if (!this.worktrees?.owns(real)) {
+      throw new SessionError('cwd-not-allowed', 'The isolated checkout is outside LongLeash-managed storage.')
     }
     return real
   }

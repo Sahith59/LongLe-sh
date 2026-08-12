@@ -388,7 +388,8 @@ results.
 
 ### Phase 2 — Isolated parallel specialists
 
-- [ ] Git worktree provider and per-child branches.
+- [x] Git worktree provider and per-session branches for ordinary phone launches.
+- [ ] Apply isolated worktrees to delegated children after merge/return review UX exists.
 - [ ] Multiple children per parent.
 - [ ] Parallel review/research/implementation roles.
 - [ ] Changes, tests, and branch status summaries.
@@ -497,3 +498,4 @@ the linked commits, and current tests to know what is complete and what comes ne
 | 2026-08-12 | Phase 1B start and observe | Implementation complete; physical-device dogfood pending | 659 automated tests, authenticated WebSocket launch/reconnect/Stop coverage, all package typechecks and builds, and 320/390 px rendered Chrome QA passed |
 | 2026-08-12 | Phase 1C reviewed return | Implementation complete; live-device/vendor QA pending | Deterministic reviewed draft, durable at-most-once return delivery, explicit takeover, exact attribution, and concurrent retry coverage in the 690-test clean gate |
 | 2026-08-12 | Phase 1D workspace hardening | Implementation complete; live-device/vendor QA pending | Atomic durable leases, sequential handoff, process conflict enforcement, bounded interrupt recovery, restart reconciliation, and conflict UI coverage in the 690-test clean gate |
+| 2026-08-12 | Phase 2 foundation: safe parallel launch + portable settings/handoff | Implementation complete; physical-device/vendor QA pending | Automatic isolated Git worktrees for a second phone-launched writer; verified external-process drain before takeover; universal Terminal/VS Code workspace handoffs; persisted Claude/Codex model and effort controls; 702-test clean gate plus all typechecks and production builds |

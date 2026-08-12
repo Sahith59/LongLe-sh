@@ -1,3 +1,5 @@
+import type { SessionSettings } from '@longleash/protocol'
+
 /**
  * The contract every agent adapter implements. Claude (Agent SDK), ACP agents, and the
  * deterministic test double all satisfy this, so SessionManager never knows which is running.
@@ -27,6 +29,8 @@ export interface AgentRunRequest {
   onAgentSession: (agentSessionId: string) => void
   /** Reopen a previous conversation instead of starting fresh. */
   resume?: string
+  /** Validated provider controls pinned to this conversation across wake/reopen. */
+  settings?: SessionSettings
 }
 
 export interface AgentRunHandle {

@@ -34,6 +34,7 @@ import {
   type ConnectionState,
   type FolderHit,
   type Hello,
+  type AgentSettingsCatalog,
   type LinkPath,
 } from './lib/client.js'
 import { ApprovalCard } from './ui/ApprovalCard.js'
@@ -81,6 +82,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [roots, setRoots] = useState<string[]>([])
   const [folders, setFolders] = useState<FolderHit[]>([])
+  const [settingsCatalog, setSettingsCatalog] = useState<AgentSettingsCatalog | undefined>()
   const folderQueryRef = useRef('')
   const [openSessionId, setOpenSessionId] = useState<string | null>(
     // A cold start FROM a notification: the service worker put the session in the URL, so the
@@ -88,6 +90,12 @@ export default function App() {
     () => sessionFromSearch(window.location.search),
   )
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [sessionStart, setSessionStart] = useState<{
+    requestId: string
+    state: 'starting' | 'failed'
+    error?: string
+  } | null>(null)
+  const sessionStartRef = useRef<string | null>(null)
   const [delegationSource, setDelegationSource] = useState<{
     sessionId: string
     sourceSeq?: number
@@ -192,6 +200,7 @@ export default function App() {
       onState: setState,
       onHello: (hello: Hello) => {
         setRoots(hello.roots)
+        setSettingsCatalog(hello.capabilities.sessionSettings)
         const restoredDelegations = hello.delegations ?? []
         setDelegations(
           Object.fromEntries(restoredDelegations.map((delegation) => [delegation.delegationId, delegation])),
@@ -233,6 +242,19 @@ export default function App() {
         // Search replies can cross in flight. Never let an older empty-query/root response
         // replace the results for what the person is currently typing.
         if (isCurrentFolderReply(folderQueryRef.current, query)) setFolders(results)
+      },
+      onSessionStarted: (requestId, sessionId) => {
+        if (requestId !== undefined && sessionStartRef.current !== requestId) return
+        sessionStartRef.current = null
+        setSessionStart(null)
+        setSheetOpen(false)
+        setOpenSessionId(sessionId)
+      },
+      onSessionStartError: (requestId, message) => {
+        if (requestId !== undefined && sessionStartRef.current !== requestId) return
+        setSessionStart((current) => current === null
+          ? { requestId: requestId ?? 'legacy', state: 'failed', error: message }
+          : { ...current, state: 'failed', error: message })
       },
       onDelegationPreview: (preview) => {
         setDelegationError(null)
@@ -493,12 +515,36 @@ export default function App() {
         roots={roots}
         folders={folders}
         connected={connected}
+        {...(settingsCatalog === undefined ? {} : { settingsCatalog })}
+        starting={sessionStart?.state === 'starting'}
+        {...(sessionStart?.state === 'failed' && sessionStart.error !== undefined
+          ? { startError: sessionStart.error }
+          : {})}
         onSearch={search}
-        onStart={(dir, prompt, agent) => {
+        onStart={(dir, prompt, agent, options) => {
           setError(null)
-          return clientRef.current?.startSession(dir, prompt, agent) ?? false
+          const requestId = `start-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+          const sent = clientRef.current?.startSession(dir, prompt, agent, { ...options, requestId }) ?? false
+          if (sent) {
+            sessionStartRef.current = requestId
+            setSessionStart({ requestId, state: 'starting' })
+            setTimeout(() => {
+              if (sessionStartRef.current !== requestId) return
+              setSessionStart({
+                requestId,
+                state: 'failed',
+                error: 'The laptop did not confirm the launch. Close this sheet and check the session list before retrying, so you do not start a duplicate.',
+              })
+            }, 20_000)
+          }
+          return sent
         }}
-        onClose={() => setSheetOpen(false)}
+        onClose={() => {
+          if (sessionStart?.state === 'starting') return
+          sessionStartRef.current = null
+          setSessionStart(null)
+          setSheetOpen(false)
+        }}
       />
       {delegationSource && delegationSession ? (
         <DelegateSheet
@@ -918,6 +964,7 @@ export function DetailScreen({
   onReviewReturn?: (delegationId: string) => void
 }) {
   const [message, setMessage] = useState('')
+  const [confirmTakeover, setConfirmTakeover] = useState(false)
   const still = useReducedMotion()
   const keyboard = useKeyboardInset(true)
   // A terminal session belongs to the keyboard it was started at — until you type here.
@@ -940,6 +987,10 @@ export function DetailScreen({
   const send = () => {
     const text = message.trim()
     if (text === '') return
+    if (externallyDriven && live) {
+      setConfirmTakeover(true)
+      return
+    }
     // Terminal sessions are continued by taking them over — never by typing into them.
     if ((externallyDriven ? onTakeOver : onSend)(text)) setMessage('')
   }
@@ -1000,6 +1051,26 @@ export function DetailScreen({
                 </span>
               </>
             ) : null}
+            {session.settings?.model ? (
+              <>
+                <span className="dot" aria-hidden="true">·</span>
+                <span className="sessiontag settingtag">{session.settings.model}</span>
+              </>
+            ) : null}
+            {session.settings?.effort ? (
+              <>
+                <span className="dot" aria-hidden="true">·</span>
+                <span>{session.settings.effort} effort</span>
+              </>
+            ) : null}
+            {session.workspace?.mode === 'isolated' ? (
+              <>
+                <span className="dot" aria-hidden="true">·</span>
+                <span className="sessiontag isolatedtag" title={session.workspace.branch}>
+                  isolated branch
+                </span>
+              </>
+            ) : null}
             <span className="dot" aria-hidden="true">·</span>
             <PathChip text={session.cwd} kind="folder" max={30} expandable />
           </p>
@@ -1010,21 +1081,14 @@ export function DetailScreen({
               onSet={onSetGate}
             />
           ) : null}
-          {session.origin === 'phone' ? (
+          {(session.agent === 'claude' || session.agent === 'codex') ? (
             <TerminalHandoff
               cwd={session.cwd}
               resumeId={session.resumeId}
               agent={session.agent}
               live={live}
-              expandedByDefault
+              expandedByDefault={session.origin === 'phone' || session.resumeId !== undefined}
               onRelease={onStop}
-            />
-          ) : !live && session.resumable && session.resumeId ? (
-            <TerminalHandoff
-              cwd={session.cwd}
-              resumeId={session.resumeId}
-              agent={session.agent}
-              live={false}
             />
           ) : null}
         </div>
@@ -1039,12 +1103,23 @@ export function DetailScreen({
                   : 'Conflict detected — process pause not verified'}
               </strong>
               <p>
-                Session <span className="mono">{session.workspaceConflict.ownerSessionId}</span> owns
+                {sessions?.[session.workspaceConflict.ownerSessionId]?.title
+                  ? <><strong>{sessions[session.workspaceConflict.ownerSessionId]?.title}</strong> owns</>
+                  : 'Another active session owns'}
                 <span className="mono"> {shortPath(session.workspaceConflict.cwd)}</span>.
                 {session.workspaceConflict.processPaused
-                  ? ' Stop or finish that session; this one resumes automatically when the lease is released.'
+                  ? ' Open or stop it, or start a new Safe parallel session to work in an isolated branch.'
                   : ' Permission requests are denied, but auto-approved activity cannot be guaranteed. Stop this session immediately before continuing.'}
               </p>
+              {onOpenSession && sessions?.[session.workspaceConflict.ownerSessionId] ? (
+                <button
+                  type="button"
+                  className="tap quiet conflict-open"
+                  onClick={() => onOpenSession(session.workspaceConflict?.ownerSessionId ?? '')}
+                >
+                  Open controlling session
+                </button>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -1120,7 +1195,30 @@ export function DetailScreen({
       </main>
 
       <div className="dock" {...(keyboard > 0 ? { style: { bottom: keyboard } } : {})}>
-        {canType ? (
+        {confirmTakeover ? (
+          <div className="transfer-confirm" role="alertdialog" aria-label="Transfer session to phone">
+            <div>
+              <strong>Move this conversation to your phone?</strong>
+              <p>The current {session.origin === 'vscode' ? 'VS Code' : 'terminal'} run will close first. LongLeash waits for it to release the transcript before sending your message.</p>
+            </div>
+            <div className="transfer-actions">
+              <Key className="sm" onClick={() => setConfirmTakeover(false)}>Keep it there</Key>
+              <Key
+                className="sm primary"
+                onClick={() => {
+                  const text = message.trim()
+                  if (text !== '' && onTakeOver(text)) {
+                    setMessage('')
+                    setConfirmTakeover(false)
+                  }
+                }}
+                disabled={!connected}
+              >
+                End there &amp; continue here
+              </Key>
+            </div>
+          </div>
+        ) : canType ? (
           <div className="dock-in">
             <textarea
               className="field"
@@ -1337,9 +1435,15 @@ function TerminalHandoff({
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState(false)
   const [releaseRequested, setReleaseRequested] = useState(false)
+  const [target, setTarget] = useState<'terminal' | 'vscode'>('terminal')
   const quotedId = resumeId === undefined ? '' : JSON.stringify(resumeId)
   const resume = agent === 'codex' ? `codex resume ${quotedId}` : `claude --resume ${quotedId}`
-  const command = `cd ${JSON.stringify(cwd)} && ${resume}`
+  const ideResume = agent === 'codex'
+    ? `codex resume ${quotedId}`
+    : `claude --ide --resume ${quotedId}`
+  const command = target === 'terminal'
+    ? `cd ${JSON.stringify(cwd)} && ${resume}`
+    : `code -r ${JSON.stringify(cwd)} && cd ${JSON.stringify(cwd)} && ${ideResume}`
 
   const copy = () => {
     if (resumeId === undefined) return
@@ -1389,22 +1493,24 @@ function TerminalHandoff({
             </p>
           ) : (
             <>
-              <code className="resumecmd">{command}</code>
-              {live ? (
-                <Key
-                  className="wide"
-                  onClick={() => {
-                    setReleaseRequested(true)
-                    onRelease?.()
-                    // A dropped stop command must not leave the only retry control disabled.
-                    setTimeout(() => setReleaseRequested(false), 8000)
-                  }}
-                  disabled={releaseRequested}
+              <div className="handoff-target" role="group" aria-label="Handoff destination">
+                <button
+                  type="button"
+                  aria-pressed={target === 'terminal'}
+                  onClick={() => setTarget('terminal')}
                 >
-                  <Square size={14} strokeWidth={2.5} fill="currentColor" aria-hidden="true" />
-                  {releaseRequested ? 'Releasing…' : 'Release for terminal'}
-                </Key>
-              ) : (
+                  Terminal
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={target === 'vscode'}
+                  onClick={() => setTarget('vscode')}
+                >
+                  VS Code workspace
+                </button>
+              </div>
+              <code className="resumecmd">{command}</code>
+              <div className="handoff-actions">
                 <Key className="wide" onClick={copy}>
                   {copied ? (
                     <>
@@ -1418,11 +1524,30 @@ function TerminalHandoff({
                     </>
                   )}
                 </Key>
-              )}
+              {live ? (
+                <Key
+                  className="wide"
+                  onClick={() => {
+                    setReleaseRequested(true)
+                    onRelease?.()
+                    // A dropped stop command must not leave the only retry control disabled.
+                    setTimeout(() => setReleaseRequested(false), 8000)
+                  }}
+                  disabled={releaseRequested}
+                >
+                  <Square size={14} strokeWidth={2.5} fill="currentColor" aria-hidden="true" />
+                  {releaseRequested ? 'Releasing…' : 'Release current run'}
+                </Key>
+              ) : null}
+              </div>
               <p className="resumenote">
-                {live
-                  ? 'Release ends the phone-driven process first. Copy unlocks when it is fully stopped, so the conversation has one writer and Codex cannot reject it as already active.'
-                  : 'Paste this in any terminal to continue this exact conversation at your keyboard.'}
+                {target === 'vscode'
+                  ? agent === 'claude'
+                    ? 'This opens the project and resumes Claude with its VS Code IDE connection. It does not inject the conversation into Claude’s chat panel.'
+                    : 'This opens the project in VS Code, then resumes Codex in the terminal where you run this command. It cannot inject the conversation into Codex’s chat panel.'
+                  : live
+                    ? 'Copy now if you want, but release this running session before executing it. That prevents active-writer conflicts.'
+                    : 'Paste this in any terminal to continue this exact conversation at your keyboard.'}
               </p>
               {copyError ? (
                 <p className="handofferror" role="alert">

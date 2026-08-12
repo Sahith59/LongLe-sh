@@ -35,4 +35,11 @@ describe('delegation mobile layout contract', () => {
     expect(css).toMatch(/\.return-route strong\s*{[\s\S]*?overflow: hidden;[\s\S]*?text-overflow: ellipsis;/)
     expect(css).toMatch(/\.return-attribution\s*{[\s\S]*?overflow-wrap: anywhere;/)
   })
+
+  it('stacks parallel-workspace, settings, and handoff controls on narrow phones', () => {
+    expect(css).toMatch(/@media \(max-width: 390px\)[\s\S]*?\.workspacepick,[\s\S]*?\.settingsgrid\s*{\s*grid-template-columns: 1fr;/)
+    expect(css).toMatch(/\.workspaceoption\s*{[\s\S]*?min-width: 0;[\s\S]*?min-height: 82px;/)
+    expect(css).toMatch(/\.settingsgrid select,[\s\S]*?min-width: 0;[\s\S]*?min-height: 44px;/)
+    expect(css).toMatch(/@media \(max-width: 390px\)[\s\S]*?\.handoff-actions,[\s\S]*?\.transfer-actions\s*{\s*grid-template-columns: 1fr;/)
+  })
 })

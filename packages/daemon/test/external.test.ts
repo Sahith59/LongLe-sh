@@ -42,6 +42,7 @@ function manager(
     workspace?: WorkspaceLeaseManager
     pause?: (pid: number) => void
     resume?: (pid: number) => void
+    waitForExit?: (pid: number, timeoutMs: number) => Promise<boolean>
   } = {},
 ): ExternalSessions {
   return new ExternalSessions({
@@ -57,6 +58,7 @@ function manager(
     ...(opts.workspace === undefined ? {} : { workspace: opts.workspace }),
     ...(opts.pause === undefined ? {} : { pause: opts.pause }),
     ...(opts.resume === undefined ? {} : { resume: opts.resume }),
+    waitForExit: opts.waitForExit ?? (async () => true),
   })
 }
 
@@ -233,7 +235,7 @@ describe('terminal sessions, adopted through hooks', () => {
     external.shutdown()
   })
 
-  it('re-pauses a conflicted writer when takeover cannot terminate it', () => {
+  it('re-pauses a conflicted writer when takeover cannot terminate it', async () => {
     const workspace = new WorkspaceLeaseManager(approvals.rawDb)
     workspace.acquire({
       sessionId: 'ses_managed', cwd: dir, ownerKind: 'session', ownerOrigin: 'phone', actor: 'dev_phone',
@@ -248,7 +250,7 @@ describe('terminal sessions, adopted through hooks', () => {
     })
     external.sessionStart('abc', dir, join(dir, 'n.jsonl'), 4242)
 
-    expect(external.stop('ext_abc', 'dev_phone')).toBe(false)
+    expect(await external.stop('ext_abc', 'dev_phone')).toBe(false)
     expect(resumed).toEqual([4242])
     expect(paused).toEqual([4242, 4242])
     expect(external.listSessions()[0]?.workspaceConflict).toMatchObject({
@@ -273,11 +275,11 @@ describe('terminal sessions, adopted through hooks', () => {
     second.shutdown()
   })
 
-  it('stop kills the verified process and closes the story', () => {
+  it('stop kills the verified process and closes the story', async () => {
     const killed: number[] = []
     const external = manager({ kill: (pid) => killed.push(pid) })
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 4242)
-    expect(external.stop('ext_abc', 'dev_phone')).toBe(true)
+    expect(await external.stop('ext_abc', 'dev_phone')).toBe(true)
     expect(killed).toEqual([4242])
     expect(seen.some((e) => e.type === 'session.ended')).toBe(true)
     const note = seen.find(
@@ -287,7 +289,34 @@ describe('terminal sessions, adopted through hooks', () => {
     external.shutdown()
   })
 
-  it('NEVER kills a recycled pid — but clears the session instead of refusing forever', () => {
+  it('does not announce release until the verified process has actually exited', async () => {
+    let confirmExit: ((value: boolean) => void) | undefined
+    const waiting = new Promise<boolean>((resolve) => { confirmExit = resolve })
+    const external = manager({ waitForExit: async () => waiting })
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 4242)
+
+    const stopping = external.stop('ext_abc', 'dev_phone')
+    await Promise.resolve()
+    expect(external.listSessions()).toHaveLength(1)
+    expect(seen.some((event) => event.type === 'session.ended')).toBe(false)
+
+    confirmExit?.(true)
+    await expect(stopping).resolves.toBe(true)
+    expect(external.listSessions()).toHaveLength(0)
+    expect(seen.some((event) => event.type === 'session.ended')).toBe(true)
+    external.shutdown()
+  })
+
+  it('cancels takeover when the native process does not release its writer', async () => {
+    const external = manager({ waitForExit: async () => false })
+    external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 4242)
+    await expect(external.stop('ext_abc', 'dev_phone')).resolves.toBe(false)
+    expect(external.listSessions()).toHaveLength(1)
+    expect(seen.some((event) => event.type === 'session.ended')).toBe(false)
+    external.shutdown()
+  })
+
+  it('NEVER kills a recycled pid — but clears the session instead of refusing forever', async () => {
     // The safety property is unchanged and non-negotiable: the pid is no longer our agent, so
     // nothing may be killed. What changed is the aftermath. Refusing left the session listed as
     // running for the rest of time and made Stop look broken; the process is plainly gone, so
@@ -296,41 +325,41 @@ describe('terminal sessions, adopted through hooks', () => {
     const external = manager({ isClaude: () => false, kill: (pid) => killed.push(pid) })
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 4242)
 
-    expect(external.stop('ext_abc', 'dev_phone')).toBe(true)
+    expect(await external.stop('ext_abc', 'dev_phone')).toBe(true)
     expect(killed).toEqual([]) // ← the thing that must never regress
     expect(external.listSessions()).toHaveLength(0)
     expect(seen.some((e) => e.type === 'session.ended')).toBe(true)
     external.shutdown()
   })
 
-  it('still refuses a session it never knew — there is nothing to end', () => {
+  it('still refuses a session it never knew — there is nothing to end', async () => {
     const external = manager()
-    expect(external.stop('ext_nope', 'dev_phone')).toBe(false)
+    expect(await external.stop('ext_nope', 'dev_phone')).toBe(false)
     external.shutdown()
   })
 
-  it('clears a session whose pid the hook never found, rather than stranding it', () => {
+  it('clears a session whose pid the hook never found, rather than stranding it', async () => {
     // Codex sessions had exactly this shape: no pid reported, so Stop refused every time and
     // the session stayed in the list forever. Seen in the field 2026-08-09.
     const killed: number[] = []
     const external = manager({ kill: (pid) => killed.push(pid) })
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl')) // hook could not find the pid
-    expect(external.stop('ext_abc', 'dev_phone')).toBe(true)
+    expect(await external.stop('ext_abc', 'dev_phone')).toBe(true)
     expect(killed).toEqual([])
     expect(external.listSessions()).toHaveLength(0)
     external.shutdown()
   })
 
-  it('a live session is still killed for real', () => {
+  it('a live session is still killed for real', async () => {
     const killed: number[] = []
     const external = manager({ isClaude: () => true, kill: (pid) => killed.push(pid) })
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 4242)
-    expect(external.stop('ext_abc', 'dev_phone')).toBe(true)
+    expect(await external.stop('ext_abc', 'dev_phone')).toBe(true)
     expect(killed).toEqual([4242])
     external.shutdown()
   })
 
-  it('ending — by exit or by stop — hands the baton onward with the resume id', () => {
+  it('ending — by exit or by stop — hands the baton onward with the resume id', async () => {
     const batons: string[] = []
     const external = new ExternalSessions({
       eventLog,
@@ -339,17 +368,18 @@ describe('terminal sessions, adopted through hooks', () => {
       audience: () => 'connected' as const,
       isClaudeProcess: () => true,
       kill: () => {},
+      waitForExit: async () => true,
       onEnded: (info) => batons.push(`${info.sessionId}:${info.claudeSessionId}`),
     })
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 777)
-    external.stop('ext_abc', 'dev_phone')
+    await external.stop('ext_abc', 'dev_phone')
     external.sessionStart('def', '/y', join(dir, 'n2.jsonl'))
     external.sessionEnd('def')
     expect(batons).toEqual(['ext_abc:abc', 'ext_def:def'])
     external.shutdown()
   })
 
-  it('the ending event itself says the conversation can be carried on', () => {
+  it('the ending event itself says the conversation can be carried on', async () => {
     // The regression: a phone already watching learned "ended" but never learned that
     // the stop had just made it resumable, so Reopen stayed hidden until a reconnect.
     const external = new ExternalSessions({
@@ -359,19 +389,20 @@ describe('terminal sessions, adopted through hooks', () => {
       audience: () => 'connected' as const,
       isClaudeProcess: () => true,
       kill: () => {},
+      waitForExit: async () => true,
       onEnded: () => {},
     })
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 999)
-    external.stop('ext_abc', 'dev_phone')
+    await external.stop('ext_abc', 'dev_phone')
     const ended = seen.find((e) => e.type === 'session.ended')
     expect((ended?.payload as { resumable?: boolean }).resumable).toBe(true)
     external.shutdown()
   })
 
-  it('with nobody to adopt it, the ending event says so honestly', () => {
+  it('with nobody to adopt it, the ending event says so honestly', async () => {
     const external = manager() // no onEnded wired
     external.sessionStart('abc', '/x', join(dir, 'n.jsonl'), 999)
-    external.stop('ext_abc', 'dev_phone')
+    await external.stop('ext_abc', 'dev_phone')
     const ended = seen.find((e) => e.type === 'session.ended')
     expect((ended?.payload as { resumable?: boolean }).resumable).toBe(false)
     external.shutdown()

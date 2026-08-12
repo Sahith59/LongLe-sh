@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, Code2, File, Folder, Search, Sparkles, X } from 'lucide-react'
-import type { FolderHit } from '../lib/client.js'
+import type { AgentSettingsCatalog, FolderHit } from '../lib/client.js'
 import { EXIT, Key, SPRING, useKeyboardInset, useVisualViewportHeight } from './primitives.js'
 import { fileName, parentPath } from './format.js'
+import type { SessionSettings, WorkspaceMode } from '@longleash/protocol'
 
 const AGENT_NAME = { claude: 'Claude', codex: 'Codex' } as const
 const AGENT_DETAIL = { claude: 'Anthropic agent', codex: 'OpenAI agent' } as const
@@ -58,6 +59,9 @@ export function NewSessionSheet({
   roots,
   folders,
   connected,
+  settingsCatalog,
+  starting = false,
+  startError,
   onSearch,
   onStart,
   onClose,
@@ -66,8 +70,16 @@ export function NewSessionSheet({
   roots: string[]
   folders: FolderHit[]
   connected: boolean
+  settingsCatalog?: AgentSettingsCatalog
+  starting?: boolean
+  startError?: string
   onSearch: (query: string) => void
-  onStart: (dir: string, prompt: string, agent: 'claude' | 'codex') => boolean
+  onStart: (
+    dir: string,
+    prompt: string,
+    agent: 'claude' | 'codex',
+    options: { workspaceMode: WorkspaceMode; settings?: SessionSettings },
+  ) => boolean
   onClose: () => void
 }) {
   const keyboard = useKeyboardInset(open)
@@ -110,6 +122,9 @@ export function NewSessionSheet({
                 roots={roots}
                 folders={folders}
                 connected={connected}
+                {...(settingsCatalog === undefined ? {} : { settingsCatalog })}
+                starting={starting}
+                {...(startError === undefined ? {} : { startError })}
                 onSearch={onSearch}
                 onStart={onStart}
                 onClose={onClose}
@@ -126,6 +141,9 @@ function SheetBody({
   roots,
   folders,
   connected,
+  settingsCatalog,
+  starting,
+  startError,
   onSearch,
   onStart,
   onClose,
@@ -133,14 +151,28 @@ function SheetBody({
   roots: string[]
   folders: FolderHit[]
   connected: boolean
+  settingsCatalog?: AgentSettingsCatalog
+  starting: boolean
+  startError?: string
   onSearch: (query: string) => void
-  onStart: (dir: string, prompt: string, agent: 'claude' | 'codex') => boolean
+  onStart: (
+    dir: string,
+    prompt: string,
+    agent: 'claude' | 'codex',
+    options: { workspaceMode: WorkspaceMode; settings?: SessionSettings },
+  ) => boolean
   onClose: () => void
 }) {
   const [query, setQuery] = useState('')
   const [chosen, setChosen] = useState<FolderHit | null>(null)
   const [prompt, setPrompt] = useState('')
   const [agent, setAgent] = useState<'claude' | 'codex'>('claude')
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('auto')
+  const [model, setModel] = useState('')
+  const [customModel, setCustomModel] = useState('')
+  const [effort, setEffort] = useState('')
+  const [thinking, setThinking] = useState('')
+  const [thinkingBudget, setThinkingBudget] = useState('10000')
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
 
   // Search as you type, debounced: nobody should have to recall an absolute path from memory.
@@ -236,23 +268,136 @@ function SheetBody({
           }}
         />
 
+        <StepLabel number={4}>Workspace</StepLabel>
+        <div className="workspacepick" role="group" aria-label="Parallel workspace behavior">
+          <button
+            type="button"
+            className={`workspaceoption${workspaceMode === 'auto' ? ' picked' : ''}`}
+            aria-pressed={workspaceMode === 'auto'}
+            onClick={() => setWorkspaceMode('auto')}
+          >
+            <strong>Safe parallel</strong>
+            <small>Uses this checkout when free; creates an isolated Git branch when busy.</small>
+          </button>
+          <button
+            type="button"
+            className={`workspaceoption${workspaceMode === 'shared' ? ' picked' : ''}`}
+            aria-pressed={workspaceMode === 'shared'}
+            onClick={() => setWorkspaceMode('shared')}
+          >
+            <strong>Same checkout</strong>
+            <small>Starts only when no other agent owns these files.</small>
+          </button>
+        </div>
+
+        <details className="session-settings">
+          <summary>Model &amp; reasoning</summary>
+          <p>Optional. Defaults follow the provider installed on your laptop.</p>
+          <div className="settingsgrid">
+            <label>
+              <span>Model</span>
+              <select value={model} onChange={(event) => setModel(event.target.value)}>
+                <option value="">Provider default</option>
+                {(settingsCatalog?.[agent].models ?? (agent === 'claude'
+                  ? ['sonnet', 'opus', 'haiku']
+                  : ['gpt-5.6', 'gpt-5.4', 'gpt-5.3-codex'])).map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                <option value="__custom__">Custom model ID…</option>
+              </select>
+            </label>
+            {model === '__custom__' ? (
+              <label>
+                <span>Custom model ID</span>
+                <input
+                  type="text"
+                  value={customModel}
+                  onChange={(event) => setCustomModel(event.target.value)}
+                  placeholder={agent === 'claude' ? 'provider model alias' : 'model id'}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              </label>
+            ) : null}
+            <label>
+              <span>Effort</span>
+              <select value={effort} onChange={(event) => setEffort(event.target.value)}>
+                <option value="">Provider default</option>
+                {(settingsCatalog?.[agent].efforts ?? ['low', 'medium', 'high', 'xhigh', 'max']).map((value) => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+            {agent === 'claude' ? (
+              <label>
+                <span>Thinking</span>
+                <select value={thinking} onChange={(event) => setThinking(event.target.value)}>
+                  <option value="">Provider default</option>
+                  <option value="adaptive">Adaptive</option>
+                  <option value="disabled">Off</option>
+                  <option value="fixed">Fixed budget</option>
+                </select>
+              </label>
+            ) : null}
+            {agent === 'claude' && thinking === 'fixed' ? (
+              <label>
+                <span>Thinking tokens</span>
+                <input
+                  type="number"
+                  min={1024}
+                  max={128000}
+                  step={1024}
+                  value={thinkingBudget}
+                  onChange={(event) => setThinkingBudget(event.target.value)}
+                  inputMode="numeric"
+                />
+              </label>
+            ) : null}
+          </div>
+          <small className="settingsnote">Approval and sandbox safety remain managed by LongLeash.</small>
+        </details>
+
         <Key
           className="primary wide"
-          disabled={!prompt.trim() || !connected}
+          disabled={
+            !prompt.trim() ||
+            !connected || starting ||
+            (model === '__custom__' && customModel.trim() === '') ||
+            (agent === 'claude' && thinking === 'fixed' && (
+              !Number.isInteger(Number(thinkingBudget)) ||
+              Number(thinkingBudget) < 1024 ||
+              Number(thinkingBudget) > 128000
+            ))
+          }
           onClick={() => {
             const dir = chosen.kind === 'file' ? parentPath(chosen.path) : chosen.path
             const task =
               chosen.kind === 'file'
                 ? `In the file ${fileName(chosen.label)}: ${prompt.trim()}`
                 : prompt.trim()
-            if (onStart(dir, task, agent)) {
-              setPrompt('')
-              onClose()
+            const parsedBudget = Number.parseInt(thinkingBudget, 10)
+            const selectedModel = model === '__custom__' ? customModel.trim() : model
+            const settings: SessionSettings = {
+              ...(selectedModel === '' ? {} : { model: selectedModel }),
+              ...(effort === '' ? {} : { effort: effort as SessionSettings['effort'] }),
+              ...(agent !== 'claude' || thinking === ''
+                ? {}
+                : {
+                    thinking: thinking === 'fixed'
+                      ? { mode: 'fixed' as const, budgetTokens: parsedBudget }
+                      : { mode: thinking as 'adaptive' | 'disabled' },
+                  }),
             }
+            if (onStart(dir, task, agent, {
+              workspaceMode,
+              ...(Object.keys(settings).length === 0 ? {} : { settings }),
+            })) return
           }}
         >
-          {connected ? 'Start session' : 'Waiting for your laptop…'}
+          {starting ? 'Preparing a safe checkout…' : connected ? 'Start session' : 'Waiting for your laptop…'}
         </Key>
+        {startError ? <p className="start-error" role="alert">{startError}</p> : null}
       </>
     )
   }

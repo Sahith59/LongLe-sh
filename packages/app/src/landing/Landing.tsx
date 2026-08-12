@@ -127,8 +127,9 @@ export function Landing() {
             </li>
           </ul>
           <p className="honesty">
-            What it doesn&rsquo;t do yet: capture terminals you started yourself, or VS Code chat
-            panels. When something can&rsquo;t be done faithfully, it says so — it never pretends.
+            LongLeash can capture supported Terminal and VS Code sessions, but it cannot inject a
+            resumed conversation into a vendor&rsquo;s sealed VS Code chat panel. When something
+            can&rsquo;t be done faithfully, it says so — it never pretends.
           </p>
         </section>
       </main>

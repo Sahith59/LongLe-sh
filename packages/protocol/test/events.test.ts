@@ -216,6 +216,36 @@ describe('client messages', () => {
     ).toThrowError()
   })
 
+  it('validates safe parallel and provider reasoning settings', () => {
+    const message = parseClientMessage({
+      v: PROTOCOL_VERSION,
+      type: 'startSession',
+      agent: 'claude',
+      root: '/Users/x/proj',
+      prompt: 'review it',
+      workspaceMode: 'isolated',
+      settings: {
+        model: 'opus',
+        effort: 'high',
+        thinking: { mode: 'fixed', budgetTokens: 16_384 },
+      },
+    })
+    if (message.type !== 'startSession') expect.unreachable('wrong type')
+    expect(message.workspaceMode).toBe('isolated')
+    expect(message.settings?.thinking).toEqual({ mode: 'fixed', budgetTokens: 16_384 })
+  })
+
+  it('rejects fixed thinking without a bounded token budget', () => {
+    expect(() => parseClientMessage({
+      v: PROTOCOL_VERSION,
+      type: 'startSession',
+      agent: 'claude',
+      root: '/Users/x/proj',
+      prompt: 'review it',
+      settings: { thinking: { mode: 'fixed' } },
+    })).toThrow()
+  })
+
   it('parses an attributed delegation preview request', () => {
     const msg = parseClientMessage({
       v: PROTOCOL_VERSION,

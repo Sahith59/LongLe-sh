@@ -47,10 +47,11 @@ const build = (opts: { alive: boolean; kill?: (pid: number) => void }) =>
     pollMs: 25,
     isClaudeProcess: () => opts.alive,
     kill: opts.kill ?? (() => {}),
+    waitForExit: async () => true,
   })
 
 describe('a daemon restart must not lose a session that is still running', () => {
-  it('re-adopts a live session, and Stop works on it again', () => {
+  it('re-adopts a live session, and Stop works on it again', async () => {
     const transcript = join(dir, 't.jsonl')
     writeFileSync(transcript, '')
 
@@ -69,7 +70,7 @@ describe('a daemon restart must not lose a session that is still running', () =>
     expect(listed[0]!.sessionId).toBe('ext_agent-1')
 
     // The exact thing that was refused in the field.
-    expect(second.stop('ext_agent-1', 'dev_phone')).toBe(true)
+    expect(await second.stop('ext_agent-1', 'dev_phone')).toBe(true)
     expect(killed).toEqual([4242])
     second.shutdown()
   })

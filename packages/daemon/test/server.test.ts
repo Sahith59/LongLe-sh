@@ -15,6 +15,7 @@ import { BriefingBuilder } from '../src/briefing.js'
 import { DelegationManager } from '../src/delegation-manager.js'
 import { DelegationStore } from '../src/delegations.js'
 import { ReturnBuilder } from '../src/return-builder.js'
+import { WorkspaceLeaseManager } from '../src/workspace-leases.js'
 
 /** Minimal controllable agent so server tests stay deterministic. */
 class DemoAgent {
@@ -777,10 +778,12 @@ describe('typed operations: decisions and remote start', () => {
     // Three messages now: session.started makes the card appear, the initial user delta keeps
     // the full task selectable in history, and the ack confirms the requested operation.
     const messages = nextMessages(ws, 3)
-    ws.send(JSON.stringify({ v: 1, type: 'startSession', agent: 'claude', root, prompt: 'build it' }))
+    ws.send(JSON.stringify({
+      v: 1, type: 'startSession', requestId: 'start-1', agent: 'claude', root, prompt: 'build it',
+    }))
     const arrived = await messages
     const ack = arrived.find((m) => m.type === 'ack')
-    expect(ack).toMatchObject({ type: 'ack', outcome: 'started' })
+    expect(ack).toMatchObject({ type: 'ack', outcome: 'started', requestId: 'start-1' })
     expect(String(ack?.sessionId)).toMatch(/^ses_/)
     expect(arrived.some((m) => m.type === 'session.started')).toBe(true)
     expect(arrived.some((m) => m.type === 'stream.delta')).toBe(true)
@@ -791,8 +794,12 @@ describe('typed operations: decisions and remote start', () => {
     const ws = connect(h.port, h.token)
     await opened(ws)
     const messages = nextMessages(ws, 1)
-    ws.send(JSON.stringify({ v: 1, type: 'startSession', agent: 'claude', root: '/etc', prompt: 'oops' }))
-    expect(await messages).toMatchObject([{ type: 'error', code: 'cwd-not-allowed' }])
+    ws.send(JSON.stringify({
+      v: 1, type: 'startSession', requestId: 'start-bad', agent: 'claude', root: '/etc', prompt: 'oops',
+    }))
+    expect(await messages).toMatchObject([{
+      type: 'error', code: 'cwd-not-allowed', of: 'startSession', requestId: 'start-bad',
+    }])
     expect(ws.readyState).toBe(WebSocket.OPEN)
     ws.close()
   })
@@ -1127,12 +1134,14 @@ describe('take over: the baton passes from terminal to phone', () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), 'll-takeover-')))
     const demo = new DemoAgent()
     const approvals = new ApprovalStore(':memory:')
+    const workspace = new WorkspaceLeaseManager(approvals.rawDb)
     const sessions = new SessionManager({
       eventLog: h.log,
       approvals,
       allowedRoots: [dir],
       agentFactories: { claude: demo.factory },
       onEvent: (event) => h.server.broadcastEvent(event),
+      workspace,
     })
     h.server.attachSessions(sessions)
 
@@ -1144,6 +1153,8 @@ describe('take over: the baton passes from terminal to phone', () => {
       audience: () => 'connected' as const,
       isClaudeProcess: () => true,
       kill: (pid) => killed.push(pid),
+      waitForExit: async () => true,
+      workspace,
       onEnded: (info) =>
         sessions.adoptEndedSession({
           sessionId: info.sessionId,
@@ -1204,6 +1215,10 @@ describe('take over: the baton passes from terminal to phone', () => {
     expect(demo.lastRequest.resume).toBe('tsn-2')
     expect(demo.lastRequest.prompt).toBe('carry on from my phone')
     expect(demo.lastRequest.cwd).toBe(dir)
+    expect(workspace.getByCwd(dir)).toMatchObject({
+      ownerId: 'ext_tsn-2',
+      ownerKind: 'session',
+    })
 
     ws.close()
     external.shutdown()

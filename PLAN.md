@@ -4,6 +4,15 @@
 
 **Vision:** AI now does the heavy lifting; the human's job is prompting and approving. LongLeash frees that job from the desk — control agent sessions, terminal sessions, and IDE sessions on your laptop from anywhere in the world.
 
+> [!NOTE]
+> The phase forecast below is preserved as project history. The shipped architecture has evolved:
+> Claude managed sessions use the official Agent SDK, Codex uses `codex app-server`, supported
+> Terminal/VS Code sessions are observed through provider lifecycle hooks, and safe concurrency
+> uses Git worktrees. LongLeash does **not** currently mirror arbitrary terminal screens through
+> tmux, use ACP for Codex, or inject conversations into vendor VS Code chat panels. Read
+> [Current architecture](docs/ARCHITECTURE.md), [Session portability](docs/SESSION-PORTABILITY.md),
+> and the current-status section below before treating an original phase item as implemented.
+
 ## What "everything ours" means (boundary, agreed)
 
 We own every product surface: daemon, phone app, relay, protocol, installer, extension. We stand on standard open-source libraries and system binaries underneath (Node, React Native/Expo, xterm.js, tmux, libsodium, SQLite) — like every real product. Forked/adapted code becomes ours (with proper license attribution). Platform fees (Apple $99/yr) are fees, not dependencies.
@@ -47,9 +56,13 @@ Claude↔Claude, Claude↔Codex, Codex↔Claude, and Codex↔Codex delegation—
 [`docs/DELEGATION.md`](docs/DELEGATION.md). That document is the source of truth for the approved
 Delegate → isolated parallel specialists → Crew rollout, its safety invariants, and release gates.
 
-**Current status (2026-08-12):** Delegate Phases 0–1D are implementation-complete. Physical-phone
-UX review, all four live Claude/Codex handoffs, and the 20-delegation dogfood gate remain required
-before release; the evidence and exact remaining checks are recorded in the delegation ledger.
+**Current status (2026-08-12):** Delegate Phases 0–1D are implementation-complete. The first
+Phase 2 foundation is also implemented for ordinary phone launches: a second writer in one Git
+project receives an isolated worktree/branch, while the physical checkout keeps its one-writer
+lease. Universal Terminal/VS Code workspace handoff commands and provider model/reasoning launch
+settings are wired end to end. Delegated children still use the reviewed sequential transfer until
+their merge/return UX exists. Physical-phone UX review, all four live Claude/Codex handoffs, and
+the 20-delegation dogfood gate remain required before release.
 
 Verification spikes before building on them: **S0** Agent SDK under subscription OAuth — PASSED, gate for Phase A; S1–S5 from v1 (push payload audit → now ours by construction; killed-state actions; concurrent-resume assumption; Gemini ACP quality; relay push viability → moot, we own the relay).
 
@@ -66,7 +79,10 @@ Verification spikes before building on them: **S0** Agent SDK under subscription
 
 ## Known hard walls (stated honestly, in docs too)
 
-- VS Code chat-panel sessions (Claude/Copilot webviews) are sealed by the platform — invisible to every tool. LongLeash steers users to daemon-hosted sessions and mirrors tmux ones.
+- VS Code chat-panel sessions can be observed through vendor lifecycle hooks, but the sealed
+  webview cannot be programmatically reopened or injected into. LongLeash offers a verified
+  transfer to the phone and a workspace-opening CLI handoff; a future companion extension owns
+  any richer native IDE actuation.
 - Non-tmux terminals opened before setup can never be retro-captured on macOS.
 - Killed-state lock-screen actions occasionally degrade to "open the app" (both platforms) — inbox is the guaranteed path.
 - A home laptop is a home server: sleep/power/net failures happen; daemon self-health push + machine-readiness config reduce, never eliminate.

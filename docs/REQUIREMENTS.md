@@ -42,8 +42,11 @@ something (writing a file, running a shell command that modifies state) comes to
 
 Two things worth knowing plainly:
 
-- **Your editor's settings do not apply.** LongLeash runs its own agent process with on-machine
-  Claude Code settings ignored, so whatever mode your VS Code panel is in has no effect here.
+- **Managed and external sessions have different configuration owners.** A session started from
+  the phone runs through LongLeash's managed adapter and safety policy; the new-session sheet may
+  select its model, effort, and supported thinking controls. A process you started in Terminal or
+  VS Code still begins under that provider surface's settings until you explicitly move it to the
+  phone. LongLeash never claims that changing a phone setting rewrites an already-running process.
 - **Some read-only shell commands (`ls`, `find`, `pwd`) may also run without asking**, because
   the agent runtime treats them as safe. We do not control that completely — which is exactly
   why every tool that ran without asking is listed in the session's **activity feed**. Nothing
@@ -55,9 +58,9 @@ Want to be asked about literally everything, including reads? Start the daemon w
 ## One honest caveat about approvals
 
 Claude Code lets you pre-approve commands in your own settings (`~/.claude/settings.json`,
-`permissions.allow`). Those rules take effect **before** LongLeash is consulted, so a matching
-command runs without ever reaching your phone. We cannot override that, and we will not pretend
-otherwise:
+`permissions.allow`). In externally started Terminal/VS Code sessions, those rules can take effect
+**before** LongLeash is consulted, so a matching command runs without ever reaching your phone. We
+cannot retroactively override that, and we will not pretend otherwise:
 
 - The daemon **tells you at startup** how many such rules you have and shows examples.
 - Anything that runs this way still appears in the **activity feed**, so nothing happens

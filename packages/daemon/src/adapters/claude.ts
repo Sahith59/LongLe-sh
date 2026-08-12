@@ -88,7 +88,17 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
           LONGLEASH_MANAGED: '1',
         },
         ...(options.maxTurns === undefined ? {} : { maxTurns: options.maxTurns }),
-        ...(options.model === undefined ? {} : { model: options.model }),
+        ...(request.settings?.model === undefined && options.model === undefined
+          ? {}
+          : { model: request.settings?.model ?? options.model }),
+        ...(request.settings?.effort === undefined ? {} : { effort: request.settings.effort }),
+        ...(request.settings?.thinking === undefined
+          ? {}
+          : request.settings.thinking.mode === 'fixed'
+            ? { thinking: { type: 'enabled' as const, budgetTokens: request.settings.thinking.budgetTokens as number } }
+            : request.settings.thinking.mode === 'adaptive'
+              ? { thinking: { type: 'adaptive' as const } }
+              : { thinking: { type: 'disabled' as const } }),
         ...(options.allowedTools === undefined ? {} : { allowedTools: options.allowedTools }),
         ...(options.isolateFromUserSettings ? { settingSources: [] } : {}),
         // Reopening a closed conversation: Claude replays its own transcript, so the agent

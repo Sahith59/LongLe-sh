@@ -1532,6 +1532,40 @@ body {
   flex-direction: column;
   gap: 9px;
 }
+.handoff-target {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--recess);
+  box-shadow: var(--sink);
+}
+.handoff-target button {
+  appearance: none;
+  min-height: 40px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--ink-3);
+  background: transparent;
+  font: 600 11px/1 'Geist Mono', ui-monospace, monospace;
+  cursor: pointer;
+}
+.handoff-target button[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+}
+.handoff-target button:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 1px;
+}
+.handoff-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.handoff-actions > .key:only-child { grid-column: 1 / -1; }
 /* A readout, not a control: the command is read out of the machine and copied. */
 .resumecmd {
   display: block;
@@ -1611,6 +1645,32 @@ body {
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink-3);
+}
+.transfer-confirm {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 12px var(--gut) calc(14px + env(safe-area-inset-bottom));
+  background: rgba(13, 14, 16, 0.96);
+}
+.transfer-confirm strong { color: var(--ink); font-size: 13px; }
+.transfer-confirm p {
+  margin: 4px 0 10px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.transfer-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+  gap: 8px;
+}
+.conflict-open {
+  margin-top: 6px;
+  min-height: 40px;
+}
+@media (max-width: 390px) {
+  .handoff-actions,
+  .transfer-actions { grid-template-columns: 1fr; }
 }
 
 /* ------------------------------------------------------------------ sheet */
@@ -1752,6 +1812,112 @@ body {
 }
 .sheet .key.wide {
   margin-top: 14px;
+}
+.start-error {
+  margin: 10px 2px 0;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  color: var(--clay);
+  background: rgba(58, 41, 40, 0.5);
+  box-shadow: var(--engrave), inset 0 0 0 1px rgba(218, 160, 153, 0.13);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.workspacepick {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.workspaceoption {
+  appearance: none;
+  min-width: 0;
+  min-height: 82px;
+  padding: 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+  text-align: left;
+  cursor: pointer;
+}
+.workspaceoption.picked {
+  color: var(--ink);
+  box-shadow: var(--raise), inset 0 0 0 1px rgba(164, 207, 183, 0.28);
+}
+.workspaceoption strong,
+.workspaceoption small {
+  display: block;
+}
+.workspaceoption strong { font-size: 13px; }
+.workspaceoption small {
+  margin-top: 5px;
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.42;
+}
+.workspaceoption:focus-visible,
+.session-settings summary:focus-visible,
+.session-settings select:focus-visible,
+.session-settings input:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
+}
+.session-settings {
+  margin-top: 12px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, 0.16);
+  box-shadow: var(--engrave);
+}
+.session-settings summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.session-settings > p,
+.settingsnote {
+  color: var(--ink-3);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.session-settings > p { margin: -2px 0 10px; }
+.settingsnote { display: block; padding: 10px 0 12px; }
+.settingsgrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.settingsgrid label { min-width: 0; }
+.settingsgrid label > span {
+  display: block;
+  margin: 0 0 5px;
+  color: var(--ink-3);
+  font: 550 10px/1.2 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.settingsgrid select,
+.settingsgrid input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--ink);
+  background: var(--recess);
+  box-shadow: var(--sink);
+  font: 500 12px/1 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+}
+@media (max-width: 390px) {
+  .workspacepick,
+  .settingsgrid { grid-template-columns: 1fr; }
 }
 
 /* ----------------------------------------------------------- delegate sheet
