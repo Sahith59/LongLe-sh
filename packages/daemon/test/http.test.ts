@@ -14,10 +14,11 @@ interface Harness {
   appDir: string
 }
 
-async function start(withApp = true): Promise<Harness> {
+async function start(withApp = true, build?: string): Promise<Harness> {
   const appDir = mkdtempSync(join(tmpdir(), 'longleash-app-'))
   writeFileSync(join(appDir, 'index.html'), '<!doctype html><title>LongLeash</title><div id=root>')
   writeFileSync(join(appDir, 'app.js'), 'console.log("hi")')
+  if (build !== undefined) writeFileSync(join(appDir, 'build.json'), JSON.stringify({ build }))
 
   const log = new EventLog(':memory:')
   const registry = new DeviceRegistry(':memory:')
@@ -58,6 +59,15 @@ describe('health endpoint', () => {
     const body = (await (await fetch(`${h.base}/health`)).json()) as Record<string, unknown>
     expect(Object.keys(body).sort()).toEqual(['build', 'name', 'ok', 'protocol'])
     expect(body.build).toBeNull()
+  })
+
+  it('pins its build at process start so updated files cannot impersonate a daemon restart', async () => {
+    await stop(h)
+    h = await start(true, 'build-at-start')
+    writeFileSync(join(h.appDir, 'build.json'), JSON.stringify({ build: 'new-files-on-disk' }))
+
+    const body = (await (await fetch(`${h.base}/health`)).json()) as { build: string }
+    expect(body.build).toBe('build-at-start')
   })
 })
 

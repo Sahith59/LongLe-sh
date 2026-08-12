@@ -85,7 +85,10 @@ case "${1:-}" in
       RELAY_ORIGIN="${RELAY/wss:\/\//https://}"
       RELAY_ORIGIN="${RELAY_ORIGIN/ws:\/\//http://}"
       RELAY_ORIGIN="${RELAY_ORIGIN%/ws}"
-      RELAY_BUILD="$(curl -fsS --max-time 3 "${RELAY_ORIGIN%/}/build.json" 2>/dev/null | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{process.stdout.write(JSON.parse(s).build||'')}catch{}})" || true)"
+      # The bare static-asset URL can briefly remain cached after Wrangler activates a release.
+      # Key the check by the build we expect and ask intermediaries to revalidate, or doctor can
+      # report a mismatch after the public app is already correct.
+      RELAY_BUILD="$(curl -fsS --max-time 3 -H 'Cache-Control: no-cache' "${RELAY_ORIGIN%/}/build.json?doctor=${LOCAL_BUILD:-unknown}" 2>/dev/null | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{process.stdout.write(JSON.parse(s).build||'')}catch{}})" || true)"
       printf '  app builds      laptop %s · relay %s%s\n' \
         "${LOCAL_BUILD:-missing}" "${RELAY_BUILD:-unreachable}" \
         "$([ -n "$LOCAL_BUILD" ] && [ "$LOCAL_BUILD" = "$RELAY_BUILD" ] && echo ' · match' || echo ' · MISMATCH')"

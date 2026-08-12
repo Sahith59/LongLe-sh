@@ -104,6 +104,8 @@ export class LongLeashServer {
   private delegations: DelegationManager | null = null
   private hookSecret: string | null = null
   private readonly staticRoot: string | undefined
+  /** Captured at process start so updating files on disk cannot impersonate a daemon restart. */
+  private readonly expectedBuild: string | null
   private readonly relayUrl: string | undefined
   private readonly log: (line: string) => void
   private readonly briefings: BriefingBuilder
@@ -116,6 +118,7 @@ export class LongLeashServer {
     this.requestedPort = opts.port ?? 0
     this.heartbeatIntervalMs = opts.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS
     this.staticRoot = opts.staticRoot
+    this.expectedBuild = expectedAppBuild(opts.staticRoot)
     this.relayUrl = opts.relayUrl
     this.log = opts.log ?? (() => {})
     this.app = Fastify({ logger: false })
@@ -133,7 +136,7 @@ export class LongLeashServer {
       protocol: PROTOCOL_VERSION,
       // A version is not machine data. Exposing it turns "connection refused / is this old?"
       // from guesswork into a doctor check and prevents testing a daemon that never restarted.
-      build: expectedAppBuild(this.staticRoot),
+      build: this.expectedBuild,
     }))
 
     /**
@@ -641,7 +644,7 @@ export class LongLeashServer {
        * missing, and the product looks broken rather than out of date. The app compares this to
        * its own stamp and says so.
        */
-      expectsApp: expectedAppBuild(this.staticRoot),
+      expectsApp: this.expectedBuild,
     })
   }
 
