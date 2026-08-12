@@ -62,14 +62,33 @@ const RESET = '\u001b[0m'
 const BLACK = '0;0;0'
 const WHITE = '255;255;255'
 
+function cell(top: Module, bottom: Module): { style: string; glyph: string } {
+  if (top === bottom) {
+    const colour = top ? BLACK : WHITE
+    return {
+      style: `\u001b[38;2;${colour};48;2;${colour}m`,
+      glyph: '█',
+    }
+  }
+
+  // Block glyphs in several macOS terminal fonts have a hairline of side-bearing space. A black
+  // foreground glyph on white therefore cuts every black QR run into little rectangles—the exact
+  // finder-pattern damage that makes a visually plausible code impossible to scan. Keep black as
+  // the continuous CELL BACKGROUND for both mixed cases and draw only the white half as a glyph.
+  // Any font seam then falls into white space; the QR's black structure remains solid.
+  return {
+    style: `\u001b[38;2;${WHITE};48;2;${BLACK}m`,
+    glyph: top ? '▄' : '▀',
+  }
+}
+
 /**
  * Render a theme-independent compact terminal QR.
  *
- * `▀` lets one character carry two square QR modules. Foreground paints the top half and
- * background paints the bottom half. Use true-colour black and white instead of the ANSI palette:
- * terminals are allowed to remap palette "white" to grey (and commonly do), which lowers QR
- * contrast even when the shell theme is otherwise correct. Four pure-white modules surround the
- * code as the standard quiet zone scanners expect.
+ * Half-block characters let one terminal cell carry two square QR modules. True-colour output
+ * prevents themes from remapping white to grey, and `cell` keeps every black module in a solid
+ * background rather than a font glyph. Four pure-white modules surround the code as the standard
+ * quiet zone scanners expect.
  */
 export function terminalQr(input: string): string {
   const source = qrModules(input)
@@ -96,14 +115,12 @@ export function terminalQr(input: string): string {
     let line = ''
     let lastStyle = ''
     for (let col = 0; col < top.length; col += 1) {
-      const foreground = top[col] ? BLACK : WHITE
-      const background = bottom[col] ? BLACK : WHITE
-      const style = `\u001b[38;2;${foreground};48;2;${background}m`
-      if (style !== lastStyle) {
-        line += style
-        lastStyle = style
+      const rendered = cell(top[col] ?? false, bottom[col] ?? false)
+      if (rendered.style !== lastStyle) {
+        line += rendered.style
+        lastStyle = rendered.style
       }
-      line += '▀'
+      line += rendered.glyph
     }
     output.push(`${line}${RESET}`)
   }
