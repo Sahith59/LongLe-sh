@@ -60,6 +60,34 @@ describe('durable delegation identity', () => {
     expect(store.createDraft(draft({ briefing })).record.briefing).toBe(briefing)
   })
 
+  it('persists child model controls and treats changed controls as different idempotent work', () => {
+    const configured = draft({ settings: { model: 'gpt-5.6', effort: 'high' } })
+    const created = store.createDraft(configured).record
+    expect(created.settings).toEqual({ model: 'gpt-5.6', effort: 'high' })
+    expect(new DelegationStore(approvals.rawDb).get(created.delegationId)?.settings)
+      .toEqual(created.settings)
+    expect(() => store.createDraft({
+      ...configured,
+      settings: { model: 'gpt-5.4', effort: 'high' },
+    })).toThrowError(/different work/i)
+  })
+
+  it('repairs the historical no-recoverable wording without inventing a child', () => {
+    const created = store.createDraft(draft()).record
+    store.markStarting(created.delegationId)
+    store.fail(
+      created.delegationId,
+      'The source could not be paused safely because it has no recoverable conversation point.',
+    )
+    const reopened = new DelegationStore(approvals.rawDb)
+    const repaired = reopened.get(created.delegationId)
+    expect(repaired).toMatchObject({
+      status: 'failed',
+      failure: expect.stringContaining('stopped before a child was created'),
+    })
+    expect(repaired).not.toHaveProperty('targetSessionId')
+  })
+
   it('refuses reuse of an idempotency key for different work', () => {
     store.createDraft(draft())
     expect(() => store.createDraft(draft({ briefing: 'Implement it instead.' }))).toThrowError(

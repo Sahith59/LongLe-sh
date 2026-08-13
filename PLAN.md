@@ -65,8 +65,10 @@ Delegate → isolated parallel specialists → Crew rollout, its safety invarian
 Phase 2 foundation is also implemented for ordinary phone launches: a second writer in one Git
 project receives an isolated worktree/branch, while the physical checkout keeps its one-writer
 lease. Universal Terminal/VS Code workspace handoff commands and provider model/reasoning launch
-settings are wired end to end. Delegated children still use the reviewed sequential transfer until
-their merge/return UX exists. Physical-phone UX review, all four live Claude/Codex handoffs, and
+settings are wired end to end. The pre-Phase-2 control pass also adds child settings and a Tune
+surface for live/dormant conversations; externally controlled sessions require an explicit,
+verified transfer. Delegated children still use the reviewed sequential transfer until their
+merge/return UX exists. Physical-phone UX review, all four live Claude/Codex handoffs, and
 the 20-delegation dogfood gate remain required before release.
 
 Phase 2 begins with the companion-extension contract and the remaining isolated-specialist work.

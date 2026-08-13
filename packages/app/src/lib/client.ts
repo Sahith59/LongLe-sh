@@ -260,6 +260,12 @@ export interface ClientCallbacks {
   onFolders: (query: string, results: FolderHit[]) => void
   onSessionStarted?: (requestId: string | undefined, sessionId: string) => void
   onSessionStartError?: (requestId: string | undefined, message: string) => void
+  onSessionSettingsUpdated?: (
+    requestId: string,
+    sessionId: string,
+    outcome: 'next-response' | 'next-continuation',
+  ) => void
+  onSessionSettingsError?: (requestId: string, message: string) => void
   /** Exact deterministic briefing returned for editing; this never means a child was started. */
   onDelegationPreview?: (preview: DelegationPreview) => void
   onDelegationReturnPreview?: (preview: DelegationReturnPreview) => void
@@ -495,6 +501,20 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       store.settleSession(message.sessionId)
       return
     }
+    if (
+      message.type === 'ack' &&
+      message.of === 'updateSessionSettings' &&
+      typeof message.requestId === 'string' &&
+      typeof message.sessionId === 'string' &&
+      (message.outcome === 'next-response' || message.outcome === 'next-continuation')
+    ) {
+      callbacks.onSessionSettingsUpdated?.(
+        message.requestId,
+        message.sessionId,
+        message.outcome,
+      )
+      return
+    }
     if (message.type === 'hello') {
       const hello = message as unknown as Hello
       // Learn where the daemon lives beyond the LAN, so leaving home is survivable.
@@ -539,6 +559,11 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
           typeof message.requestId === 'string' ? message.requestId : undefined,
           detail,
         )
+      } else if (
+        message.of === 'updateSessionSettings' &&
+        typeof message.requestId === 'string'
+      ) {
+        callbacks.onSessionSettingsError?.(message.requestId, detail)
       } else if (typeof message.requestId === 'string' && callbacks.onDelegationError) {
         callbacks.onDelegationError(message.requestId, detail)
       } else callbacks.onError(detail)
@@ -708,6 +733,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       role: DelegationRole
       contextScope: DelegationContextScope
       briefing: string
+      settings?: SessionSettings
     }) => {
       const sent = send({
         v: PROTOCOL_VERSION,
@@ -720,6 +746,21 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
         const detail = 'Not connected to your laptop — no child session was started.'
         if (callbacks.onDelegationError) callbacks.onDelegationError(input.requestId, detail)
         else callbacks.onError(detail)
+      }
+      return sent
+    },
+    updateSessionSettings: (input: {
+      requestId: string
+      sessionId: string
+      settings: SessionSettings
+      externalTransferConfirmed: boolean
+    }) => {
+      const sent = send({ v: PROTOCOL_VERSION, type: 'updateSessionSettings', ...input })
+      if (!sent) {
+        callbacks.onSessionSettingsError?.(
+          input.requestId,
+          'Not connected to your laptop — settings were not changed.',
+        )
       }
       return sent
     },

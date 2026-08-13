@@ -23,10 +23,16 @@ class DemoAgent {
   private queue: unknown[] = []
   private waiter: (() => void) | null = null
   private finished = false
+  readonly settingsUpdates: unknown[] = []
 
   readonly factory: AgentFactory = (request) => {
     this.request = request
-    return { events: this.iterate(), sendMessage: () => {}, interrupt: async () => this.finish() }
+    return {
+      events: this.iterate(),
+      sendMessage: () => {},
+      updateSettings: async (settings) => { this.settingsUpdates.push(settings) },
+      interrupt: async () => this.finish(),
+    }
   }
   get lastRequest(): AgentRunRequest {
     return this.request
@@ -1224,6 +1230,307 @@ describe('take over: the baton passes from terminal to phone', () => {
     external.shutdown()
     await sessions.shutdown()
     await h.server.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('gives exact VS Code evidence when process release cannot be verified', async () => {
+    const h = await startHarness()
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'll-takeover-evidence-')))
+    const approvals = new ApprovalStore(':memory:')
+    const workspace = new WorkspaceLeaseManager(approvals.rawDb)
+    const sessions = new SessionManager({
+      eventLog: h.log,
+      approvals,
+      allowedRoots: [dir],
+      agentFactories: { claude: new DemoAgent().factory },
+      onEvent: (event) => h.server.broadcastEvent(event),
+      workspace,
+    })
+    h.server.attachSessions(sessions)
+
+    const externalApprovals = new ApprovalStore(':memory:')
+    const external = new ExternalSessions({
+      eventLog: h.log,
+      approvals: externalApprovals,
+      onEvent: (event) => h.server.broadcastEvent(event),
+      audience: () => 'connected' as const,
+      isClaudeProcess: () => true,
+      kill: () => {},
+      waitForExit: async () => false,
+      workspace,
+      onEnded: (info) => sessions.adoptEndedSession({
+        sessionId: info.sessionId,
+        agent: info.agent,
+        cwd: info.cwd,
+        title: info.title,
+        origin: info.surface,
+        startedAt: info.startedAt,
+        agentSessionId: info.claudeSessionId,
+      }),
+    })
+    h.server.attachExternal(external, 'hook-secret')
+
+    await fetch(`http://${HOST}:${h.port}/hook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-longleash-hook': 'hook-secret' },
+      body: JSON.stringify({
+        hook_event_name: 'SessionStart',
+        session_id: 'vs-fail',
+        cwd: dir,
+        transcript_path: join(dir, 'none.jsonl'),
+        ll_pid: 4343,
+        ll_surface: 'vscode',
+      }),
+    })
+
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    ws.send(JSON.stringify({
+      v: 1,
+      type: 'takeOver',
+      sessionId: 'ext_vs-fail',
+      text: 'continue from my phone',
+    }))
+    const refused = await nextMatching(
+      ws,
+      (message) => message.type === 'error' && message.code === 'cannot-take-over',
+    )
+    const detail = String(refused.message)
+    expect(detail).toContain('Claude in VS Code')
+    expect(detail).toContain('native conversation vs-fail')
+    expect(detail).toContain(dir)
+    expect(detail).toContain('LongLeash session ext_vs-fail')
+    expect(detail).toContain('process exit was not verified')
+    expect(detail).toContain('Nothing was sent and no second writer was started')
+    expect(workspace.getByCwd(dir)).toMatchObject({
+      ownerId: 'ext_vs-fail',
+      ownerKind: 'external',
+    })
+
+    ws.close()
+    external.shutdown()
+    await sessions.shutdown()
+    await h.server.close()
+    externalApprovals.close()
+    approvals.close()
+    h.log.close()
+    h.registry.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('session settings over the wire', () => {
+  it('applies managed settings to the next response and returns a correlated receipt', async () => {
+    const h = await startHarness()
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'll-settings-live-')))
+    const approvals = new ApprovalStore(':memory:')
+    const agent = new DemoAgent()
+    const sessions = new SessionManager({
+      eventLog: h.log,
+      approvals,
+      allowedRoots: [dir],
+      agentFactories: { claude: agent.factory },
+      onEvent: (event) => h.server.broadcastEvent(event),
+    })
+    h.server.attachSessions(sessions)
+    const { sessionId } = await sessions.startSession({ agent: 'claude', cwd: dir, prompt: 'review it' })
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    ws.send(JSON.stringify({
+      v: 1,
+      type: 'updateSessionSettings',
+      requestId: 'settings-live-1',
+      sessionId,
+      settings: { model: 'opus', effort: 'high', thinking: { mode: 'adaptive' } },
+      externalTransferConfirmed: false,
+    }))
+    const ack = await nextMatching(ws, (message) => message.type === 'ack' && message.of === 'updateSessionSettings')
+    expect(ack).toMatchObject({
+      requestId: 'settings-live-1',
+      sessionId,
+      outcome: 'next-response',
+    })
+    expect(agent.settingsUpdates).toEqual([
+      { model: 'opus', effort: 'high', thinking: { mode: 'adaptive' } },
+    ])
+
+    ws.close()
+    await sessions.shutdown()
+    await h.server.close()
+    approvals.close()
+    h.log.close()
+    h.registry.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('names the exact controlling agent, surface, checkout, and session in a safe refusal', async () => {
+    const h = await startHarness()
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'll-owner-evidence-')))
+    const approvals = new ApprovalStore(':memory:')
+    const workspace = new WorkspaceLeaseManager(approvals.rawDb)
+    const agent = new DemoAgent()
+    const sessions = new SessionManager({
+      eventLog: h.log,
+      approvals,
+      allowedRoots: [dir],
+      agentFactories: { claude: agent.factory, codex: agent.factory },
+      onEvent: (event) => h.server.broadcastEvent(event),
+      workspace,
+    })
+    h.server.attachSessions(sessions)
+    sessions.adoptEndedSession({
+      sessionId: 'ext_old-claude',
+      agent: 'claude',
+      cwd: dir,
+      title: 'Older Claude conversation',
+      origin: 'vscode',
+      startedAt: 1,
+      agentSessionId: 'old-claude',
+    })
+    const owner = await sessions.startSession({
+      agent: 'codex',
+      cwd: dir,
+      prompt: 'own the checkout',
+      title: 'Current Codex owner',
+      origin: 'vscode',
+      workspaceMode: 'shared',
+    })
+
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    ws.send(JSON.stringify({
+      v: 1, type: 'sendMessage', sessionId: 'ext_old-claude', text: 'continue the old session',
+    }))
+    const error = await nextMatching(ws, (message) => message.type === 'error' && message.code === 'workspace-conflict')
+    expect(String(error.message)).toContain('Codex managed by LongLeash (“Current Codex owner”)')
+    expect(String(error.message)).toContain(dir)
+    expect(String(error.message)).toContain(`session ${owner.sessionId}`)
+    expect(String(error.message)).toContain('Nothing was stopped or sent')
+
+    ws.close()
+    await sessions.shutdown()
+    await h.server.close()
+    approvals.close()
+    h.log.close()
+    h.registry.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('requires consent before ending a VS Code process, then preserves the conversation and settings', async () => {
+    const h = await startHarness()
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'll-settings-external-')))
+    const approvals = new ApprovalStore(':memory:')
+    const workspace = new WorkspaceLeaseManager(approvals.rawDb)
+    const sessions = new SessionManager({
+      eventLog: h.log,
+      approvals,
+      allowedRoots: [dir],
+      agentFactories: { claude: new DemoAgent().factory },
+      onEvent: (event) => h.server.broadcastEvent(event),
+      workspace,
+    })
+    h.server.attachSessions(sessions)
+    const killed: number[] = []
+    const externalApprovals = new ApprovalStore(':memory:')
+    const external = new ExternalSessions({
+      eventLog: h.log,
+      approvals: externalApprovals,
+      onEvent: (event) => h.server.broadcastEvent(event),
+      audience: () => 'connected' as const,
+      isClaudeProcess: () => true,
+      kill: (pid) => killed.push(pid),
+      waitForExit: async () => true,
+      workspace,
+      onEnded: (info) => sessions.adoptEndedSession({
+        sessionId: info.sessionId,
+        agent: info.agent,
+        cwd: info.cwd,
+        title: info.title,
+        origin: info.surface,
+        startedAt: info.startedAt,
+        agentSessionId: info.claudeSessionId,
+      }),
+    })
+    h.server.attachExternal(external, 'hook-secret')
+    await fetch(`http://${HOST}:${h.port}/hook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-longleash-hook': 'hook-secret' },
+      body: JSON.stringify({
+        hook_event_name: 'SessionStart',
+        session_id: 'vscode-native',
+        cwd: dir,
+        transcript_path: join(dir, 'none.jsonl'),
+        ll_pid: 5151,
+        ll_surface: 'vscode',
+      }),
+    })
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const command = {
+      v: 1,
+      type: 'updateSessionSettings',
+      requestId: 'external-settings',
+      sessionId: 'ext_vscode-native',
+      settings: { model: 'opus', effort: 'high' },
+    }
+    ws.send(JSON.stringify({ ...command, externalTransferConfirmed: false }))
+    const refused = await nextMatching(ws, (message) =>
+      message.type === 'error' && message.code === 'transfer-confirmation-required')
+    expect(String(refused.message)).toContain('still controlled by VS Code')
+    expect(killed).toEqual([])
+
+    ws.send(JSON.stringify({ ...command, requestId: 'external-settings-confirmed', externalTransferConfirmed: true }))
+    const ack = await nextMatching(ws, (message) =>
+      message.type === 'ack' && message.of === 'updateSessionSettings')
+    expect(ack).toMatchObject({
+      requestId: 'external-settings-confirmed',
+      outcome: 'next-continuation',
+    })
+    expect(killed).toEqual([5151])
+    expect(sessions.listSessions().find((session) => session.sessionId === 'ext_vscode-native'))
+      .toMatchObject({
+        live: false,
+        resumable: true,
+        resumeId: 'vscode-native',
+        settings: { model: 'opus', effort: 'high' },
+      })
+
+    // Provider-incompatible controls are rejected before LongLeash touches the local process.
+    await fetch(`http://${HOST}:${h.port}/hook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-longleash-hook': 'hook-secret' },
+      body: JSON.stringify({
+        hook_event_name: 'SessionStart',
+        session_id: 'codex-vscode-native',
+        cwd: dir,
+        transcript_path: join(dir, 'codex-none.jsonl'),
+        ll_pid: 5252,
+        ll_surface: 'vscode',
+        ll_agent: 'codex',
+      }),
+    })
+    ws.send(JSON.stringify({
+      ...command,
+      requestId: 'external-codex-thinking',
+      sessionId: 'ext_codex-vscode-native',
+      settings: { thinking: { mode: 'adaptive' } },
+      externalTransferConfirmed: true,
+    }))
+    const unsupported = await nextMatching(ws, (message) =>
+      message.type === 'error' && message.requestId === 'external-codex-thinking')
+    expect(unsupported).toMatchObject({ code: 'unsupported-setting' })
+    expect(String(unsupported.message)).toContain('left running and unchanged')
+    expect(killed).toEqual([5151])
+    expect(external.hasLiveSession('ext_codex-vscode-native')).toBe(true)
+
+    ws.close()
+    external.shutdown()
+    await sessions.shutdown()
+    await h.server.close()
+    externalApprovals.close()
+    approvals.close()
+    h.log.close()
+    h.registry.close()
     rmSync(dir, { recursive: true, force: true })
   })
 })

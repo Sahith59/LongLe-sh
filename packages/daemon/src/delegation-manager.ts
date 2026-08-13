@@ -5,6 +5,7 @@ import {
   type DelegationSummary,
   type DelegationTargetAgent,
   type SessionEvent,
+  type SessionSettings,
 } from '@longleash/protocol'
 import type { BriefingBuilder } from './briefing.js'
 import type { ReturnBuilder, ReturnDraft } from './return-builder.js'
@@ -27,6 +28,7 @@ export interface StartDelegationInput {
   role: DelegationRole
   contextScope: DelegationContextScope
   briefing: string
+  settings?: SessionSettings
   createdBy: string
 }
 
@@ -62,7 +64,11 @@ export interface DelegationManagerOptions {
   returns?: ReturnBuilder
   workspace?: WorkspaceLeaseManager
   /** Stops a managed or external source without inventing a follow-up prompt. */
-  pauseSession?: (session: SessionListing, actor: string, reason: string) => Promise<boolean>
+  pauseSession?: (
+    session: SessionListing,
+    actor: string,
+    reason: string,
+  ) => Promise<boolean | { paused: boolean; message?: string }>
 }
 
 /**
@@ -249,12 +255,12 @@ export class DelegationManager {
         })
         reserved = true
         if (source.live && this.pauseSession !== undefined) {
-          const paused = await this.pauseSession(
+          const pauseResult = await this.pauseSession(
             source,
             input.createdBy,
             `Workspace handed to delegated ${agentName(record.targetAgent)} child`,
           )
-          if (!paused) {
+          if (!wasPaused(pauseResult)) {
             const sourceIsLive = () => this.sourceSessions().some(
               (session) => session.sessionId === source.sessionId && session.live,
             )
@@ -263,7 +269,7 @@ export class DelegationManager {
                 reservationId: record.delegationId,
                 sessionId: source.sessionId,
                 cwd: source.cwd,
-                ownerKind: source.origin === 'terminal' || source.origin === 'vscode' ? 'external' : 'session',
+                ownerKind: isExternallyControlled(source) ? 'external' : 'session',
                 ownerOrigin: source.origin,
                 actor: input.createdBy,
               })
@@ -282,7 +288,10 @@ export class DelegationManager {
             }
             throw new DelegationManagerError(
               'workspace-conflict',
-              'The source could not be paused safely because it has no recoverable conversation point.',
+              pauseFailure(
+                pauseResult,
+                'The source is still running, so no child was started. Finish or stop it, then retry the handoff.',
+              ),
             )
           }
         }
@@ -300,6 +309,7 @@ export class DelegationManager {
           role: record.role,
           depth: record.depth,
         },
+        ...(record.settings === undefined ? {} : { settings: record.settings }),
         actor: input.createdBy,
         ...(this.workspace === undefined ? {} : { workspaceReservationId: record.delegationId }),
       })
@@ -387,7 +397,7 @@ export class DelegationManager {
       child,
       role: record.role,
       requiresTakeover: parents.some(
-        (session) => session.live && (session.origin === 'terminal' || session.origin === 'vscode'),
+        (session) => session.live && isExternallyControlled(session),
       ),
     }
   }
@@ -466,12 +476,17 @@ export class DelegationManager {
       }
 
       if (preview.child.live && this.pauseSession !== undefined) {
-        const paused = await this.pauseSession(
+        const pauseResult = await this.pauseSession(
           preview.child,
           input.actor,
           'Workspace handed back to the source session',
         )
-        if (!paused) throw new DelegationManagerError('delivery-failed', 'The child could not be paused safely.')
+        if (!wasPaused(pauseResult)) {
+          throw new DelegationManagerError(
+            'delivery-failed',
+            pauseFailure(pauseResult, 'The child could not be paused safely.'),
+          )
+        }
       }
 
       if (preview.requiresTakeover && this.pauseSession !== undefined) {
@@ -479,11 +494,16 @@ export class DelegationManager {
           (session) =>
             session.sessionId === record!.sourceSessionId &&
             session.live &&
-            (session.origin === 'terminal' || session.origin === 'vscode'),
+            isExternallyControlled(session),
         )
         if (liveParent !== undefined) {
-          const stopped = await this.pauseSession(liveParent, input.actor, 'Taken over for reviewed return')
-          if (!stopped) throw new DelegationManagerError('delivery-failed', 'The external parent could not be stopped.')
+          const pauseResult = await this.pauseSession(liveParent, input.actor, 'Taken over for reviewed return')
+          if (!wasPaused(pauseResult)) {
+            throw new DelegationManagerError(
+              'delivery-failed',
+              pauseFailure(pauseResult, 'The external parent could not be stopped.'),
+            )
+          }
         }
       }
 
@@ -532,7 +552,7 @@ export class DelegationManager {
             sessionId: activeWriter.sessionId,
             cwd: activeWriter.cwd,
             ownerKind:
-              activeWriter.origin === 'terminal' || activeWriter.origin === 'vscode'
+              isExternallyControlled(activeWriter)
                 ? 'external'
                 : 'session',
             ownerOrigin: activeWriter.origin,
@@ -660,6 +680,24 @@ export class DelegationManager {
   private notify(record: DelegationRecord): void {
     this.onUpdate?.(summarizeDelegation(record))
   }
+}
+
+function wasPaused(result: boolean | { paused: boolean; message?: string }): boolean {
+  return typeof result === 'boolean' ? result : result.paused
+}
+
+function pauseFailure(
+  result: boolean | { paused: boolean; message?: string },
+  fallback: string,
+): string {
+  return typeof result === 'boolean' || result.message === undefined ? fallback : result.message
+}
+
+function isExternallyControlled(session: SessionListing): boolean {
+  return session.controller === 'external' || (
+    session.controller === undefined &&
+    (session.origin === 'terminal' || session.origin === 'vscode')
+  )
 }
 
 function delegationStoreError(error: unknown): DelegationManagerError {

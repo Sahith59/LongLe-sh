@@ -16,7 +16,7 @@ import type { PushNotifier } from './push.js'
 import { surfaceOf, terminalAgentOf, type ExternalSessions } from './external.js'
 import type { DeviceRegistry } from './auth.js'
 import { PairingError } from './auth.js'
-import { SessionError, type SessionManager } from './sessions.js'
+import { SessionError, type SessionListing, type SessionManager } from './sessions.js'
 import type { FolderIndex } from './folders.js'
 import { RelayLink } from './relay-link.js'
 import { BriefingBuilder, BriefingError } from './briefing.js'
@@ -814,6 +814,7 @@ export class LongLeashServer {
           role: message.role,
           contextScope: message.contextScope,
           briefing: message.briefing,
+          ...(message.settings === undefined ? {} : { settings: message.settings }),
           createdBy: connection.deviceId,
         })
         .then(({ delegation, created }) => {
@@ -937,6 +938,23 @@ export class LongLeashServer {
     }
 
     if (message.type === 'sendMessage') {
+      const conflict = this.workspaceConflictMessage(message.sessionId)
+      if (conflict !== null) {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'ack',
+          of: 'sendMessage',
+          sessionId: message.sessionId,
+          outcome: 'workspace-in-use',
+        })
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          code: 'workspace-conflict',
+          message: conflict,
+        })
+        return
+      }
       const delivered = this.sessions.sendMessage(message.sessionId, message.text, connection.deviceId)
       this.sendTo(connection, {
         v: PROTOCOL_VERSION,
@@ -995,22 +1013,116 @@ export class LongLeashServer {
       return
     }
 
+    if (message.type === 'updateSessionSettings') {
+      const sessionManager = this.sessions
+      void (async () => {
+        try {
+          const liveExternal = this.external?.hasLiveSession(message.sessionId) === true
+          const externalSession = liveExternal
+            ? this.external?.listSessions().find((item) => item.sessionId === message.sessionId)
+            : undefined
+          // Finish every deterministic validation before touching another controller's process.
+          // In particular, never close a live Codex IDE session and only then discover that its
+          // Claude-only thinking setting could not be accepted.
+          if (externalSession?.agent === 'codex' && message.settings.thinking !== undefined) {
+            throw new SessionError(
+              'unsupported-setting',
+              'Codex exposes reasoning through effort. The VS Code or Terminal process was left running and unchanged.',
+            )
+          }
+          if (liveExternal && !message.externalTransferConfirmed) {
+            const surface = externalSession?.origin === 'vscode' ? 'VS Code' : 'Terminal'
+            this.sendTo(connection, {
+              v: PROTOCOL_VERSION,
+              type: 'error',
+              of: 'updateSessionSettings',
+              requestId: message.requestId,
+              code: 'transfer-confirmation-required',
+              message:
+                `This conversation is still controlled by ${surface}. To apply settings from LongLeash, confirm the handoff; LongLeash will end that local process, preserve its native conversation ID, and use the new controls on the next phone turn.`,
+            })
+            return
+          }
+          if (liveExternal) {
+            const stopped = await this.external?.stop(message.sessionId, connection.deviceId)
+            if (stopped !== true) {
+              throw new SessionError(
+                'session-busy',
+                'The Terminal or VS Code agent is still running, so LongLeash changed nothing. Close it on the laptop, then try again.',
+              )
+            }
+          }
+          const applied = await sessionManager.updateSessionSettings(
+            message.sessionId,
+            message.settings,
+            connection.deviceId,
+          )
+          this.sendTo(connection, {
+            v: PROTOCOL_VERSION,
+            type: 'ack',
+            of: 'updateSessionSettings',
+            requestId: message.requestId,
+            sessionId: message.sessionId,
+            outcome: applied.live ? 'next-response' : 'next-continuation',
+            settings: applied.settings,
+          })
+        } catch (error) {
+          this.sendTo(connection, {
+            v: PROTOCOL_VERSION,
+            type: 'error',
+            of: 'updateSessionSettings',
+            requestId: message.requestId,
+            code: error instanceof SessionError ? error.reason : 'settings-failed',
+            message: error instanceof Error ? error.message.slice(0, 500) : 'Could not update session settings.',
+          })
+        }
+      })()
+      return
+    }
+
     if (message.type === 'takeOver') {
       const reservationId = `takeover-${randomBytes(9).toString('base64url')}`
       const sessions = this.sessions
       void (async () => {
+        const conflict = this.workspaceConflictMessage(message.sessionId)
+        if (conflict !== null) {
+          this.log(`takeOver ${message.sessionId} -> workspace owned elsewhere`)
+          this.sendTo(connection, {
+            v: PROTOCOL_VERSION,
+            type: 'ack',
+            of: 'takeOver',
+            sessionId: message.sessionId,
+            outcome: 'workspace-in-use',
+          })
+          this.sendTo(connection, {
+            v: PROTOCOL_VERSION,
+            type: 'error',
+            code: 'workspace-conflict',
+            message: conflict,
+          })
+          return
+        }
+        const observed = this.external?.listSessions().find(
+          (session) => session.sessionId === message.sessionId,
+        ) ?? sessions.listSessions().find((session) => session.sessionId === message.sessionId)
         const liveExternal = this.external?.hasLiveSession(message.sessionId) === true
         let released = true
-        if (liveExternal && this.external !== null) {
-          released = await this.external.prepareTakeover(
-            message.sessionId,
-            reservationId,
-            connection.deviceId,
-          )
+        let delivered = false
+        let failure: unknown
+        try {
+          if (liveExternal && this.external !== null) {
+            released = await this.external.prepareTakeover(
+              message.sessionId,
+              reservationId,
+              connection.deviceId,
+            )
+          }
+          delivered = released && (liveExternal
+            ? sessions.takeOver(message.sessionId, message.text, connection.deviceId, reservationId)
+            : sessions.sendMessage(message.sessionId, message.text, connection.deviceId))
+        } catch (error) {
+          failure = error
         }
-        const delivered = released && (liveExternal
-          ? sessions.takeOver(message.sessionId, message.text, connection.deviceId, reservationId)
-          : sessions.sendMessage(message.sessionId, message.text, connection.deviceId))
         this.log(`takeOver ${message.sessionId} -> ${delivered ? 'taken' : 'refused'}`)
         this.sendTo(connection, {
           v: PROTOCOL_VERSION,
@@ -1024,8 +1136,7 @@ export class LongLeashServer {
             v: PROTOCOL_VERSION,
             type: 'error',
             code: 'cannot-take-over',
-            message:
-              'The IDE or terminal did not fully release this conversation, so LongLeash left it there instead of risking two writers. Close it on the laptop, then try again.',
+            message: this.takeoverFailureMessage(observed, liveExternal, released, failure),
           })
         }
       })()
@@ -1128,6 +1239,77 @@ export class LongLeashServer {
       code: 'not-implemented',
       message: `"${message.type}" is not handled yet`,
     })
+  }
+
+  /** A human-readable ownership receipt for a safe refusal. */
+  private workspaceConflictMessage(sessionId: string): string | null {
+    const conflict = this.sessions?.workspaceConflictFor(sessionId)
+    if (conflict === null || conflict === undefined) return null
+    const all = [
+      ...(this.sessions?.listSessions() ?? []),
+      ...(this.external?.listSessions() ?? []),
+    ]
+    const owner = all.find((candidate) => candidate.sessionId === conflict.ownerSessionId)
+    const provider = owner?.agent === 'claude' ? 'Claude' : owner?.agent === 'codex' ? 'Codex' : 'Another agent'
+    const externallyControlled = owner?.controller === 'external' || (
+      owner?.controller === undefined &&
+      (owner?.origin === 'vscode' || owner?.origin === 'terminal')
+    )
+    const surface = externallyControlled && owner?.origin === 'vscode'
+      ? 'in VS Code'
+      : externallyControlled && owner?.origin === 'terminal'
+        ? 'in Terminal'
+        : owner?.origin === 'phone'
+          ? 'started from your phone'
+          : 'managed by LongLeash'
+    const title = owner?.title?.trim()
+    const identity = title === undefined || title === ''
+      ? `${provider} ${surface}`
+      : `${provider} ${surface} (“${title.slice(0, 72)}”)`
+    return (
+      `LongLeash kept this conversation where it is because ${identity} currently has sole write control of ` +
+      `${conflict.cwd} (session ${conflict.ownerSessionId}). Nothing was stopped or sent. ` +
+      'Finish or stop that owning session, then try again.'
+    )
+  }
+
+  /** Evidence for a refused native-to-managed handoff; never imply that a hidden child ran. */
+  private takeoverFailureMessage(
+    session: SessionListing | undefined,
+    wasLiveExternal: boolean,
+    released: boolean,
+    failure: unknown,
+  ): string {
+    if (session === undefined) {
+      return 'LongLeash could not find this conversation or a usable native resume point. Nothing was stopped or sent. Refresh the session list and verify the conversation on the laptop before retrying.'
+    }
+    const provider = session.agent === 'claude' ? 'Claude' : session.agent === 'codex' ? 'Codex' : 'Agent'
+    const surface = session.origin === 'vscode'
+      ? 'VS Code'
+      : session.origin === 'terminal'
+        ? 'Terminal'
+        : 'LongLeash'
+    const title = session.title.trim() === '' ? 'Untitled session' : session.title.slice(0, 72)
+    const evidence =
+      `${provider} in ${surface} (“${title}”); native conversation ${session.resumeId ?? 'not announced'}; ` +
+      `checkout ${session.cwd}; LongLeash session ${session.sessionId}.`
+    if (wasLiveExternal && !released) {
+      return (
+        `LongLeash asked this exact ${surface} process to release control, but process exit was not verified before the safety deadline. ` +
+        `${evidence} Nothing was sent and no second writer was started. Close or stop that process on the laptop, then retry.`
+      )
+    }
+    if (failure !== undefined) {
+      const detail = failure instanceof Error ? failure.message.slice(0, 180) : 'the provider adapter rejected resume'
+      return (
+        `The native process released, but ${provider} could not resume the same conversation under LongLeash: ${detail}. ` +
+        `${evidence} Nothing was sent and the checkout reservation was released.`
+      )
+    }
+    return (
+      `LongLeash could not resume this dormant conversation with its current provider data. ${evidence} ` +
+      'Nothing was sent and no second writer was started. Verify that the native conversation still exists, then retry.'
+    )
   }
 
   private broadcast(event: SessionEvent): void {

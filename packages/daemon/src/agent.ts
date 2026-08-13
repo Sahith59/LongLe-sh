@@ -38,6 +38,11 @@ export interface AgentRunHandle {
   interrupt: () => Promise<void>
   /** Continue the conversation. A session is a dialogue, not a one-shot command. */
   sendMessage: (text: string) => void
+  /**
+   * Change provider controls for subsequent responses without restarting the conversation.
+   * The in-flight response is deliberately left untouched.
+   */
+  updateSettings?: (settings: SessionSettings) => Promise<void>
 }
 
 export type AgentFactory = (request: AgentRunRequest) => AgentRunHandle

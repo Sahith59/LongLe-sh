@@ -17,8 +17,10 @@ import type {
   DelegationPreview,
   DelegationRole,
   DelegationTargetAgent,
+  SessionSettings,
 } from '@longleash/protocol'
 import type { SessionView } from '../lib/store.js'
+import type { AgentSettingsCatalog } from '../lib/client.js'
 import {
   readDelegationDraft,
   newDelegationIdempotencyKey,
@@ -26,6 +28,11 @@ import {
   writeDelegationDraft,
 } from '../lib/delegation-draft.js'
 import { EXIT, Key, SPRING, useKeyboardInset, useVisualViewportHeight } from './primitives.js'
+import {
+  SessionSettingsFields,
+  settingsDraft,
+  settingsFromDraft,
+} from './SessionSettingsFields.js'
 
 const AGENT_NAME: Record<DelegationTargetAgent, string> = { claude: 'Claude', codex: 'Codex' }
 const AGENT_DETAIL: Record<DelegationTargetAgent, string> = {
@@ -73,6 +80,7 @@ export interface StartDelegationInput extends Omit<PreviewDelegationInput, 'requ
   requestId: string
   idempotencyKey: string
   briefing: string
+  settings?: SessionSettings
 }
 
 export function DelegateSheet({
@@ -87,6 +95,7 @@ export function DelegateSheet({
   launchEnabled = false,
   workspaceMode = 'legacy',
   availableTargets = { claude: false, codex: false },
+  settingsCatalog,
   onClose,
 }: {
   open: boolean
@@ -100,6 +109,7 @@ export function DelegateSheet({
   launchEnabled?: boolean
   workspaceMode?: 'legacy' | 'sequential'
   availableTargets?: { claude: boolean; codex: boolean }
+  settingsCatalog?: AgentSettingsCatalog
   onClose: () => void
 }) {
   const keyboard = useKeyboardInset(open)
@@ -187,6 +197,7 @@ export function DelegateSheet({
                 launchEnabled={launchEnabled}
                 workspaceMode={workspaceMode}
                 availableTargets={availableTargets}
+                {...(settingsCatalog === undefined ? {} : { settingsCatalog })}
               />
             </div>
           </motion.div>
@@ -207,6 +218,7 @@ function DelegateBody({
   launchEnabled,
   workspaceMode,
   availableTargets,
+  settingsCatalog,
 }: {
   session: SessionView
   sourceSeq?: number
@@ -218,6 +230,7 @@ function DelegateBody({
   launchEnabled: boolean
   workspaceMode: 'legacy' | 'sequential'
   availableTargets: { claude: boolean; codex: boolean }
+  settingsCatalog?: AgentSettingsCatalog
 }) {
   const saved = useMemo(() => readDelegationDraft(session.sessionId, sourceSeq), [session.sessionId, sourceSeq])
   const initialPreview =
@@ -233,6 +246,9 @@ function DelegateBody({
     saved?.contextScope ?? initialPreview?.contextScope ?? (sourceSeq === undefined ? 'recent' : 'selected'),
   )
   const [briefing, setBriefing] = useState(saved?.briefing ?? initialPreview?.briefing ?? '')
+  const [childSettings, setChildSettings] = useState(() =>
+    settingsDraft(saved?.settings ?? {}, settingsCatalog, saved?.targetAgent ?? initialPreview?.targetAgent ?? defaultTarget),
+  )
   const [idempotencyKey, setIdempotencyKey] = useState(
     saved?.idempotencyKey ?? newDelegationIdempotencyKey(),
   )
@@ -260,9 +276,13 @@ function DelegateBody({
   const launchError = launchId !== null && previewError?.requestId === launchId ? previewError.message : null
   const launching = launchId !== null && launchError === null
   const targetAvailable = availableTargets[targetAgent]
+  const parsedSettings = useMemo(
+    () => settingsFromDraft(childSettings, targetAgent),
+    [childSettings, targetAgent],
+  )
   const canLaunch =
     connected && launchEnabled && workspaceMode === 'sequential' && transferConfirmed &&
-    targetAvailable && briefing !== '' && !stale && !overLimit && !launching
+    targetAvailable && briefing !== '' && !stale && !overLimit && !launching && parsedSettings.error === undefined
 
   useEffect(() => {
     if (skipNextSave.current) {
@@ -277,9 +297,10 @@ function DelegateBody({
       role,
       contextScope,
       briefing,
+      ...(Object.keys(parsedSettings.settings).length === 0 ? {} : { settings: parsedSettings.settings }),
       updatedAt: Date.now(),
     })
-  }, [session.sessionId, sourceSeq, targetAgent, role, contextScope, briefing, idempotencyKey])
+  }, [session.sessionId, sourceSeq, targetAgent, role, contextScope, briefing, idempotencyKey, parsedSettings.settings])
 
   useEffect(() => {
     if (launchError === null) return
@@ -332,6 +353,7 @@ function DelegateBody({
       role,
       contextScope,
       briefing,
+      ...(Object.keys(parsedSettings.settings).length === 0 ? {} : { settings: parsedSettings.settings }),
     })
   }
 
@@ -366,7 +388,10 @@ function DelegateBody({
                 pressed={picked}
                 label={`Delegate to ${AGENT_NAME[option]}`}
                 disabled={launching || !availableTargets[option]}
-                onClick={() => setTargetAgent(option)}
+                onClick={() => {
+                  setTargetAgent(option)
+                  setChildSettings(settingsDraft({}, settingsCatalog, option))
+                }}
               >
                 <span className="agenticon" data-agent={option} aria-hidden="true"><Icon size={18} strokeWidth={2.1} /></span>
                 <span className="agentcopy"><strong>{AGENT_NAME[option]}</strong><small>{availableTargets[option] ? AGENT_DETAIL[option] : 'Not available on laptop'}</small></span>
@@ -376,6 +401,21 @@ function DelegateBody({
           })}
         </div>
       </fieldset>
+
+      <details className="session-settings delegate-settings">
+        <summary>Child model &amp; reasoning</summary>
+        <p>Optional. These controls belong only to the new child and can be changed later.</p>
+        <SessionSettingsFields
+          agent={targetAgent}
+          value={childSettings}
+          onChange={setChildSettings}
+          disabled={launching}
+          {...(settingsCatalog === undefined ? {} : { catalog: settingsCatalog })}
+        />
+        <small className="settingsnote">
+          {parsedSettings.error ?? 'Provider defaults are used for anything you leave unchanged.'}
+        </small>
+      </details>
 
       <fieldset className="delegate-fieldset">
         <legend><span className="step-number" aria-hidden="true">2</span> Role</legend>
@@ -514,6 +554,8 @@ function DelegateBody({
                 ? 'Update the laptop daemon to enable protected workspace handoffs.'
                 : !targetAvailable
                   ? `${AGENT_NAME[targetAgent]} is not configured on this laptop.`
+                  : parsedSettings.error
+                    ? parsedSettings.error
                   : stale
                     ? 'Rebuild the briefing after changing its controls.'
                     : !transferConfirmed

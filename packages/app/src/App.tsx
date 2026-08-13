@@ -16,6 +16,7 @@ import {
   SquareTerminal,
   GitBranchPlus,
   ShieldAlert,
+  SlidersHorizontal,
 } from 'lucide-react'
 import type { DelegationPreview, DelegationReturnPreview, DelegationSummary } from '@longleash/protocol'
 import {
@@ -70,6 +71,11 @@ import { hasSessionLink, sessionFromSearch } from './lib/deep-link.js'
 import { isCurrentFolderReply } from './lib/folder-search.js'
 import { ReturnSheet, type ReturnDelegationInput } from './ui/ReturnSheet.js'
 import { removeReturnDraft } from './lib/delegation-return-draft.js'
+import {
+  SessionSettingsSheet,
+  type SettingsUpdateState,
+  type UpdateSessionSettingsInput,
+} from './ui/SessionSettingsSheet.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
@@ -83,6 +89,9 @@ export default function App() {
   const [roots, setRoots] = useState<string[]>([])
   const [folders, setFolders] = useState<FolderHit[]>([])
   const [settingsCatalog, setSettingsCatalog] = useState<AgentSettingsCatalog | undefined>()
+  const [settingsSessionId, setSettingsSessionId] = useState<string | null>(null)
+  const [settingsUpdate, setSettingsUpdate] = useState<SettingsUpdateState | null>(null)
+  const settingsUpdateRef = useRef<string | null>(null)
   const folderQueryRef = useRef('')
   const [openSessionId, setOpenSessionId] = useState<string | null>(
     // A cold start FROM a notification: the service worker put the session in the URL, so the
@@ -255,6 +264,24 @@ export default function App() {
         setSessionStart((current) => current === null
           ? { requestId: requestId ?? 'legacy', state: 'failed', error: message }
           : { ...current, state: 'failed', error: message })
+      },
+      onSessionSettingsUpdated: (requestId, _sessionId, outcome) => {
+        if (settingsUpdateRef.current !== requestId) return
+        settingsUpdateRef.current = null
+        setSettingsUpdate((current) =>
+          current?.requestId === requestId
+            ? { requestId, state: 'saved', outcome }
+            : current,
+        )
+      },
+      onSessionSettingsError: (requestId, message) => {
+        if (settingsUpdateRef.current !== requestId) return
+        settingsUpdateRef.current = null
+        setSettingsUpdate((current) =>
+          current?.requestId === requestId
+            ? { requestId, state: 'failed', error: message }
+            : current,
+        )
       },
       onDelegationPreview: (preview) => {
         setDelegationError(null)
@@ -469,6 +496,10 @@ export default function App() {
               onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
               onTakeOver={(text) => clientRef.current?.takeOver(openSession.sessionId, text) ?? false}
               onSetGate={(gate) => clientRef.current?.setGate(openSession.sessionId, gate)}
+              onTune={() => {
+                setSettingsUpdate(null)
+                setSettingsSessionId(openSession.sessionId)
+              }}
               delegations={relatedDelegations}
               sessions={snapshot.sessions}
               onOpenSession={setOpenSessionId}
@@ -561,6 +592,7 @@ export default function App() {
           launchEnabled={delegationCapabilities.start}
           workspaceMode={delegationCapabilities.workspace}
           availableTargets={delegationCapabilities.targets}
+          {...(settingsCatalog === undefined ? {} : { settingsCatalog })}
           onStart={(input: StartDelegationInput) => {
             setDelegationError(null)
             pendingDelegation.current = {
@@ -572,6 +604,45 @@ export default function App() {
             return clientRef.current?.startDelegation(input) ?? false
           }}
           onClose={() => setDelegationSource(null)}
+        />
+      ) : null}
+      {settingsSessionId && snapshot.sessions[settingsSessionId] ? (
+        <SessionSettingsSheet
+          open
+          session={snapshot.sessions[settingsSessionId]}
+          connected={connected}
+          update={settingsUpdate}
+          {...(settingsCatalog === undefined ? {} : { catalog: settingsCatalog })}
+          onSave={(input: UpdateSessionSettingsInput) => {
+            settingsUpdateRef.current = input.requestId
+            setSettingsUpdate({ requestId: input.requestId, state: 'saving' })
+            const sent = clientRef.current?.updateSessionSettings(input) ?? false
+            if (!sent) {
+              settingsUpdateRef.current = null
+              setSettingsUpdate({
+                requestId: input.requestId,
+                state: 'failed',
+                error: 'Not connected to your laptop — settings were not changed.',
+              })
+            } else {
+              setTimeout(() => {
+                if (settingsUpdateRef.current !== input.requestId) return
+                settingsUpdateRef.current = null
+                setSettingsUpdate({
+                  requestId: input.requestId,
+                  state: 'failed',
+                  error: 'The laptop did not confirm the change. The current session state was left visible; reconnect and verify before retrying.',
+                })
+              }, 20_000)
+            }
+            return sent
+          }}
+          onClose={() => {
+            if (settingsUpdate?.state === 'saving') return
+            settingsUpdateRef.current = null
+            setSettingsSessionId(null)
+            setSettingsUpdate(null)
+          }}
         />
       ) : null}
       {returnDelegationId && delegations[returnDelegationId] ? (
@@ -937,6 +1008,7 @@ export function DetailScreen({
   onSend,
   onTakeOver,
   onSetGate,
+  onTune,
   onDelegate,
   delegations,
   sessions,
@@ -957,6 +1029,7 @@ export function DetailScreen({
   onSend: (text: string) => boolean
   onTakeOver: (text: string) => boolean
   onSetGate: (gate: 'ask' | 'auto') => void
+  onTune?: () => void
   onDelegate?: (sourceSeq?: number) => void
   delegations?: DelegationSummary[]
   sessions?: Record<string, SessionView>
@@ -971,7 +1044,9 @@ export function DetailScreen({
   // Sending a message TAKES IT OVER: the daemon ends the terminal process (verified) and
   // continues the same conversation through the SDK, one driver at a time. What never
   // happens is faking keystrokes into a terminal.
-  const externallyDriven = session.origin === 'terminal' || session.origin === 'vscode'
+  const externallyDriven = session.controller === 'external' || (
+    session.controller === undefined && (session.origin === 'terminal' || session.origin === 'vscode')
+  )
   // Typing wakes a dormant conversation, so the composer belongs to anything continuable —
   // not only to what happens to be running right now.
   const live = session.live && (session.status === 'running' || session.status === 'waiting')
@@ -1009,6 +1084,12 @@ export function DetailScreen({
               {session.title || session.sessionId}
             </motion.h2>
             <div className="detailactions">
+              {onTune && (session.agent === 'claude' || session.agent === 'codex') ? (
+                <Key className="sm tunekey" onClick={onTune} label="Change model and reasoning for this conversation">
+                  <SlidersHorizontal size={14} strokeWidth={2.3} aria-hidden="true" />
+                  Tune
+                </Key>
+              ) : null}
               {onDelegate ? (
                 <Key className="sm delegatekey" onClick={() => onDelegate()} label="Delegate from this session">
                   <GitBranchPlus size={14} strokeWidth={2.3} aria-hidden="true" />
@@ -1061,6 +1142,18 @@ export function DetailScreen({
               <>
                 <span className="dot" aria-hidden="true">·</span>
                 <span>{session.settings.effort} effort</span>
+              </>
+            ) : null}
+            {session.settings?.thinking ? (
+              <>
+                <span className="dot" aria-hidden="true">·</span>
+                <span>
+                  {session.settings.thinking.mode === 'fixed'
+                    ? `${session.settings.thinking.budgetTokens?.toLocaleString()} thinking tokens`
+                    : session.settings.thinking.mode === 'disabled'
+                      ? 'thinking off'
+                      : 'adaptive thinking'}
+                </span>
               </>
             ) : null}
             {session.workspace?.mode === 'isolated' ? (
@@ -1329,7 +1422,13 @@ function DelegationLineage({
                   <span className={`lineage-status ${delegation.status}`}>
                     {delegationStatusLabel(delegation, child)}
                   </span>
-                  {delegation.failure ? <small>{delegation.failure}</small> : null}
+                  {delegation.failure ? (
+                    <small>
+                      {delegation.targetSessionId === undefined
+                        ? `No child was created. ${delegation.failure}`
+                        : delegation.failure}
+                    </small>
+                  ) : null}
                 </button>
                 {delegation.status === 'ready' && onReviewReturn ? (
                   <button
@@ -1352,6 +1451,9 @@ function DelegationLineage({
 function delegationStatusLabel(delegation: DelegationSummary, child?: SessionView): string {
   if (delegation.status === 'ready') return 'ready to review'
   if (delegation.status === 'starting') return 'starting…'
+  // A launch that stopped at the safety gate did not create a broken child. Calling that
+  // child "failed" made people look for a process that never existed.
+  if (delegation.status === 'failed' && delegation.targetSessionId === undefined) return 'not started'
   if (delegation.status !== 'running') return delegation.status
   if (child?.status === 'waiting') return child.live ? 'waiting for you' : 'ready to reopen'
   if (child?.status === 'errored') return 'failed'

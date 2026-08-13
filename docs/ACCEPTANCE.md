@@ -190,7 +190,16 @@ back into the sealed native chat panel.
 4. Confirm each launch sheet remains open and shows progress until the daemon acknowledges the
    session, then opens exactly one new session.
 5. Stop/reopen a managed session and confirm its selected settings remain labeled and are reused.
-6. Try an intentionally invalid/unavailable custom model ID. Confirm a useful provider error appears
+6. While a managed Claude session is live, tap **Tune**, change model/effort/thinking, and confirm
+   the current response is not interrupted and the next response uses the new controls. Repeat for
+   Codex model/effort and confirm the same native thread is retained.
+7. Tune a dormant conversation, reopen it, and confirm the saved settings are used.
+8. Open a live Terminal/VS Code session, tap **Tune**, cancel the transfer once, then confirm it.
+   Verify cancel changes nothing; confirm ends the original process, preserves the native
+   conversation, and applies settings on the next phone turn.
+9. In **Delegate**, choose explicit child controls and confirm only the attributed child receives
+   them; the parent stays unchanged.
+10. Try an intentionally invalid/unavailable custom model ID. Confirm a useful provider error appears
    and the UI does not spin forever or create duplicate sessions after one retry.
 
 Pass when controls are mobile-safe, settings reach the correct provider, persisted values survive

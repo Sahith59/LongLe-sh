@@ -490,4 +490,41 @@ describe('session controls visible on a phone-sized flow', () => {
     expect(detail).toContain('Parent task')
     expect(detail).toContain('Open source')
   })
+
+  it('labels a safety-gated delegation as not started when no child exists', () => {
+    const parent = {
+      sessionId: 'ses_parent', agent: 'claude', live: true, cwd: '/work/project',
+      title: 'Parent task', origin: 'phone', status: 'waiting' as const, blocks: [], output: '',
+      activity: [], resumable: true,
+    }
+    const detail = renderToStaticMarkup(
+      <DetailScreen
+        session={parent}
+        approvals={[]}
+        connected
+        diagnostic={null}
+        error={null}
+        onClearError={() => {}}
+        onDecide={() => {}}
+        onAnswer={() => {}}
+        onLeave={() => {}}
+        onStop={() => {}}
+        onResume={() => {}}
+        onSend={() => true}
+        onTakeOver={() => true}
+        onSetGate={() => {}}
+        delegations={[{
+          delegationId: 'del_guarded', idempotencyKey: 'phone-op-guarded',
+          sourceSessionId: 'ses_parent', targetAgent: 'codex', role: 'review',
+          contextScope: 'recent', depth: 1, status: 'failed', createdAt: 1, updatedAt: 2,
+          failure: 'The source process did not stop by the safety deadline.',
+        }]}
+        sessions={{ ses_parent: parent }}
+        onOpenSession={() => {}}
+      />,
+    )
+    expect(detail).toContain('not started')
+    expect(detail).toContain('No child was created')
+    expect(detail).toContain('source process did not stop by the safety deadline')
+  })
 })

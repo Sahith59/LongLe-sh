@@ -274,6 +274,8 @@ VS Code output and daemon log with timestamps.
 
 ## Model, effort, or thinking settings fail
 
+- Open the session and tap **Tune**. This control is available after launch as well as in **New
+  session** and **Delegate**.
 - Start with **Provider default** to distinguish a LongLeash lifecycle problem from a provider
   model-entitlement problem.
 - A custom model ID is passed to the provider and may be unavailable to your account or installed
@@ -281,8 +283,11 @@ VS Code output and daemon log with timestamps.
 - Codex exposes thinking through reasoning effort; it does not accept Claude's separate thinking
   configuration.
 - Claude fixed thinking requires an integer token budget from 1,024 through 128,000.
-- Settings apply to LongLeash-managed starts and are reused on managed wake/restart. They do not
-  rewrite an already-running external provider process.
+- A live managed session schedules an accepted change for its next response. Its current response
+  is not interrupted. A dormant conversation stores the change for its next continuation.
+- LongLeash does not secretly rewrite an already-running Terminal/VS Code provider process. The
+  Tune sheet requires **Move control to LongLeash**, ends and verifies that process, preserves its
+  native conversation ID, then applies the new settings on the next phone turn.
 
 Record the exact provider rejection. LongLeash should surface it and return the session to a
 non-working state rather than leaving an endless spinner.
@@ -315,6 +320,22 @@ the current approval before showing details.
   must explain the transfer rather than starting a hidden second writer.
 - A return into a live Terminal/VS Code source requires explicit takeover confirmation.
 - Retries use idempotency keys; repeated taps must not create duplicate children or returns.
+- `not started` means the handoff stopped before a child existed. The source keeps control. The
+  accompanying sentence names the real gate: missing native conversation ID, a process that did
+  not stop by the safety deadline, or an unavailable owner. Correct that condition and retry from
+  the same editor.
+- Older builds used the misleading sentence “no recoverable conversation point” and labeled the
+  durable attempt `failed` even when no child existed. Update both laptop and phone if you see that
+  wording.
+
+### A VS Code conversation refuses to reopen while another session is active
+
+This is the one-writer safety system working, not a missing VS Code capability. The refusal now
+names the provider, current surface, session title, exact checkout, and controlling session ID.
+LongLeash sends no message and stops no process in this case.
+
+Open or stop the named controlling session, then retry the older conversation. If you need both at
+once, start the second task with **Safe parallel** so it receives an isolated Git worktree.
 
 Capture the parent title, child title if created, role, source/target provider, and failure message.
 Do not manually paste a return into the parent and then report the automated path as successful.

@@ -128,6 +128,8 @@ const sessionStartedPayload = z
     cwd: z.string().min(1),
     title: z.string().optional(),
     origin: SessionOrigin.optional(),
+    /** Who owns the process now; unlike origin, this changes after a safe handoff. */
+    controller: z.enum(['longleash', 'external']).optional(),
     /**
      * The agent's own conversation id. Carried to the phone so a person can pick the
      * SAME conversation back up at their keyboard — `claude --resume <id>` in the
@@ -163,6 +165,9 @@ const sessionStatusPayload = z
     permissionMode: z.string().optional(),
     /** LongLeash's own gate for this session: whether it should page the phone at all. */
     gate: SessionGate.optional(),
+    controller: z.enum(['longleash', 'external']).optional(),
+    /** Current overrides. An empty object explicitly means provider defaults. */
+    settings: SessionSettings.optional(),
     /** A second writer was observed in this checkout; text accompanies color for accessibility. */
     workspaceConflict: z
       .object({
@@ -338,6 +343,18 @@ const startSessionMessage = z
   })
   .passthrough()
 
+const updateSessionSettingsMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('updateSessionSettings'),
+    requestId: z.string().min(1).max(120),
+    sessionId: z.string().min(1),
+    settings: SessionSettings,
+    /** Required before LongLeash ends a process that is still owned by Terminal or VS Code. */
+    externalTransferConfirmed: z.boolean().default(false),
+  })
+  .passthrough()
+
 const findFoldersMessage = z
   .object({
     ...clientBase,
@@ -455,6 +472,7 @@ const startDelegationMessage = z
       .string()
       .max(MAX_DELEGATION_BRIEFING_CHARACTERS)
       .refine((value) => value.trim().length > 0, 'Briefing must not be empty'),
+    settings: SessionSettings.optional(),
     confirmed: z.literal(true),
     /** V1 is sequential: launching moves exclusive checkout ownership from source to child. */
     workspaceTransferConfirmed: z.literal(true),
@@ -499,6 +517,7 @@ export const DelegationSummarySchema = z
     targetAgent: DelegationTargetAgent,
     role: DelegationRole,
     contextScope: DelegationContextScope,
+    settings: SessionSettings.optional(),
     depth: z.number().int().min(1).max(MAX_DELEGATION_DEPTH),
     status: DelegationStatus,
     failure: z.string().optional(),
@@ -604,6 +623,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   decisionMessage,
   sendMessageMessage,
   startSessionMessage,
+  updateSessionSettingsMessage,
   stopSessionMessage,
   resumeSessionMessage,
   findFoldersMessage,

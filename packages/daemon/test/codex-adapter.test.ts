@@ -351,6 +351,35 @@ describe('the Codex adapter — what reaches the phone', () => {
     ])
   })
 
+  it('keeps the same thread and applies changed model and effort on the next turn', async () => {
+    const h = start(undefined, { settings: { model: 'gpt-5.4', effort: 'medium' } })
+    await handshake(h, 'thr-stays-the-same')
+    await h.handle.updateSettings?.({ model: 'gpt-5.6', effort: 'xhigh' })
+    h.handle.sendMessage('continue with deeper reasoning')
+    await settle()
+
+    const turns = h.server.sent.filter((message) => message.method === 'turn/start')
+    expect(turns).toHaveLength(2)
+    expect(turns[1]?.params).toMatchObject({
+      threadId: 'thr-stays-the-same',
+      model: 'gpt-5.6',
+      effort: 'xhigh',
+      input: [{ type: 'text', text: 'continue with deeper reasoning' }],
+    })
+    expect(h.server.sent.filter((message) => message.method === 'thread/start')).toHaveLength(1)
+  })
+
+  it('clears per-turn overrides when the person returns to provider defaults', async () => {
+    const h = start(undefined, { settings: { model: 'gpt-5.6', effort: 'high' } })
+    await handshake(h)
+    await h.handle.updateSettings?.({})
+    h.handle.sendMessage('use defaults now')
+    await settle()
+    const turns = h.server.sent.filter((message) => message.method === 'turn/start')
+    expect(turns[1]?.params).not.toHaveProperty('model')
+    expect(turns[1]?.params).not.toHaveProperty('effort')
+  })
+
   it('surfaces a Codex error rather than going quiet', async () => {
     const h = start()
     await handshake(h)

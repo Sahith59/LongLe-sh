@@ -128,6 +128,14 @@ export interface SessionListing extends SessionSummary {
   resumable: boolean
   /** The agent's conversation id, so the phone can offer `claude --resume <id>`. */
   resumeId?: string
+  controller?: 'longleash' | 'external'
+}
+
+export interface SessionWorkspaceConflict {
+  cwd: string
+  ownerSessionId: string
+  ownerKind: 'session' | 'external' | 'reservation'
+  ownerOrigin: string
 }
 
 export interface StartSessionInput {
@@ -356,6 +364,112 @@ export class SessionManager {
     return this.agentFactories[agent] !== undefined
   }
 
+  /**
+   * Current process ownership, deliberately independent of the session's historical origin.
+   *
+   * A Terminal or VS Code conversation can be handed to LongLeash and then be backed by a
+   * managed SDK process. Routing lifecycle operations by `origin` after that handoff sends the
+   * stop to the old owner and is both inaccurate and unsafe.
+   */
+  hasLiveSession(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId)
+    return session !== undefined && (session.status === 'running' || session.status === 'waiting')
+  }
+
+  /** True only when the provider has supplied a native conversation id that can be reopened. */
+  hasResumePoint(sessionId: string): boolean {
+    return this.resumeIdOf(sessionId) !== undefined
+  }
+
+  /**
+   * Explain why this conversation cannot acquire its checkout before any process is touched.
+   * The server uses this to show evidence (owner, surface, path, session id) instead of the old
+   * generic "did not fully release" guess.
+   */
+  workspaceConflictFor(sessionId: string): SessionWorkspaceConflict | null {
+    if (this.workspace === undefined) return null
+    const live = this.sessions.get(sessionId)
+    const row = live === undefined
+      ? this.approvals.rawDb
+          .prepare('SELECT cwd FROM sessions WHERE session_id = ?')
+          .get(sessionId) as { cwd: string } | undefined
+      : { cwd: live.cwd }
+    if (row === undefined) return null
+    const lease = this.workspace.getByCwd(row.cwd)
+    if (lease === null || lease.ownerId === sessionId) return null
+    return {
+      cwd: lease.cwd,
+      ownerSessionId: lease.ownerId,
+      ownerKind: lease.ownerKind,
+      ownerOrigin: lease.ownerOrigin,
+    }
+  }
+
+  /**
+   * Persist provider controls and, when this manager owns a live process, apply them through
+   * that provider's structured control channel. The current response is never interrupted;
+   * the returned `live` flag lets the phone explain whether the next turn or next reopen uses
+   * the settings.
+   */
+  async updateSessionSettings(
+    sessionId: string,
+    requested: SessionSettingsValue,
+    actor: string,
+  ): Promise<{ live: boolean; settings: SessionSettingsValue }> {
+    const row = this.approvals.rawDb
+      .prepare('SELECT agent, status FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { agent: string; status: SessionStatus } | undefined
+    if (row === undefined) throw new SessionError('invalid-input', 'This session is no longer known to LongLeash.')
+    const agent = AgentKind.safeParse(row.agent)
+    if (!agent.success || (agent.data !== 'claude' && agent.data !== 'codex')) {
+      throw new SessionError('unsupported-setting', 'This session provider does not expose model controls.')
+    }
+    const parsed = SessionSettings.safeParse(requested)
+    if (!parsed.success) {
+      throw new SessionError('invalid-input', parsed.error.issues[0]?.message ?? 'Invalid session settings.')
+    }
+    if (agent.data === 'codex' && parsed.data.thinking !== undefined) {
+      throw new SessionError(
+        'unsupported-setting',
+        'Codex exposes reasoning through effort. Leave Thinking on Provider default.',
+      )
+    }
+
+    const liveSession = this.sessions.get(sessionId)
+    const live = liveSession !== undefined &&
+      (liveSession.status === 'running' || liveSession.status === 'waiting')
+    if (live) {
+      if (liveSession.handle.updateSettings === undefined) {
+        throw new SessionError(
+          'unsupported-setting',
+          'This running adapter cannot change settings safely. Stop it and reopen with the new settings.',
+        )
+      }
+      // Adapter acceptance comes before persistence. Claude acknowledges its control messages;
+      // Codex safely schedules these values for its next turn/start on the same thread.
+      await liveSession.handle.updateSettings(parsed.data)
+      liveSession.settings = parsed.data
+    }
+
+    this.approvals.rawDb
+      .prepare('UPDATE sessions SET settings_json = ? WHERE session_id = ?')
+      .run(JSON.stringify(parsed.data), sessionId)
+    this.audit(actor, 'session.settings', `${sessionId}: ${JSON.stringify(parsed.data)}`)
+    const status = liveSession?.status ?? row.status
+    this.emit(sessionId, {
+      type: 'session.status',
+      payload: {
+        status,
+        live,
+        settings: parsed.data,
+        detail: live
+          ? 'Settings updated for the next response'
+          : 'Settings saved for the next continuation',
+      },
+    })
+    return { live, settings: parsed.data }
+  }
+
   async startSession(input: StartSessionInput): Promise<{ sessionId: string }> {
     const running = [...this.sessions.values()].filter(
       (s) => s.status === 'running' || s.status === 'waiting',
@@ -476,6 +590,7 @@ export class SessionManager {
           cwd,
           title,
           origin,
+          controller: 'longleash',
           ...(relationship === undefined ? {} : { relationship }),
           ...(settings === undefined ? {} : { settings }),
           workspace: sessionWorkspace,
@@ -614,6 +729,7 @@ export class SessionManager {
         ...relationshipFromRow(row),
         ...settingsFromRow(row.settings_json),
         workspace: workspaceFromRow(row),
+        controller: 'longleash',
       }
     })
   }
@@ -837,18 +953,28 @@ export class SessionManager {
     session.status = 'running'
     this.markStatus(sessionId, 'running')
     this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${trimmed}\n` } })
-    this.emit(sessionId, { type: 'session.status', payload: { status: 'running', live: true } })
+    this.emit(sessionId, {
+      type: 'session.status',
+      payload: { status: 'running', live: true, controller: 'longleash' },
+    })
     session.handle.sendMessage(trimmed)
     return true
   }
 
   /** Continue an adopted external conversation while atomically claiming its handoff lease. */
   takeOver(sessionId: string, text: string, actor: string, reservationId: string): boolean {
-    const delivered = this.wake(sessionId, text.trim(), actor, { reservationId })
-    if (!delivered) {
+    try {
+      const delivered = this.wake(sessionId, text.trim(), actor, { reservationId })
+      if (!delivered) {
+        this.workspace?.releaseReservation(reservationId, actor, 'external takeover could not start')
+      }
+      return delivered
+    } catch (error) {
+      // A provider spawn can throw after the external process released. Never strand the
+      // transfer reservation: no managed writer exists to justify keeping that checkout held.
       this.workspace?.releaseReservation(reservationId, actor, 'external takeover could not start')
+      throw error
     }
-    return delivered
   }
 
   /**
@@ -908,7 +1034,10 @@ export class SessionManager {
       session.status = 'running'
       this.markStatus(input.sessionId, 'running')
       this.emit(input.sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${text}\n` } })
-      this.emit(input.sessionId, { type: 'session.status', payload: { status: 'running', live: true } })
+      this.emit(input.sessionId, {
+        type: 'session.status',
+        payload: { status: 'running', live: true, controller: 'longleash' },
+      })
       session.handle.sendMessage(text)
       acceptedByAgent = true
       this.markDeliverySent(deliveryId)
@@ -1019,7 +1148,10 @@ export class SessionManager {
     if (opts.deliveryId !== undefined) this.markDeliverySent(opts.deliveryId)
     this.markStatus(sessionId, 'running')
     this.emit(sessionId, { type: 'stream.delta', payload: { kind: 'user', text: `\n\n› ${text}\n` } })
-    this.emit(sessionId, { type: 'session.status', payload: { status: 'running', live: true } })
+    this.emit(sessionId, {
+      type: 'session.status',
+      payload: { status: 'running', live: true, controller: 'longleash' },
+    })
     return true
   }
 

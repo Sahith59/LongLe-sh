@@ -22,7 +22,7 @@ your LAN or through an end-to-end encrypted relay when you are away.
 | Approve, deny, answer, steer, and stop | Yes | Yes |
 | Continue a provider session from a terminal | Yes | Yes |
 | Open its workspace in VS Code and resume through the CLI | Yes | Yes |
-| Choose model and reasoning effort for a new managed session | Yes | Yes |
+| Choose or change model and reasoning controls for new, delegated, or existing sessions | Yes | Yes |
 | Configure thinking mode | Yes | Through reasoning effort |
 | Delegate a reviewed briefing to the other agent and review its return | Yes | Yes |
 | Safely start another phone-managed writer in the same Git project | Yes | Yes |
@@ -137,6 +137,21 @@ owned, Safe parallel creates a private Git worktree and `longleash/<session>` br
 auto-commits, merges, pushes, or deletes the result. Read [Session portability and safe parallel
 work](docs/SESSION-PORTABILITY.md) before using concurrent writers.
 
+### Change model or reasoning during a conversation
+
+Open any Claude or Codex session and tap **Tune**. LongLeash shows the settings that are currently
+pinned to that conversation:
+
+- a live LongLeash-managed session applies the change to the **next response**; an in-progress
+  response finishes unchanged;
+- a dormant session saves the controls for its **next continuation**;
+- a live Terminal/VS Code session remains owned by that provider process until you explicitly
+  confirm **Move control to LongLeash**. LongLeash then verifies the old process ended, preserves
+  the native conversation ID, and applies the controls when you next reply from the phone.
+
+Returning every field to **Provider default** clears LongLeash's overrides. Approval, sandbox, and
+one-writer workspace safety cannot be weakened from this panel.
+
 ### Control a session started on the laptop
 
 Start Claude or Codex normally in Terminal or VS Code. A current lifecycle hook makes it appear on
@@ -172,7 +187,7 @@ route. See [the VS Code companion plan](docs/VSCODE-EXTENSION.md).
 without supervision:
 
 1. choose a transcript message or session;
-2. choose Claude or Codex and a role;
+2. choose Claude or Codex, a role, and optional child model/reasoning controls;
 3. review and edit the generated briefing;
 4. start the child as an ordinary, independently controlled session;
 5. review and edit its return before sending it to the parent.
@@ -250,6 +265,8 @@ tail -n 150 ~/.longleash/daemon.log
 | Handoff says “Preparing…” | Wait for the provider's native conversation ID; verify hooks if it never arrives |
 | Resume reports an active writer | Release or stop the old process before running the resume command |
 | Stop/takeover fails | Do not repeatedly retry; capture doctor/log output and verify the original process really exited |
+| Delegate says `not started` | Read the named safety gate; no child was created and the source kept control, so correct it and retry |
+| Another session owns the checkout | Use the refusal receipt to open/stop the named provider, surface, path, and session; nothing was sent |
 | Notification opens the wrong place | Update both daemon and phone app, then test a newly created approval |
 
 The complete guide covers pairing, connection refusal, stale sessions/approvals, hook review,

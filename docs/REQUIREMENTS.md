@@ -42,11 +42,13 @@ something (writing a file, running a shell command that modifies state) comes to
 
 Two things worth knowing plainly:
 
-- **Managed and external sessions have different configuration owners.** A session started from
-  the phone runs through LongLeash's managed adapter and safety policy; the new-session sheet may
-  select its model, effort, and supported thinking controls. A process you started in Terminal or
-  VS Code still begins under that provider surface's settings until you explicitly move it to the
-  phone. LongLeash never claims that changing a phone setting rewrites an already-running process.
+- **Managed and external sessions have different configuration owners.** New-session, Delegate,
+  and session-detail Tune surfaces may select model, effort, and supported thinking controls. A
+  live managed conversation schedules an accepted change for its next response; a dormant one
+  persists it for continuation. A process started in Terminal or VS Code begins under that
+  provider surface's settings until the person explicitly transfers control. LongLeash verifies
+  that process ended, preserves the native conversation ID, and only then applies the selected
+  controls. It never claims that a phone setting silently rewrote another live controller.
 - **Some read-only shell commands (`ls`, `find`, `pwd`) may also run without asking**, because
   the agent runtime treats them as safe. We do not control that completely — which is exactly
   why every tool that ran without asking is listed in the session's **activity feed**. Nothing

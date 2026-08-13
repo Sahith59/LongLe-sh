@@ -32,6 +32,7 @@ describe('delegation drafts', () => {
       role: 'review' as const,
       contextScope: 'selected' as const,
       briefing: 'The user edited this exact briefing.',
+      settings: { model: 'gpt-5.6', effort: 'high' as const },
       updatedAt: 123,
     }
     expect(writeDelegationDraft(draft, storage)).toBe(true)

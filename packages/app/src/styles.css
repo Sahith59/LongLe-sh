@@ -1860,7 +1860,9 @@ body {
 .workspaceoption:focus-visible,
 .session-settings summary:focus-visible,
 .session-settings select:focus-visible,
-.session-settings input:focus-visible {
+.session-settings input:focus-visible,
+.settings-sheet select:focus-visible,
+.settings-sheet input:focus-visible {
   outline: 2px solid var(--ink-2);
   outline-offset: 2px;
 }
@@ -1926,6 +1928,59 @@ body {
 .delegate-sheet {
   max-height: 92dvh;
 }
+.settings-sheet {
+  max-height: 92dvh;
+}
+.settings-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin-bottom: 14px;
+}
+.settings-title h2 { margin-bottom: 4px; }
+.settings-title .sub { margin: 0; }
+.settings-evidence {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 9px;
+  margin-bottom: 16px;
+  padding: 11px 12px;
+  border-radius: var(--r-sm);
+  background: var(--recess);
+  box-shadow: var(--sink);
+}
+.settings-evidence .k {
+  grid-row: 1 / span 2;
+  padding-top: 3px;
+  color: var(--ink-3);
+  font: 600 9.5px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.settings-evidence strong,
+.settings-evidence .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-evidence strong { font-size: 13.5px; }
+.settings-evidence .mono { color: var(--ink-3); font-size: 10.5px; }
+.settings-impact {
+  margin: 14px 0 0;
+  padding: 11px 12px;
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  background: rgba(0, 0, 0, 0.17);
+  box-shadow: var(--engrave);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-impact.bad { color: var(--clay); }
+.settings-transfer { margin-top: 12px; }
+.settings-save { margin-top: 15px; }
+.delegate-settings { margin-bottom: 14px; }
 .delegate-title {
   display: flex;
   align-items: flex-start;

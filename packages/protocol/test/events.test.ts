@@ -246,6 +246,26 @@ describe('client messages', () => {
     })).toThrow()
   })
 
+  it('validates mid-session controls and requires an explicit external handoff signal', () => {
+    const message = parseClientMessage({
+      v: PROTOCOL_VERSION,
+      type: 'updateSessionSettings',
+      requestId: 'settings-1',
+      sessionId: 'ext_existing',
+      settings: { model: 'opus', effort: 'high', thinking: { mode: 'adaptive' } },
+      externalTransferConfirmed: true,
+    })
+    expect(message).toMatchObject({
+      type: 'updateSessionSettings',
+      sessionId: 'ext_existing',
+      externalTransferConfirmed: true,
+    })
+    expect(() => parseClientMessage({
+      ...message,
+      settings: { thinking: { mode: 'fixed', budgetTokens: 10 } },
+    })).toThrowError()
+  })
+
   it('parses an attributed delegation preview request', () => {
     const msg = parseClientMessage({
       v: PROTOCOL_VERSION,
@@ -285,10 +305,15 @@ describe('client messages', () => {
       role: 'review',
       contextScope: 'recent',
       briefing: 'Review the pairing lifecycle.',
+      settings: { model: 'gpt-5.6', effort: 'high' },
       confirmed: true,
       workspaceTransferConfirmed: true,
     }
-    expect(parseClientMessage(valid)).toMatchObject({ type: 'startDelegation', confirmed: true })
+    expect(parseClientMessage(valid)).toMatchObject({
+      type: 'startDelegation',
+      confirmed: true,
+      settings: { model: 'gpt-5.6', effort: 'high' },
+    })
     expect(() => parseClientMessage({ ...valid, confirmed: false })).toThrowError()
     expect(() => parseClientMessage({ ...valid, workspaceTransferConfirmed: false })).toThrowError()
     expect(() => parseClientMessage({ ...valid, briefing: 'x'.repeat(24_001) })).toThrowError()

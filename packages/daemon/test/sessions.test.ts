@@ -6,6 +6,7 @@ import { EventLog } from '../src/eventlog.js'
 import { ApprovalStore } from '../src/approvals.js'
 import { SessionManager, SessionError } from '../src/sessions.js'
 import type { AgentFactory, AgentRunRequest, PermissionDecision } from '../src/agent.js'
+import type { SessionSettings } from '@longleash/protocol'
 
 /** Deterministic stand-in for a real agent: the test drives it step by step. */
 class FakeAgent {
@@ -21,6 +22,7 @@ class FakeAgent {
 
   /** Runs this fake has been asked to start, with the resume id each was given. */
   readonly runs: (string | undefined)[] = []
+  readonly settingsUpdates: SessionSettings[] = []
 
   readonly factory: AgentFactory = (request) => {
     this.request = request
@@ -34,6 +36,9 @@ class FakeAgent {
       events: this.iterate(),
       sendMessage: (text: string) => {
         this.received.push(text)
+      },
+      updateSettings: async (settings) => {
+        this.settingsUpdates.push(settings)
       },
       interrupt: async () => {
         this.finish()
@@ -1127,6 +1132,62 @@ describe('replying to a dormant conversation wakes it', () => {
     })
     expect(revived.listSessions().find((session) => session.sessionId === sessionId)?.settings)
       .toEqual(fresh.settings)
+  })
+
+  it('applies live controls to the next response and publishes the acknowledged settings', async () => {
+    const { sessionId } = await h.manager.startSession({
+      agent: 'claude', cwd: h.root, prompt: 'review it', settings: { model: 'sonnet' },
+    })
+    const result = await h.manager.updateSessionSettings(sessionId, {
+      model: 'opus', effort: 'high', thinking: { mode: 'adaptive' },
+    }, 'dev_phone')
+
+    expect(result).toEqual({
+      live: true,
+      settings: { model: 'opus', effort: 'high', thinking: { mode: 'adaptive' } },
+    })
+    expect(h.agent.settingsUpdates).toEqual([
+      { model: 'opus', effort: 'high', thinking: { mode: 'adaptive' } },
+    ])
+    expect(h.manager.listSessions().find((session) => session.sessionId === sessionId)?.settings)
+      .toEqual(result.settings)
+    expect(eventsOf(h.log, sessionId).at(-1)).toMatchObject({
+      type: 'session.status',
+      payload: { settings: result.settings, detail: 'Settings updated for the next response' },
+    })
+  })
+
+  it('persists dormant controls and uses them when the same native conversation wakes', async () => {
+    const { sessionId } = await h.manager.startSession({ agent: 'claude', cwd: h.root, prompt: 'review it' })
+    await h.manager.stopSession(sessionId, 'dev_phone')
+    const updated = await h.manager.updateSessionSettings(sessionId, {
+      model: 'opus', effort: 'xhigh', thinking: { mode: 'fixed', budgetTokens: 16_384 },
+    }, 'dev_phone')
+    expect(updated.live).toBe(false)
+
+    const fresh = new FakeAgent()
+    const revived = revive(fresh)
+    expect(revived.sendMessage(sessionId, 'continue', 'dev_phone')).toBe(true)
+    expect(fresh.runs).toEqual(['claude_1'])
+    expect(fresh.settings).toEqual(updated.settings)
+  })
+
+  it('refuses Codex-only-incompatible thinking rather than displaying a setting it cannot apply', async () => {
+    const codex = new FakeAgent()
+    const manager = new SessionManager({
+      eventLog: h.log,
+      approvals: h.approvals,
+      allowedRoots: [h.root],
+      agentFactories: { codex: codex.factory },
+    })
+    const { sessionId } = await manager.startSession({ agent: 'codex', cwd: h.root, prompt: 'review it' })
+    await expect(manager.updateSessionSettings(
+      sessionId,
+      { thinking: { mode: 'adaptive' } },
+      'dev_phone',
+    )).rejects.toMatchObject({ reason: 'unsupported-setting' })
+    expect(codex.settingsUpdates).toEqual([])
+    await manager.shutdown()
   })
 
   it('the woken conversation continues in the same event stream, as the same session', async () => {

@@ -13,6 +13,7 @@ import { ConsoleScreen, DetailScreen, Rail } from './App.js'
 import { NewSessionSheet } from './ui/NewSessionSheet.js'
 import { DelegateSheet, type PreviewDelegationInput } from './ui/DelegateSheet.js'
 import { ReturnSheet } from './ui/ReturnSheet.js'
+import { SessionSettingsSheet, type SettingsUpdateState } from './ui/SessionSettingsSheet.js'
 import type { DelegationPreview, DelegationReturnPreview, DelegationSummary } from '@longleash/protocol'
 import type { Block, PendingApproval, SessionView, StoreState } from './lib/store.js'
 import type { FolderHit } from './lib/client.js'
@@ -513,10 +514,68 @@ function ReturnPreviewScreen() {
   )
 }
 
+function SettingsPreview() {
+  const [update, setUpdate] = useState<SettingsUpdateState | null>(null)
+  const externalSession: SessionView = {
+    ...sticknotes,
+    sessionId: 's-settings',
+    title: 'LongLeash — VS Code',
+    origin: 'vscode',
+    controller: 'external',
+    settings: { model: 'sonnet', effort: 'high', thinking: { mode: 'adaptive' } },
+  }
+
+  return (
+    <>
+      <Rail connected via="lan" onBack={noop} />
+      <DetailScreen
+        session={externalSession}
+        approvals={[]}
+        connected
+        diagnostic={null}
+        error={null}
+        onClearError={noop}
+        onDecide={noop}
+        onAnswer={noop}
+        onLeave={noop}
+        onStop={noop}
+        onResume={noop}
+        onSend={never}
+        onTakeOver={never}
+        onSetGate={noop}
+      />
+      <SessionSettingsSheet
+        open
+        session={externalSession}
+        connected
+        catalog={{
+          claude: {
+            models: ['sonnet', 'opus', 'haiku'],
+            efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+            thinking: ['adaptive', 'disabled', 'fixed'],
+          },
+          codex: {
+            models: ['gpt-5.6', 'gpt-5.4', 'gpt-5.3-codex'],
+            efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+            thinking: [],
+          },
+        }}
+        update={update}
+        onSave={(input) => {
+          setUpdate({ requestId: input.requestId, state: 'saved', outcome: 'next-continuation' })
+          return true
+        }}
+        onClose={noop}
+      />
+    </>
+  )
+}
+
 function Preview() {
   if (screen === 'flow') return <Flow />
   if (screen === 'delegate') return <DelegatePreview />
   if (screen === 'return') return <ReturnPreviewScreen />
+  if (screen === 'settings') return <SettingsPreview />
 
   if (screen === 'question') {
     return (

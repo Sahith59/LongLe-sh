@@ -9,6 +9,7 @@ import type {
   AgentStreamMessage,
   PermissionDecision,
 } from '../agent.js'
+import type { SessionSettings } from '@longleash/protocol'
 
 /**
  * Codex CLI as a first-class LongLeash agent, driven through `codex app-server` — the
@@ -113,12 +114,15 @@ class CodexRun {
   private readonly toolItems = new Map<string, { name: string; input: unknown }>()
   private readonly approvalItems = new Set<string>()
   private readonly log: (line: string) => void
+  /** Per-turn overrides; updating this affects the next turn without replacing the thread. */
+  private settings: SessionSettings
 
   constructor(
     private readonly request: AgentRunRequest,
     private readonly opts: CodexAdapterOptions,
   ) {
     this.log = opts.log ?? (() => {})
+    this.settings = { ...(request.settings ?? {}) }
     this.child =
       opts.spawnServer?.() ??
       (spawn('codex', ['app-server'], {
@@ -175,6 +179,11 @@ class CodexRun {
         if (this.threadId === null) return
         void this.startTurn(text)
       },
+      updateSettings: async (settings) => {
+        // app-server accepts model and effort on every turn/start. Keeping the same thread id
+        // preserves the conversation while the next turn receives the new controls.
+        this.settings = { ...settings }
+      },
     }
   }
 
@@ -192,7 +201,7 @@ class CodexRun {
         this.request.resume === undefined
           ? {
             cwd: this.request.cwd,
-            ...(this.request.settings?.model === undefined ? {} : { model: this.request.settings.model }),
+            ...(this.settings.model === undefined ? {} : { model: this.settings.model }),
             approvalPolicy: this.opts.approvalPolicy ?? 'untrusted',
             sandbox: this.opts.sandbox ?? 'workspace-write',
             config: MANAGED_THREAD_CONFIG,
@@ -200,7 +209,7 @@ class CodexRun {
           : {
               threadId: this.request.resume,
               cwd: this.request.cwd,
-              ...(this.request.settings?.model === undefined ? {} : { model: this.request.settings.model }),
+              ...(this.settings.model === undefined ? {} : { model: this.settings.model }),
               approvalPolicy: this.opts.approvalPolicy ?? 'untrusted',
               sandbox: this.opts.sandbox ?? 'workspace-write',
               config: MANAGED_THREAD_CONFIG,
@@ -231,8 +240,8 @@ class CodexRun {
       await this.call('turn/start', {
         threadId: this.threadId,
         input: [{ type: 'text', text }],
-        ...(this.request.settings?.model === undefined ? {} : { model: this.request.settings.model }),
-        ...(this.request.settings?.effort === undefined ? {} : { effort: this.request.settings.effort }),
+        ...(this.settings.model === undefined ? {} : { model: this.settings.model }),
+        ...(this.settings.effort === undefined ? {} : { effort: this.settings.effort }),
       })
     } catch (error) {
       if (fatal) throw error

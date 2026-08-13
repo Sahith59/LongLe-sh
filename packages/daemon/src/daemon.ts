@@ -1,5 +1,6 @@
 import { accessSync, constants, mkdirSync, existsSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
+import { pauseCurrentSessionOwner } from './delegation-handoff.js'
 import { homedir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { EventLog } from './eventlog.js'
@@ -273,12 +274,8 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     onUpdate: (delegation) => server.broadcastDelegation(delegation),
     returns: new ReturnBuilder(eventLog),
     workspace,
-    pauseSession: async (session, actor, reason) => {
-      if (session.origin === 'terminal' || session.origin === 'vscode') {
-        return external.stop(session.sessionId, actor)
-      }
-      return sessions.pauseSession(session.sessionId, actor, reason)
-    },
+    pauseSession: (session, actor, reason) =>
+      pauseCurrentSessionOwner(sessions, external, session, actor, reason),
   })
   server.attachDelegations(delegationManager)
 

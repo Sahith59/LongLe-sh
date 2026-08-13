@@ -244,6 +244,18 @@ describe.each([
     target.runs[0]?.finish()
     await eventually(() => expect(h.manager.list()[0]?.status).toBe('ready'))
   })
+
+  it('passes reviewed child model controls through the ordinary attributed runner', async () => {
+    const h = makeHarness({ sourceAgent })
+    const result = await h.manager.start(request({
+      targetAgent,
+      settings: targetAgent === 'claude'
+        ? { model: 'opus', effort: 'high', thinking: { mode: 'adaptive' } }
+        : { model: 'gpt-5.6', effort: 'high' },
+    }))
+    const target = targetAgent === 'claude' ? h.claude : h.codex
+    expect(target.requests[0]?.settings).toEqual(result.delegation.settings)
+  })
 })
 
 describe('launch integrity and recovery', () => {
@@ -386,6 +398,61 @@ describe('launch integrity and recovery', () => {
     expect(h.claude.requests[0]!.prompt).toBe(
       `Returned from Codex · Review\nChild session: Review · Repair pairing lifecycle\nDelegation: ${started.delegation.delegationId}\n\n\nUser-edited exact return.\n`,
     )
+  })
+
+  it('does not mistake historical VS Code origin for the current managed controller', async () => {
+    const h = makeHarness()
+    const started = await h.manager.start(request())
+    h.codex.runs[0]!.complete('Managed child result.')
+    await eventually(() => expect(h.manager.list()[0]?.status).toBe('ready'))
+
+    h.source.live = true
+    h.source.status = 'waiting'
+    h.source.controller = 'longleash'
+    expect(h.manager.prepareReturn(started.delegation.delegationId).requiresTakeover).toBe(false)
+  })
+
+  it('stops a reviewed return when structured pause evidence says the child still owns it', async () => {
+    const h = makeHarness({ workspace: true })
+    h.sessions.adoptEndedSession({
+      sessionId: h.source.sessionId,
+      agent: 'claude',
+      cwd: h.source.cwd,
+      title: h.source.title,
+      origin: h.source.origin,
+      startedAt: h.source.startedAt,
+      agentSessionId: 'native_parent',
+    })
+    const started = await h.manager.start(request())
+    h.codex.runs[0]!.complete('Guarded child result.')
+    await eventually(() => expect(h.manager.list()[0]?.status).toBe('ready'))
+
+    const workspace = new WorkspaceLeaseManager(h.approvals.rawDb)
+    const guarded = new DelegationManager({
+      store: h.store,
+      sessions: h.sessions,
+      briefings: new BriefingBuilder(h.log),
+      returns: new ReturnBuilder(h.log),
+      workspace,
+      sourceSessions: () => [h.source, ...h.sessions.listSessions()],
+      pauseSession: async () => ({
+        paused: false,
+        message: 'The child process is still verified live; no return was delivered.',
+      }),
+    })
+    await expect(guarded.returnDelegation({
+      delegationId: started.delegation.delegationId,
+      idempotencyKey: 'guarded-return',
+      returnText: 'Do not deliver this.',
+      takeoverConfirmed: false,
+      actor: 'dev_phone',
+    })).rejects.toMatchObject({
+      reason: 'delivery-failed',
+      message: 'The child process is still verified live; no return was delivered.',
+    })
+    expect(h.claude.requests).toHaveLength(0)
+    expect(h.manager.list()[0]?.status).toBe('ready')
+    expect(workspace.getByCwd(h.root)?.ownerId).toBe(started.delegation.targetSessionId)
   })
 
   it('serializes simultaneous returns so one reviewed message crosses the async handoff boundary', async () => {

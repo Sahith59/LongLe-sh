@@ -171,6 +171,36 @@ Codex conversation ID. Native IDs produce copyable resume commands for every ori
 
 See [Session portability](SESSION-PORTABILITY.md) for the user-facing behavior and limits.
 
+## Model and reasoning control
+
+Model choices belong to a conversation, not to the phone screen that happens to be open. The PWA
+sends one typed settings update and the daemon routes it according to the current controller:
+
+```mermaid
+flowchart LR
+    Phone["Phone · Model & reasoning"] --> Daemon["Typed settings update"]
+    Daemon -->|"managed + live"| Live["Apply after the current response"]
+    Daemon -->|"managed + dormant"| Resume["Persist for the next continuation"]
+    Daemon -->|"Terminal / VS Code"| Consent{"User confirms control transfer"}
+    Consent -->|"no"| Preserve["Leave native process untouched"]
+    Consent -->|"yes"| Verify["Stop + verify release"]
+    Verify --> Adopt["Resume the same native conversation under LongLeash"]
+    Live --> Provider["Provider adapter"]
+    Resume --> Provider
+    Adopt --> Provider
+```
+
+Claude's managed adapter updates model, effort, and thinking controls on the active SDK query.
+Codex keeps the same thread and sends model and reasoning effort on its next `turn/start`. Custom
+model identifiers are allowed because provider catalogs can change; the provider remains the final
+authority and may reject an unavailable value when the next response starts. Codex has no separate
+boolean thinking switch, so the protocol rejects that combination before touching a live process.
+
+For a native Terminal or VS Code process, LongLeash first shows the exact surface, native
+conversation ID, and checkout that will move. It never changes a process behind the user's back.
+If release cannot be verified, the native process remains the owner and the settings update does
+not claim success.
+
 ## Reconnect and replay
 
 The phone is designed as if it is always about to disconnect:

@@ -786,10 +786,12 @@ export class ExternalSessions {
   listSessions(): {
     sessionId: string
     agent: TerminalAgent
+    live: boolean
     cwd: string
     status: SessionStatus
     startedAt: number
     origin: Surface
+    controller: 'external'
     title: string
     resumable: boolean
     resumeId: string
@@ -811,6 +813,7 @@ export class ExternalSessions {
       // always offer `claude --resume <id>` for picking it up later.
       resumeId: claudeSessionId,
       gate: session.gate,
+      controller: 'external' as const,
       ...(session.workspaceConflict === undefined ? {} : { workspaceConflict: session.workspaceConflict }),
     }))
   }
@@ -934,11 +937,15 @@ export class ExternalSessions {
           cwd,
           title: session.title,
           origin: surface,
+          controller: 'external',
           resumeId: claudeSessionId,
         },
       })
     }
-    this.emit(sessionId, { type: 'session.status', payload: { status: 'running', live: true } })
+    this.emit(sessionId, {
+      type: 'session.status',
+      payload: { status: 'running', live: true, controller: 'external' },
+    })
 
     session.timer = setInterval(() => this.drain(session), this.pollMs)
     session.timer.unref?.()

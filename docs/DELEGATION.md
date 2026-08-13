@@ -312,6 +312,8 @@ check and is not represented as completed here.
 - [x] Idempotent `startDelegation`.
 - [x] Target capability discovery from the daemon.
 - [x] Target child launch through the existing `SessionManager`.
+- [x] Optional child model, effort, and provider-supported thinking controls, persisted with the
+  reviewed launch and editable later from the child session.
 - [x] Durable source/child navigation and status.
 - [x] Independent child approvals, Stop, errors, and notifications.
 - [x] Depth and concurrent-session limits.
@@ -503,3 +505,4 @@ the linked commits, and current tests to know what is complete and what comes ne
 | 2026-08-12 | Phase 1C reviewed return | Implementation complete; live-device/vendor QA pending | Deterministic reviewed draft, durable at-most-once return delivery, explicit takeover, exact attribution, and concurrent retry coverage in the 690-test clean gate |
 | 2026-08-12 | Phase 1D workspace hardening | Implementation complete; live-device/vendor QA pending | Atomic durable leases, sequential handoff, process conflict enforcement, bounded interrupt recovery, restart reconciliation, and conflict UI coverage in the 690-test clean gate |
 | 2026-08-12 | Phase 2 foundation: safe parallel launch + portable settings/handoff | Implementation complete; physical-device/vendor QA pending | Automatic isolated Git worktrees for a second phone-launched writer; verified external-process drain before takeover; universal Terminal/VS Code workspace handoffs; persisted Claude/Codex model and effort controls; 702-test clean gate plus all typechecks and production builds |
+| 2026-08-12 | Pre-Phase-2 owner routing + conversation controls | Implementation complete; physical-device/vendor QA pending | Current-owner delegation pause and return, truthful `not started` history migration, evidence-rich VS Code refusal receipts, child settings, and live/dormant/external Tune flows; 738-test clean gate plus all typechecks and production builds |

@@ -145,6 +145,25 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
       },
     })
 
+    let activeSettings = { ...(request.settings ?? {}) }
+    const applySettings = async (settings: typeof activeSettings) => {
+      await run.setModel(settings.model)
+      await run.applyFlagSettings({ effortLevel: settings.effort ?? null })
+      if (settings.thinking === undefined) {
+        await run.applyFlagSettings({ alwaysThinkingEnabled: null })
+        await run.setMaxThinkingTokens(null)
+      } else if (settings.thinking.mode === 'disabled') {
+        await run.applyFlagSettings({ alwaysThinkingEnabled: false })
+        await run.setMaxThinkingTokens(0)
+      } else if (settings.thinking.mode === 'adaptive') {
+        await run.applyFlagSettings({ alwaysThinkingEnabled: true })
+        await run.setMaxThinkingTokens(null)
+      } else {
+        await run.applyFlagSettings({ alwaysThinkingEnabled: true })
+        await run.setMaxThinkingTokens(settings.thinking.budgetTokens as number)
+      }
+    }
+
     async function* mapStream(): AsyncGenerator<AgentStreamMessage> {
       for await (const message of run) {
         if (message.type === 'system' && (message as { subtype?: string }).subtype === 'init') {
@@ -176,6 +195,26 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
     return {
       events: mapStream(),
       sendMessage: (text: string) => push(text),
+      updateSettings: async (settings) => {
+        // The streaming SDK exposes these as live session controls. They apply to subsequent
+        // responses; changing an in-flight generation would be surprising and is not attempted.
+        const previous = activeSettings
+        try {
+          await applySettings(settings)
+          activeSettings = { ...settings }
+        } catch (error) {
+          // Several SDK controls form one phone action. If a later control is rejected, restore
+          // the last acknowledged set so the persisted UI cannot diverge from the provider.
+          try {
+            await applySettings(previous)
+          } catch (rollbackError) {
+            throw new Error(
+              `Claude rejected the settings and the previous controls could not be restored: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+            )
+          }
+          throw error
+        }
+      },
       interrupt: async () => {
         closed = true
         wake?.()

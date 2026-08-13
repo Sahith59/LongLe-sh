@@ -51,6 +51,8 @@ export interface SessionView {
   permissionMode?: string
   /** LongLeash's own gate: 'ask' pages the phone, 'auto' stays silent. */
   gate?: 'ask' | 'auto'
+  /** Current process owner; origin remains historical after a handoff. */
+  controller?: 'longleash' | 'external'
   /** Present when this session was deliberately created from another LongLeash session. */
   relationship?: SessionRelationship
   settings?: SessionSettings
@@ -96,6 +98,7 @@ export interface SessionSeed {
   resumable?: boolean
   resumeId?: string
   gate?: 'ask' | 'auto'
+  controller?: 'longleash' | 'external'
   relationship?: SessionRelationship
   settings?: SessionSettings
   workspace?: SessionWorkspace
@@ -259,9 +262,11 @@ export function createStore(options: StoreOptions = {}) {
           title?: string
           permissionMode?: string
           gate?: 'ask' | 'auto'
+          controller?: 'longleash' | 'external'
           live?: boolean
           resumable?: boolean
           resumeId?: string
+          settings?: SessionSettings
           workspaceConflict?: { cwd: string; ownerSessionId: string; processPaused?: boolean }
         }
         if (payload.status === 'waiting' || payload.status === 'running') {
@@ -272,10 +277,12 @@ export function createStore(options: StoreOptions = {}) {
         if (typeof payload.live === 'boolean') session.live = payload.live
         if (typeof payload.resumable === 'boolean') session.resumable = payload.resumable
         if (payload.resumeId) session.resumeId = payload.resumeId
+        if (payload.settings !== undefined) session.settings = payload.settings
         // A terminal session renames itself once it knows what it was asked to do.
         if (payload.title !== undefined && payload.title !== '') session.title = payload.title
         if (payload.permissionMode !== undefined) session.permissionMode = payload.permissionMode
         if (payload.gate !== undefined) session.gate = payload.gate
+        if (payload.controller !== undefined) session.controller = payload.controller
         if (payload.workspaceConflict !== undefined) session.workspaceConflict = payload.workspaceConflict
         else delete session.workspaceConflict
         break
@@ -323,6 +330,9 @@ export function createStore(options: StoreOptions = {}) {
       session.live = seed.live ?? true
       if (seed.resumeId) session.resumeId = seed.resumeId
       if (seed.gate) session.gate = seed.gate
+      session.controller = seed.controller ?? (
+        seed.live && (seed.origin === 'terminal' || seed.origin === 'vscode') ? 'external' : 'longleash'
+      )
       if (seed.relationship) session.relationship = seed.relationship
       if (seed.settings) session.settings = seed.settings
       if (seed.workspace) session.workspace = seed.workspace

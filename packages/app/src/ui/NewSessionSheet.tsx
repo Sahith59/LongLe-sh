@@ -5,6 +5,11 @@ import type { AgentSettingsCatalog, FolderHit } from '../lib/client.js'
 import { EXIT, Key, SPRING, useKeyboardInset, useVisualViewportHeight } from './primitives.js'
 import { fileName, parentPath } from './format.js'
 import type { SessionSettings, WorkspaceMode } from '@longleash/protocol'
+import {
+  SessionSettingsFields,
+  settingsDraft,
+  settingsFromDraft,
+} from './SessionSettingsFields.js'
 
 const AGENT_NAME = { claude: 'Claude', codex: 'Codex' } as const
 const AGENT_DETAIL = { claude: 'Anthropic agent', codex: 'OpenAI agent' } as const
@@ -168,11 +173,7 @@ function SheetBody({
   const [prompt, setPrompt] = useState('')
   const [agent, setAgent] = useState<'claude' | 'codex'>('claude')
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('auto')
-  const [model, setModel] = useState('')
-  const [customModel, setCustomModel] = useState('')
-  const [effort, setEffort] = useState('')
-  const [thinking, setThinking] = useState('')
-  const [thinkingBudget, setThinkingBudget] = useState('10000')
+  const [settings, setSettings] = useState(() => settingsDraft({}, settingsCatalog, 'claude'))
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
 
   // Search as you type, debounced: nobody should have to recall an absolute path from memory.
@@ -195,12 +196,20 @@ function SheetBody({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  const pickAgent = (next: 'claude' | 'codex') => {
+    if (next === agent) return
+    setAgent(next)
+    // Provider model ids are not interchangeable. Resetting here prevents a Claude alias from
+    // being invisibly carried into Codex (or vice versa) after the person changes their choice.
+    setSettings(settingsDraft({}, settingsCatalog, next))
+  }
+
   if (roots.length === 0) {
     return (
       <>
         <h2>Start a session</h2>
         <StepLabel number={1}>Choose an agent</StepLabel>
-        <AgentPicker agent={agent} onPick={setAgent} />
+        <AgentPicker agent={agent} onPick={pickAgent} />
         <p className="sub">No project directories are configured on the laptop.</p>
       </>
     )
@@ -213,7 +222,7 @@ function SheetBody({
         <h2>Start a session</h2>
         <p className="sub">Review the agent and project, then describe the task.</p>
         <StepLabel number={1}>Agent</StepLabel>
-        <AgentPicker agent={agent} onPick={setAgent} />
+        <AgentPicker agent={agent} onPick={pickAgent} />
 
         <StepLabel number={2}>Project</StepLabel>
         <div className="chosen">
@@ -293,68 +302,12 @@ function SheetBody({
         <details className="session-settings">
           <summary>Model &amp; reasoning</summary>
           <p>Optional. Defaults follow the provider installed on your laptop.</p>
-          <div className="settingsgrid">
-            <label>
-              <span>Model</span>
-              <select value={model} onChange={(event) => setModel(event.target.value)}>
-                <option value="">Provider default</option>
-                {(settingsCatalog?.[agent].models ?? (agent === 'claude'
-                  ? ['sonnet', 'opus', 'haiku']
-                  : ['gpt-5.6', 'gpt-5.4', 'gpt-5.3-codex'])).map((value) => (
-                    <option key={value} value={value}>{value}</option>
-                  ))}
-                <option value="__custom__">Custom model ID…</option>
-              </select>
-            </label>
-            {model === '__custom__' ? (
-              <label>
-                <span>Custom model ID</span>
-                <input
-                  type="text"
-                  value={customModel}
-                  onChange={(event) => setCustomModel(event.target.value)}
-                  placeholder={agent === 'claude' ? 'provider model alias' : 'model id'}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                />
-              </label>
-            ) : null}
-            <label>
-              <span>Effort</span>
-              <select value={effort} onChange={(event) => setEffort(event.target.value)}>
-                <option value="">Provider default</option>
-                {(settingsCatalog?.[agent].efforts ?? ['low', 'medium', 'high', 'xhigh', 'max']).map((value) => (
-                  <option key={value} value={value}>{value}</option>
-                ))}
-              </select>
-            </label>
-            {agent === 'claude' ? (
-              <label>
-                <span>Thinking</span>
-                <select value={thinking} onChange={(event) => setThinking(event.target.value)}>
-                  <option value="">Provider default</option>
-                  <option value="adaptive">Adaptive</option>
-                  <option value="disabled">Off</option>
-                  <option value="fixed">Fixed budget</option>
-                </select>
-              </label>
-            ) : null}
-            {agent === 'claude' && thinking === 'fixed' ? (
-              <label>
-                <span>Thinking tokens</span>
-                <input
-                  type="number"
-                  min={1024}
-                  max={128000}
-                  step={1024}
-                  value={thinkingBudget}
-                  onChange={(event) => setThinkingBudget(event.target.value)}
-                  inputMode="numeric"
-                />
-              </label>
-            ) : null}
-          </div>
+          <SessionSettingsFields
+            agent={agent}
+            value={settings}
+            onChange={setSettings}
+            {...(settingsCatalog === undefined ? {} : { catalog: settingsCatalog })}
+          />
           <small className="settingsnote">Approval and sandbox safety remain managed by LongLeash.</small>
         </details>
 
@@ -363,12 +316,7 @@ function SheetBody({
           disabled={
             !prompt.trim() ||
             !connected || starting ||
-            (model === '__custom__' && customModel.trim() === '') ||
-            (agent === 'claude' && thinking === 'fixed' && (
-              !Number.isInteger(Number(thinkingBudget)) ||
-              Number(thinkingBudget) < 1024 ||
-              Number(thinkingBudget) > 128000
-            ))
+            settingsFromDraft(settings, agent).error !== undefined
           }
           onClick={() => {
             const dir = chosen.kind === 'file' ? parentPath(chosen.path) : chosen.path
@@ -376,22 +324,10 @@ function SheetBody({
               chosen.kind === 'file'
                 ? `In the file ${fileName(chosen.label)}: ${prompt.trim()}`
                 : prompt.trim()
-            const parsedBudget = Number.parseInt(thinkingBudget, 10)
-            const selectedModel = model === '__custom__' ? customModel.trim() : model
-            const settings: SessionSettings = {
-              ...(selectedModel === '' ? {} : { model: selectedModel }),
-              ...(effort === '' ? {} : { effort: effort as SessionSettings['effort'] }),
-              ...(agent !== 'claude' || thinking === ''
-                ? {}
-                : {
-                    thinking: thinking === 'fixed'
-                      ? { mode: 'fixed' as const, budgetTokens: parsedBudget }
-                      : { mode: thinking as 'adaptive' | 'disabled' },
-                  }),
-            }
+            const selectedSettings = settingsFromDraft(settings, agent).settings
             if (onStart(dir, task, agent, {
               workspaceMode,
-              ...(Object.keys(settings).length === 0 ? {} : { settings }),
+              ...(Object.keys(selectedSettings).length === 0 ? {} : { settings: selectedSettings }),
             })) return
           }}
         >
@@ -407,7 +343,7 @@ function SheetBody({
       <h2>Start a session</h2>
       <p className="sub">Pick who should work, then find the project on your laptop.</p>
       <StepLabel number={1}>Choose an agent</StepLabel>
-      <AgentPicker agent={agent} onPick={setAgent} />
+      <AgentPicker agent={agent} onPick={pickAgent} />
 
       <label className="step-label" htmlFor="new-session-folder">
         <span className="step-number" aria-hidden="true">2</span>

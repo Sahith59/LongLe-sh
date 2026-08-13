@@ -6,7 +6,9 @@ import {
   DelegationStatus,
   MAX_DELEGATION_BRIEFING_CHARACTERS,
   MAX_DELEGATION_DEPTH,
+  SessionSettings,
   type DelegationSummary,
+  type SessionSettings as SessionSettingsValue,
   type SessionRelationship,
 } from '@longleash/protocol'
 import { ensureColumns } from './migrate.js'
@@ -24,6 +26,7 @@ export interface DelegationRecord {
   contextScope: DelegationContextScope
   depth: number
   briefing: string
+  settings?: SessionSettingsValue
   returnText?: string
   returnIdempotencyKey?: string
   returnedBy?: string
@@ -44,6 +47,7 @@ export interface CreateDelegationInput {
   contextScope: DelegationContextScope
   depth: number
   briefing: string
+  settings?: SessionSettingsValue
   createdBy: string
 }
 
@@ -68,6 +72,7 @@ interface DelegationRow {
   context_scope: string
   depth: number
   briefing: string
+  settings_json: string | null
   return_text: string | null
   return_idempotency_key: string | null
   returned_by: string | null
@@ -126,6 +131,7 @@ export class DelegationStore {
       CREATE INDEX IF NOT EXISTS delegations_target ON delegations (target_session_id);
     `)
     ensureColumns(this.db, 'delegations', [
+      { name: 'settings_json', definition: 'TEXT' },
       { name: 'return_idempotency_key', definition: 'TEXT' },
       { name: 'returned_by', definition: 'TEXT' },
       { name: 'returned_at', definition: 'INTEGER' },
@@ -135,6 +141,19 @@ export class DelegationStore {
       ON delegations (return_idempotency_key)
       WHERE return_idempotency_key IS NOT NULL;
     `)
+    // Repair the exact misleading failure produced by the former origin-based pause router.
+    // The durable attempt remains history, but the phone should not keep claiming a child
+    // failed when the safety gate stopped before any child existed.
+    this.db.prepare(
+      `UPDATE delegations
+       SET failure = ?
+       WHERE status = 'failed'
+         AND target_session_id IS NULL
+         AND failure = ?`,
+    ).run(
+      'This handoff stopped before a child was created because LongLeash could not verify a safe source pause. The source kept control. Retry from the source with the updated owner routing.',
+      'The source could not be paused safely because it has no recoverable conversation point.',
+    )
   }
 
   /**
@@ -160,9 +179,9 @@ export class DelegationStore {
       .prepare(
         `INSERT INTO delegations (
           delegation_id, idempotency_key, source_session_id, source_seq, target_session_id,
-          target_agent, role, context_scope, depth, briefing, return_text, status, failure,
+          target_agent, role, context_scope, depth, briefing, settings_json, return_text, status, failure,
           created_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, 'draft', NULL, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, 'draft', NULL, ?, ?, ?)`,
       )
       .run(
         delegationId,
@@ -174,6 +193,7 @@ export class DelegationStore {
         clean.contextScope,
         clean.depth,
         clean.briefing,
+        clean.settings === undefined ? null : JSON.stringify(clean.settings),
         clean.createdBy,
         at,
         at,
@@ -436,6 +456,16 @@ export class DelegationStore {
     if (input.sourceSeq !== undefined && (!Number.isInteger(input.sourceSeq) || input.sourceSeq < 1)) {
       throw new DelegationError('invalid-input', 'Selected transcript sequence must be positive.')
     }
+    const settings = SessionSettings.safeParse(input.settings ?? {})
+    if (!settings.success) {
+      throw new DelegationError('invalid-input', settings.error.issues[0]?.message ?? 'Child settings are invalid.')
+    }
+    if (input.targetAgent === 'codex' && settings.data.thinking !== undefined) {
+      throw new DelegationError(
+        'invalid-input',
+        'Codex exposes reasoning through effort. Leave Thinking on Provider default.',
+      )
+    }
     return {
       idempotencyKey,
       sourceSessionId,
@@ -445,6 +475,7 @@ export class DelegationStore {
       contextScope: contextScope.data,
       depth: input.depth,
       briefing,
+      ...(Object.keys(settings.data).length === 0 ? {} : { settings: settings.data }),
       createdBy,
     }
   }
@@ -461,6 +492,7 @@ export function summarizeDelegation(record: DelegationRecord): DelegationSummary
     targetAgent: record.targetAgent,
     role: record.role,
     contextScope: record.contextScope,
+    ...(record.settings === undefined ? {} : { settings: record.settings }),
     depth: record.depth,
     status: record.status,
     ...(record.failure === undefined ? {} : { failure: record.failure }),
@@ -480,6 +512,7 @@ function fromRow(row: DelegationRow): DelegationRecord {
   if (!TARGET_AGENTS.has(row.target_agent as DelegationTargetAgent)) {
     throw new DelegationError('invalid-input', `Stored target agent is invalid: ${row.target_agent}`)
   }
+  const settings = settingsFromJson(row.settings_json)
   return {
     delegationId: row.delegation_id,
     idempotencyKey: row.idempotency_key,
@@ -491,6 +524,7 @@ function fromRow(row: DelegationRow): DelegationRecord {
     contextScope,
     depth: row.depth,
     briefing: row.briefing,
+    ...(settings === undefined ? {} : { settings }),
     ...(row.return_text === null ? {} : { returnText: row.return_text }),
     ...(row.return_idempotency_key === null ? {} : { returnIdempotencyKey: row.return_idempotency_key }),
     ...(row.returned_by === null ? {} : { returnedBy: row.returned_by }),
@@ -512,6 +546,17 @@ function sameCreation(record: DelegationRecord, input: CreateDelegationInput): b
     record.contextScope === input.contextScope &&
     record.depth === input.depth &&
     record.briefing === input.briefing &&
+    JSON.stringify(record.settings ?? {}) === JSON.stringify(input.settings ?? {}) &&
     record.createdBy === input.createdBy
   )
+}
+
+function settingsFromJson(raw: string | null): SessionSettingsValue | undefined {
+  if (raw === null) return undefined
+  try {
+    const parsed = SessionSettings.safeParse(JSON.parse(raw))
+    return parsed.success && Object.keys(parsed.data).length > 0 ? parsed.data : undefined
+  } catch {
+    return undefined
+  }
 }

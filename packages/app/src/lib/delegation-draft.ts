@@ -2,7 +2,9 @@ import type {
   DelegationContextScope,
   DelegationRole,
   DelegationTargetAgent,
+  SessionSettings,
 } from '@longleash/protocol'
+import { SessionSettings as SessionSettingsSchema } from '@longleash/protocol'
 
 const PREFIX = 'longleash.delegation-draft.v1.'
 const TARGETS = new Set<DelegationTargetAgent>(['claude', 'codex'])
@@ -18,6 +20,7 @@ export interface DelegationDraft {
   role: DelegationRole
   contextScope: DelegationContextScope
   briefing: string
+  settings?: SessionSettings
   updatedAt: number
 }
 
@@ -63,6 +66,7 @@ export function readDelegationDraft(
       !ROLES.has(value.role as DelegationRole) ||
       !SCOPES.has(value.contextScope as DelegationContextScope) ||
       typeof value.briefing !== 'string' ||
+      (value.settings !== undefined && !SessionSettingsSchema.safeParse(value.settings).success) ||
       typeof value.updatedAt !== 'number'
     ) {
       return null
