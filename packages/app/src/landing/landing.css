@@ -497,18 +497,25 @@ html {
   height: 40px;
   flex: none;
   border-radius: 11px;
+  color: color-mix(in srgb, var(--ink-2) 90%, var(--ink));
+}
+.flow-icon svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
 }
 .flow-node div {
   min-width: 0;
 }
-.flow-node b,
-.flow-node span {
+.flow-node > div > b,
+.flow-node > div > span {
   display: block;
 }
-.flow-node b {
+.flow-node > div > b {
   font-size: 14px;
 }
-.flow-node span {
+.flow-node > div > span {
   overflow: hidden;
   margin-top: 3px;
   font: 400 10.5px/1.4 'Geist Mono', ui-monospace, monospace;

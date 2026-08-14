@@ -201,7 +201,7 @@ export function Landing() {
           <div className="system-flow" aria-label="LongLeash data flow">
             <div className="flow-node">
               <span className="flow-icon">
-                <SquareTerminal size={22} aria-hidden="true" />
+                <SquareTerminal aria-hidden="true" />
               </span>
               <div>
                 <b>Your laptop</b>
@@ -213,7 +213,7 @@ export function Landing() {
             </span>
             <div className="flow-node">
               <span className="flow-icon">
-                <Radio size={22} aria-hidden="true" />
+                <Radio aria-hidden="true" />
               </span>
               <div>
                 <b>Relay</b>
@@ -225,7 +225,7 @@ export function Landing() {
             </span>
             <div className="flow-node">
               <span className="flow-icon">
-                <Smartphone size={22} aria-hidden="true" />
+                <Smartphone aria-hidden="true" />
               </span>
               <div>
                 <b>Your phone</b>
