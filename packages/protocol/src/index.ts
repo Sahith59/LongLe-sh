@@ -644,3 +644,4 @@ export function parseClientMessage(raw: unknown): ClientMessage {
 }
 
 export * from './envelope.js'
+export * from './ide.js'

@@ -1,0 +1,131 @@
+{
+  "name": "longleash",
+  "displayName": "LongLeash",
+  "description": "A secure VS Code companion for LongLeash sessions and handoffs.",
+  "version": "0.0.1",
+  "private": true,
+  "publisher": "longleash",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sahith59/LongLe-sh.git",
+    "directory": "packages/vscode"
+  },
+  "homepage": "https://github.com/Sahith59/LongLe-sh#readme",
+  "bugs": {
+    "url": "https://github.com/Sahith59/LongLe-sh/issues"
+  },
+  "keywords": [
+    "longleash",
+    "claude",
+    "codex",
+    "remote-development",
+    "handoff"
+  ],
+  "type": "module",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onCommand:longleash.phase2a.showDiagnostics",
+    "onCommand:longleash.phase2a.copyDiagnostics",
+    "onView:longleash.sessions"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "%longleash.workspaceTrust%"
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "longleash.phase2a.showDiagnostics",
+        "title": "LongLeash: Show Phase 2A Diagnostics",
+        "category": "LongLeash"
+      },
+      {
+        "command": "longleash.phase2a.copyDiagnostics",
+        "title": "LongLeash: Copy Safe Diagnostics",
+        "category": "LongLeash"
+      },
+      {
+        "command": "longleash.sessions.refresh",
+        "title": "Refresh Sessions",
+        "category": "LongLeash",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "longleash",
+          "title": "LongLeash",
+          "icon": "assets/longleash.svg"
+        }
+      ]
+    },
+    "views": {
+      "longleash": [
+        {
+          "id": "longleash.sessions",
+          "name": "Sessions",
+          "icon": "assets/longleash.svg",
+          "contextualTitle": "LongLeash Sessions"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "longleash.sessions.refresh",
+          "when": "view == longleash.sessions",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "files": [
+    "dist/extension.cjs",
+    "assets/longleash.svg",
+    "LICENSE",
+    "package.json",
+    "package.nls.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs --sourcemap",
+    "build:test-host": "esbuild test-host/index.ts --bundle --platform=node --format=cjs --external:vscode --external:mocha --outfile=dist/test-host/index.cjs --sourcemap",
+    "probe:live:codex-read": "node scripts/probe-live-codex-thread.mjs",
+    "probe:v0": "node scripts/probe-installed-contracts.mjs",
+    "package:vsix": "node scripts/package-vsix.mjs",
+    "package:verify": "node scripts/verify-vsix.mjs",
+    "install:local": "node scripts/install-local.mjs",
+    "test:host:v0": "pnpm build && pnpm build:test-host && node scripts/run-v0-host-matrix.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "vscode:prepublish": "pnpm build"
+  },
+  "dependencies": {
+    "@longleash/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/mocha": "^10.0.10",
+    "@types/vscode": "^1.94.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.2",
+    "adm-zip": "^0.5.16",
+    "esbuild": "^0.25.0",
+    "mocha": "^11.7.5",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

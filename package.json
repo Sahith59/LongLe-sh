@@ -11,7 +11,10 @@
   "scripts": {
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "vscode:package": "pnpm --dir packages/vscode package:vsix",
+    "vscode:verify-package": "pnpm --dir packages/vscode package:verify",
+    "vscode:install": "pnpm --dir packages/vscode install:local"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

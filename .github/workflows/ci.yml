@@ -20,6 +20,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm build
+      - run: pnpm vscode:package
+      - run: pnpm vscode:verify-package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: longleash-vscode-${{ github.sha }}
+          path: packages/vscode/dist-vsix/*.vsix
+          if-no-files-found: error
 
   # The deploy path is part of the product: a Dockerfile that stopped building would only
   # be discovered by whoever tried to self-host, which is exactly the wrong person to find it.

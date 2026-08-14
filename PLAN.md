@@ -25,10 +25,11 @@ We own every product surface: daemon, phone app, relay, protocol, installer, ext
 3. **`longleash-relay`** — small Node WSS relay: routes ciphertext between paired devices, zero-knowledge (E2E payloads it cannot read), stores nothing durable but queued ciphertext, NEVER credentials (the Happy #680 lesson is a design rule). Docker image, self-hostable free; hosted public instance later if the project earns it.
 4. **`longleash` CLI** — installer/orchestrator: audits the machine, silently installs internal deps (tmux etc.), writes launchd agents + tmux config + VS Code terminal profile, applies invariants, prints pairing QR.
 5. **VS Code companion extension** (Phase 2A) — an authenticated IDE client for session navigation,
-   exact handoff, provider controls, native diffs, and delegation review. Claude can use its official
-   exact-session VS Code URI; Codex uses a LongLeash-owned editor backed by the documented app-server
-   because no public exact-thread entry point into Codex's own panel is currently part of its
-   contract. The extension never scrapes or mutates another extension's webview. See
+   exact handoff, provider controls, native diffs, and delegation review. Claude's official
+   exact-session URI remains disabled until an exact extension build passes LongLeash's live-history
+   matrix; Codex uses a LongLeash-owned editor backed by the documented app-server because no public
+   exact-thread entry point into Codex's own panel is currently part of its contract. The extension
+   never scrapes or mutates another extension's webview. See
    [the durable extension plan](docs/VSCODE-EXTENSION.md).
 
 ## Protocol & security
@@ -75,6 +76,20 @@ Phase 2 begins with the companion-extension contract and the remaining isolated-
 The product, security boundary, provider capability split, delivery phases, and release matrix are
 preserved in [the VS Code companion plan](docs/VSCODE-EXTENSION.md). Use the
 [Phase 1 phone test](docs/PHASE1-PHONE-TEST.md) before moving the release label forward.
+
+**Phase 2A progress (2026-08-12):** V0 and the first V1 distribution gate are complete. The separate
+companion protocol, fail-closed capability negotiation, workspace-trust policy, diagnostics,
+installed-capability probe, and real VS Code host matrix are implemented. Codex's exact read path
+returned the disposable transcript without loading or mutating its thread. Claude extension
+`2.1.229` failed exact-history rendering through its documented URI, so dispatch is disabled behind
+an exact-build compatibility ledger and the product must show the Terminal/`--ide` fallback. The
+companion now also produces a strictly verified, hash-reported VSIX; exposes safe compatibility
+evidence; provides a dry-run-capable non-shelling install/update command; and packages the artifact
+in CI. It is not yet signed or publicly released. See [the V0 evidence
+record](docs/VSCODE-V0-EVIDENCE.md). The next V1 slice has also started: a native Activity Bar
+session tree now validates complete typed snapshots, rejects stale cursors, separates attention,
+live processes, and dormant history, and stays honestly empty until authenticated daemon sync is
+implemented.
 
 Verification spikes before building on them: **S0** Agent SDK under subscription OAuth — PASSED, gate for Phase A; S1–S5 from v1 (push payload audit → now ours by construction; killed-state actions; concurrent-resume assumption; Gemini ACP quality; relay push viability → moot, we own the relay).
 

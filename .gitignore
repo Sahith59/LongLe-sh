@@ -4,6 +4,8 @@
 # Node
 node_modules/
 dist/
+dist-vsix/
+.vscode-test/
 *.log
 npm-debug.log*
 

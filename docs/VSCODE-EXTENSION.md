@@ -1,6 +1,10 @@
 # LongLeash VS Code companion — Product and engineering plan
 
-**Status:** planned for Phase 2A; no implementation is claimed by this document
+**Status:** Phase V0 complete; the first Phase V1 distribution gate is complete. The live matrix
+validated the extension-host boundary and Codex read path. Claude's documented native URI failed
+exact-history verification on the tested build and is disabled behind a fail-closed compatibility
+ledger. A verified VSIX, dry-run-capable install/update command, safe compatibility diagnostics,
+and CI artifact gate now exist. See [the V0 evidence record](VSCODE-V0-EVIDENCE.md).
 
 **Owner:** LongLeash
 **Working name:** LongLeash for VS Code
@@ -25,7 +29,7 @@ The two providers have different supported paths:
 
 | Provider | Supported exact-session IDE path | LongLeash behavior |
 | --- | --- | --- |
-| Claude | Claude Code registers `vscode://anthropic.claude-code/open?session=<id>`. Its CLI and extension share local conversation history. | Open the correct workspace, verify that LongLeash has a native Claude session ID, then use the official URI to reopen/focus that conversation in Claude's native panel. |
+| Claude | Claude Code documents `vscode://anthropic.claude-code/open?session=<id>`, but extension `2.1.229` did not render the requested disposable history in LongLeash's live matrix. | Fail closed unless the exact installed build has passed the compatibility ledger. Until then, provide the exact copyable Terminal/`--ide` resume route. |
 | Codex | Codex documents `app-server` for rich clients, including history, approvals, streamed events, and `thread/resume`; no documented external deep link into a specific Codex extension panel is currently part of the contract. | Open the exact Codex thread in a LongLeash-owned VS Code editor backed by the daemon's existing app-server session. Offer Terminal resume as the universal fallback. |
 
 Official references:
@@ -44,7 +48,7 @@ flowchart LR
     E["LongLeash VS Code extension"] <-->|"authenticated loopback RPC"| D
     D <--> C["Claude session + native ID"]
     D <--> X["Codex app-server thread"]
-    E -->|"official session URI"| CP["Claude native panel"]
+    E -.->|"only after exact-history compatibility pass"| CP["Claude native panel"]
     E -->|"LongLeash session editor"| XP["Exact Codex thread"]
 ```
 
@@ -117,8 +121,11 @@ sequenceDiagram
     end
     D->>E: Signed open-session instruction
     E->>E: Select/open the exact workspace window
-    alt Claude
+    alt Claude build is verified in compatibility ledger
         E->>V: Open official URI with session ID
+    else Claude build is unverified
+        E-->>D: Provider contract unverified
+        D-->>P: Exact Terminal / --ide fallback
     else Codex
         E->>V: Open LongLeash editor for app-server thread
     end
@@ -126,30 +133,43 @@ sequenceDiagram
     D-->>P: Verified result and fallback when needed
 ```
 
-Opening a window is not proof that the intended conversation opened. The acknowledgement must name
-the provider, native session/thread ID, workspace, extension build, and destination kind. If Claude
-cannot find the requested session, LongLeash reports failure rather than treating Claude's fresh
-conversation fallback as success.
+Opening a window is not proof that the intended conversation opened. The acknowledgement names the
+provider, native session/thread ID, workspace, extension build, and destination kind. Anthropic's
+public handler has no exact-open callback and documents that a missing session opens a fresh
+conversation. LongLeash therefore verifies the durable session/workspace and the exact
+provider-build compatibility result before dispatch. The currently tested Claude build is blocked
+with an exact fallback because it failed to render the requested history. A future passing build
+may report **dispatched · preflight verified**, never **exact open verified**. The LongLeash-owned
+Codex editor can report a verified open because it renders and checks the requested thread itself.
+See [the V0 evidence record](VSCODE-V0-EVIDENCE.md).
 
 ## Delivery phases
 
 ### Phase V0 — Contract and security spikes
 
-- [ ] Verify Claude's official session URI from an independent extension across same-window,
-  multi-window, multi-root, worktree, missing-session, and already-open cases.
-- [ ] Verify the Codex app-server thread can have one daemon owner and multiple read-only UI clients
+- [x] Verify Claude's official session URI from an independent extension across the required
+  boundary cases; record the failed exact-history result and disable dispatch for the tested build.
+- [x] Verify the Codex app-server thread can have one daemon owner and multiple read-only UI clients
   without creating an active-writer race.
-- [ ] Specify the extension authentication, capability negotiation, revocation, and audit protocol.
-- [ ] Specify workspace trust behavior and a no-secrets logging policy.
-- [ ] Record minimum supported VS Code, Claude Code, and Codex versions by tested capability.
+- [x] Specify the extension authentication, capability negotiation, revocation, and audit protocol.
+- [x] Specify workspace trust behavior and a no-secrets logging policy.
+- [x] Record conservative supported VS Code, Claude Code, and Codex versions by tested capability.
+
+The matrix used disposable same-window, simultaneous multi-window, multi-root, and real-worktree
+fixtures plus one bounded no-tools turn per provider. Claude's public native route is an explicit
+unsupported case with a safe fallback, not a claimed success. Full results are recorded in
+[Phase 2A / V0 evidence](VSCODE-V0-EVIDENCE.md).
 
 **Exit:** the two exact-session paths and the trust boundary are demonstrated in disposable test
 workspaces. Any unsupported case has a Terminal fallback and honest UI copy.
 
 ### Phase V1 — Companion foundation
 
-- [ ] Extension package, CI, VSIX artifact, install/update command, and version diagnostics.
-- [ ] Activity Bar session tree with provider, origin, status, workspace, and relationship labels.
+- [x] Extension package, CI, VSIX artifact, install/update command, and version diagnostics.
+- [ ] Activity Bar session tree foundation: typed full snapshots, deterministic **Needs you** /
+  **Active** / **Earlier** grouping, provider/status/workspace labels, accessible native tree items,
+  stale-cursor rejection, and honest offline empty state are implemented. Authenticated daemon
+  transport and relationship rendering remain before this item is complete.
 - [ ] Authenticated reconnect and cursor replay through the daemon.
 - [ ] Open workspace/file, reveal source range, and focus an existing LongLeash session.
 - [ ] Read-only transcript editor with long-history virtualization and accessible keyboard behavior.
@@ -157,6 +177,30 @@ workspaces. Any unsupported case has a Terminal fallback and honest UI copy.
 
 **Exit:** VS Code shows the same durable session inventory as the phone after reload, daemon restart,
 and network interruption; no mutation is available under an incompatible or unauthenticated link.
+
+The completed distribution gate is intentionally local/internal, not a Marketplace release. It:
+
+- packages only the runtime bundle, manifest, localization, README, and license;
+- rejects source, tests, scripts, source maps, dependencies, oversized artifacts, or an unexpected
+  extension identity/entry point;
+- prints a SHA-256 for the exact VSIX;
+- installs or updates with VS Code's `--install-extension ... --force` argument vector, never a
+  constructed shell command;
+- supports a dry run and does not modify the user's normal VS Code profile during automated tests;
+- uploads the verified VSIX from CI. Signing, staged rollout, Marketplace/Open VSX publishing, and
+  rollback remain explicit Phase V5 release gates.
+
+```sh
+# Build and structurally verify the installable artifact.
+pnpm vscode:package
+pnpm vscode:verify-package
+
+# Preview the exact local install/update operation without executing it.
+pnpm vscode:install -- --dry-run
+
+# Explicitly install/update the verified local artifact.
+pnpm vscode:install
+```
 
 ### Phase V2 — Exact continuation and control
 
@@ -210,7 +254,7 @@ update cannot strand the daemon, phone, conversation history, or isolated worktr
 
 | Area | Required evidence |
 | --- | --- |
-| Claude continuation | Exact native session opens; missing ID fails visibly instead of opening an unlabeled fresh conversation. |
+| Claude continuation | A fresh daemon verification and a passing exact-build compatibility result are required before dispatch. The current build fails closed to an exact Terminal/`--ide` fallback; no native-panel success is claimed. |
 | Codex continuation | Exact app-server thread opens in the LongLeash editor with history, streaming, approvals, and Stop. |
 | Ownership | No phone, Terminal, Claude panel, Codex panel, or LongLeash editor pair can write one native conversation simultaneously. |
 | Workspaces | Correct physical checkout or isolated worktree opens across multiple VS Code windows and long/Unicode paths. |

@@ -174,9 +174,11 @@ Open the session's handoff panel and choose:
 Release a live writer before executing the copied command. Running two writers against one native
 conversation can produce the provider's “active writer” error.
 
-LongLeash never injects into another extension's private chat webview. Claude now exposes an
-official exact-session VS Code URI; the planned companion will use it after verifying the workspace
-and native session ID. Codex exposes app-server for rich clients but no documented external
+LongLeash never injects into another extension's private chat webview. Claude documents an
+exact-session VS Code URI, but the installed Claude extension `2.1.229` did not reproduce the exact
+history in LongLeash's live matrix. The companion therefore fails closed and keeps the exact
+Terminal/`--ide` route until a specific provider build passes the compatibility ledger. Codex
+exposes app-server for rich clients but no documented external
 exact-thread entry point into its own panel, so the companion will open the exact thread in a
 LongLeash-owned VS Code editor. Until that ships, the current handoff remains the honest CLI/IDE
 route. See [the VS Code companion plan](docs/VSCODE-EXTENSION.md).
@@ -319,6 +321,7 @@ model](docs/ARCHITECTURE.md#security-model).
 | [Release acceptance](docs/ACCEPTANCE.md) | Performing the mandatory complete laptop + real-phone release gate |
 | [Delegate plan](docs/DELEGATION.md) | Understanding cross-agent handoffs, guarantees, and remaining phases |
 | [VS Code companion plan](docs/VSCODE-EXTENSION.md) | Understanding the exact-session IDE design, phases, boundaries, and release gates |
+| [Phase 2A / V0 evidence](docs/VSCODE-V0-EVIDENCE.md) | Auditing the vendor contracts, security model, compatibility floors, tests, and remaining live gates |
 | [Product plan](PLAN.md) | Reading the historical phase plan, current corrections, and known platform walls |
 | [Decision log](context/DECISIONS.md) | Understanding why major product and security choices were made |
 | [Glossary](context/GLOSSARY.md) | Translating LongLeash terminology into plain language |
