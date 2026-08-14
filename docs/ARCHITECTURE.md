@@ -96,6 +96,12 @@ sequenceDiagram
 Challenges are ephemeral and single-use. The daemon stores device tokens as hashes and can revoke
 one device or all devices. Revocation also drops live connections.
 
+New pairing URLs carry the challenge and temporary secret in the browser fragment
+(`#c=…&s=…`), not the HTTP query. A URL fragment is consumed by the PWA and is not sent to the
+relay origin in an HTTP request. The sealed pairing room still validates the same single-use
+challenge. Legacy query-form links remain readable only so a QR printed by an older daemon fails
+gracefully instead of becoming indecipherable.
+
 On the LAN, pairing and normal traffic can travel directly. With a relay configured, the QR points
 at the HTTPS relay-served app so one installed address continues working away from home.
 

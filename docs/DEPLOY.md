@@ -7,17 +7,19 @@ they would learn that ciphertext moved. The daemon, with all the real access, st
 laptop and only ever dials **out** — no port forwarding, no router changes, nothing exposed
 at home.
 
-Three ways to run it, cheapest first. **Option A costs nothing, needs no credit card, and
-takes about five minutes** — start there.
+Three ways to run it, cheapest first. Cloudflare Workers is the maintained deployment path for
+this repository. Always check the current provider pricing before promising a permanent cost.
 
 ---
 
-## Option A — Cloudflare Workers (free, no credit card) ← recommended
+## Option A — Cloudflare Workers ← recommended
 
-The relay is a few WebSockets and no storage, which is exactly what Cloudflare's free plan
-covers: **100,000 requests a day, no credit card, no capacity queue, nothing to keep alive.**
-Each pairing becomes one Durable Object that hibernates when idle, so a relay sitting quiet
-all day costs nothing at all. It also serves the app itself, over HTTPS, on a global network.
+The relay is a few WebSockets and does not write application data. Cloudflare currently documents
+100,000 Workers requests per day on the Free plan, and a WebSocket upgrade counts as one request.
+Each room uses a hibernatable Durable Object so idle sockets do not consume active duration. Plan
+limits and Durable Object pricing can change; verify the current
+[Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) before launch.
+The Worker also serves the app itself over HTTPS.
 
 ### 1. Sign up (2 minutes)
 
@@ -63,8 +65,10 @@ pnpm --filter @longleash/app build && pnpm --filter @longleash/relay deploy:work
 - **Staying inside the free plan.** A request is a WebSocket *connection*, not a message —
   your phone and laptop reconnecting a few dozen times a day is nowhere near 100,000.
   Hibernation means idle rooms are not billed for time.
-- **Custom domain** (optional): Workers → your worker → Settings → Domains & Routes. Only
-  worth it if you dislike the `workers.dev` name.
+- **Custom domain for a public product:** use separate public and app hostnames and keep
+  `workers.dev` as a compatibility path during migration. Follow
+  [Public launch and branded domains](PUBLIC-LAUNCH.md). Cloudflare recommends a Custom Domain when
+  the Worker is the origin and provisions its DNS record and certificate automatically.
 - **Privacy is unchanged.** Cloudflare routes the same sealed frames as any other relay and
   can read none of them. See the table at the end of this page.
 
@@ -161,11 +165,15 @@ If you want the direct path at home, open the laptop's own address while you are
 | --------------------------------- | ------------------------------------------ |
 | that a room with an opaque tag exists | whose room it is (the tag is a one-way hash) |
 | ciphertext frames moving          | any message content, path, or approval     |
-| joins and leaves, with roles      | tokens, keys, or the pairing secret        |
+| joins and leaves, with roles      | device tokens, relay keys, or a new pairing fragment secret |
 
 Every frame is sealed with AES-256-GCM using keys derived from a secret only your two
 devices hold. A tampered frame fails authentication and is dropped — this is covered by
 adversarial tests, not just asserted. Revoking a device closes its room immediately.
+
+New pairing links place their temporary secret after `#`. Browsers do not transmit URL fragments
+in HTTP requests, so the relay origin does not receive it while serving the PWA. Cloudflare still
+sees ordinary transport metadata such as source IP, timing, request paths, and frame sizes.
 
 Honest limits, so trust is earned rather than asked for: the laptop itself must be yours and
 secure (the daemon holds real access, by design); the relay operator can observe traffic

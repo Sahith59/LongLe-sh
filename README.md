@@ -108,6 +108,8 @@ Keep that terminal open. Press `q`, then Enter, for a clean shutdown.
 
 Pairing links are single-use and expire. Press `n`, then Enter, in the daemon terminal whenever you
 need a fresh one. Do not reuse a QR from a screenshot or share it—it contains a temporary secret.
+Current links keep that secret after `#`, so the browser does not send it to the relay as part of
+the HTTP request. Older query-style links remain readable only for single-use compatibility.
 If the installed app's camera stays soft, fit the full white border in the finder, tap **Refocus**,
 then try **Switch lens** if it is offered. See [camera and QR recovery](docs/TROUBLESHOOTING.md#the-in-app-camera-is-soft-or-the-qr-will-not-scan).
 
@@ -322,6 +324,7 @@ model](docs/ARCHITECTURE.md#security-model).
 | [Delegate plan](docs/DELEGATION.md) | Understanding cross-agent handoffs, guarantees, and remaining phases |
 | [VS Code companion plan](docs/VSCODE-EXTENSION.md) | Understanding the exact-session IDE design, phases, boundaries, and release gates |
 | [Phase 2A / V0 evidence](docs/VSCODE-V0-EVIDENCE.md) | Auditing the vendor contracts, security model, compatibility floors, tests, and remaining live gates |
+| [Public launch and branded domains](docs/PUBLIC-LAUNCH.md) | Publishing the landing site, migrating to branded hostnames, testing, and rolling back safely |
 | [Product plan](PLAN.md) | Reading the historical phase plan, current corrections, and known platform walls |
 | [Decision log](context/DECISIONS.md) | Understanding why major product and security choices were made |
 | [Glossary](context/GLOSSARY.md) | Translating LongLeash terminology into plain language |

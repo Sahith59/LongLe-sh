@@ -6,7 +6,7 @@ const ANSI = /\u001b\[[0-9;]*m/g
 
 describe('terminal QR', () => {
   it('decodes a square QR module grid', () => {
-    const modules = qrModules('https://longleash.example/?c=challenge&s=secret')
+    const modules = qrModules('https://longleash.example/#c=challenge&s=secret')
     expect(modules.length).toBeGreaterThanOrEqual(21)
     expect(modules.every((row) => row.length === modules.length)).toBe(true)
     expect(modules.flat()).toContain(true)
@@ -14,8 +14,8 @@ describe('terminal QR', () => {
   })
 
   it('paints both halves explicitly and preserves a four-module quiet zone', () => {
-    const modules = qrModules('https://longleash.example/?c=challenge&s=secret')
-    const rendered = terminalQr('https://longleash.example/?c=challenge&s=secret')
+    const modules = qrModules('https://longleash.example/#c=challenge&s=secret')
+    const rendered = terminalQr('https://longleash.example/#c=challenge&s=secret')
     const lines = rendered.split('\n')
 
     expect(lines).toHaveLength(Math.ceil((modules.length + 8) / 2))
@@ -33,7 +33,7 @@ describe('terminal QR', () => {
 
   it('survives a realistic one-pixel terminal glyph seam and decodes to the exact relay URL', () => {
     const payload =
-      'https://longleash-relay.tsahith59.workers.dev/?c=chl_oPP14IXT6jNphRf5&s=bsPvYWGUSjcQ8MwNQRnXcNtQ7FOijAhduziMAwAXLBo'
+      'https://longleash-relay.tsahith59.workers.dev/#c=chl_oPP14IXT6jNphRf5&s=bsPvYWGUSjcQ8MwNQRnXcNtQ7FOijAhduziMAwAXLBo'
     const rendered = terminalQr(payload)
     const cellWidth = 12
     const cellHeight = 24

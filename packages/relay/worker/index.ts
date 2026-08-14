@@ -9,10 +9,11 @@ import {
   parseClientMessage,
   type Role,
 } from '../src/protocol.js'
+import { publicRoute } from './public-routing.js'
 
 /**
- * The relay as a Cloudflare Worker — the deployment that costs nothing, needs no card, and
- * has no server to keep alive. Each room is one Durable Object, addressed by the room tag,
+ * The relay as a Cloudflare Worker — a managed deployment with no server process to keep alive.
+ * Each room is one Durable Object, addressed by the room tag,
  * so two devices meet in an object that exists only while they are talking.
  *
  * Same protocol and same guarantees as the Node relay in `src/`: opaque room tags, ciphertext
@@ -20,14 +21,9 @@ import {
  * so the two runtimes cannot drift apart.
  *
  * WebSocket Hibernation is used deliberately: sockets are handed back to the runtime between
- * messages, so an idle room burns no duration. That is what keeps a always-on relay inside
- * a free allowance instead of quietly exhausting it.
+ * messages, so an idle room burns no active duration. That keeps an always-on relay efficient;
+ * provider plan limits and pricing remain an operational concern documented in docs/DEPLOY.md.
  */
-
-interface Env {
-  ROOM: DurableObjectNamespace
-  ASSETS: Fetcher
-}
 
 /** Role and room ride the URL because a Durable Object must be chosen before the upgrade. */
 const roomFromUrl = (url: URL): string | null => {
@@ -38,6 +34,15 @@ const roomFromUrl = (url: URL): string | null => {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+
+    const publicDecision = publicRoute(url, env)
+    if (publicDecision.kind === 'redirect') {
+      return Response.redirect(publicDecision.location, 308)
+    }
+    if (publicDecision.kind === 'landing') {
+      url.pathname = '/welcome.html'
+      return env.ASSETS.fetch(new Request(url, request))
+    }
 
     if (url.pathname === '/health') {
       return Response.json({ ok: true, role: 'relay' })

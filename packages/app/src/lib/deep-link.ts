@@ -1,6 +1,7 @@
 /**
- * Notification links use `session`; pairing links use `c` + `s` (the secret). Older
- * notification builds used `s`, so accept that only when it cannot be a pairing secret.
+ * Notification links use the query's `session`; pairing links use fragment `c` + `s` now and
+ * used the query in older builds. Older notification builds also used `s`, so accept that query
+ * only when it cannot be a legacy pairing secret.
  */
 export function sessionFromSearch(search: string): string | null {
   const params = new URLSearchParams(search)

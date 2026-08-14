@@ -1,17 +1,34 @@
 {
-  // The free-forever deployment: `pnpm --filter @longleash/relay deploy:worker`.
-  // Durable Objects on the Workers free plan cover a personal relay many times over
-  // (100k requests/day), need no credit card, and cannot run out of capacity.
+  // Deploy with: `pnpm --filter @longleash/relay deploy:worker`.
+  // Pricing and limits are provider policy, not a product guarantee; docs/DEPLOY.md links to the
+  // current Cloudflare source instead of treating a free tier as permanent infrastructure.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "longleash-relay",
   "main": "worker/index.ts",
-  "compatibility_date": "2026-07-01",
+  "compatibility_date": "2026-08-14",
   "observability": { "enabled": true },
+
+  // Empty means legacy routing: workers.dev stays the paired app and /welcome stays the site.
+  // The exact branded hosts are filled only after the owner has added the chosen zone to
+  // Cloudflare. See docs/PUBLIC-LAUNCH.md.
+  "vars": {
+    "PUBLIC_SITE_HOST": "",
+    "PUBLIC_WWW_HOST": "",
+    "PUBLIC_APP_HOST": ""
+  },
 
   // The built app shell. Requests for it never reach the Worker, so they cost nothing.
   "assets": {
     "directory": "../app/dist",
     "binding": "ASSETS",
+    // Host-aware routing applies to every path: the branded apex is the public site, every www
+    // path redirects canonically, while app.<domain> and workers.dev remain the paired PWA.
+    // The Worker immediately delegates ordinary assets to the asset binding.
+    "run_worker_first": true,
+    // The Worker deliberately rewrites /welcome to /welcome.html. Disable automatic HTML
+    // canonicalization so the asset layer does not redirect the internal filename back to the
+    // public path and create a loop.
+    "html_handling": "none",
     // Deep links must land in the app rather than a 404.
     "not_found_handling": "single-page-application"
   },

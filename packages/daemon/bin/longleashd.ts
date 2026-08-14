@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { startDaemon } from '../src/daemon.js'
 import { resolveRelayUrl } from '../src/config.js'
 import { hostPairing } from '../src/pairing-host.js'
+import { pairingUrl } from '../src/pairing-url.js'
 import { terminalQr } from '../src/terminal-qr.js'
 import { findCandidates, noAddressReason, vpnWarning } from '../demo/lan.js'
 
@@ -152,9 +153,15 @@ function freshPairingUrl(): string {
   const challenge = daemon.registry.createPairingChallenge()
   if (relay !== null) {
     hostPairing({ registry: daemon.registry, relayUrl: relay.url, challenge, log: (line) => console.log(`[pair] ${line}`) })
-    return `${relayAppOrigin(relay.url)}?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
+    // The secret belongs in the fragment, never the query. Browsers do not send fragments in an
+    // HTTP request, so neither the relay Worker nor edge request logs receive the pairing key.
+    return pairingUrl(relayAppOrigin(relay.url), challenge.challengeId, challenge.secret)
   }
-  return `http://${servingHost}:${servingPort}/?c=${challenge.challengeId}&s=${encodeURIComponent(challenge.secret)}`
+  return pairingUrl(
+    `http://${servingHost}:${servingPort}/`,
+    challenge.challengeId,
+    challenge.secret,
+  )
 }
 
 const url = freshPairingUrl()
@@ -203,7 +210,7 @@ console.log('\nScan this with your phone, then add it to your home screen:\n')
 console.log(terminalQr(url))
 console.log(`\n  ${url}\n`)
 if (relay !== null && servedOnLan) {
-  console.log(`(LAN fallback for pairing at home: http://${servedHost}:${daemon.port}/?c=…&s=… — same code)`)
+  console.log(`(LAN fallback for pairing at home: http://${servedHost}:${daemon.port}/#c=…&s=… — same code)`)
 }
 /**
  * Follow the machine onto whatever network it lands on.

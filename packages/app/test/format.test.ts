@@ -86,9 +86,16 @@ describe('tool glyphs', () => {
 
 describe('reading a pairing link', () => {
   it('accepts the full URL the laptop prints', () => {
-    expect(parsePairingLink('https://relay.example.dev/?c=chl_abc&s=SEC-ret_1')).toEqual({
+    expect(parsePairingLink('https://relay.example.dev/#c=chl_abc&s=SEC-ret_1')).toEqual({
       challengeId: 'chl_abc',
       secret: 'SEC-ret_1',
+    })
+  })
+
+  it('keeps old query links readable while new fragments stay out of HTTP requests', () => {
+    expect(parsePairingLink('https://relay.example.dev/?c=old&s=single-use')).toEqual({
+      challengeId: 'old',
+      secret: 'single-use',
     })
   })
 
@@ -98,11 +105,11 @@ describe('reading a pairing link', () => {
   })
 
   it('tolerates stray whitespace from a paste', () => {
-    expect(parsePairingLink('  https://r.dev/?c=a&s=b \n')).toEqual({ challengeId: 'a', secret: 'b' })
+    expect(parsePairingLink('  https://r.dev/#c=a&s=b \n')).toEqual({ challengeId: 'a', secret: 'b' })
   })
 
   it('decodes a percent-encoded secret rather than pairing with the wrong one', () => {
-    expect(parsePairingLink('?c=a&s=x%2Fy%2Bz')?.secret).toBe('x/y+z')
+    expect(parsePairingLink('#c=a&s=x%2Fy%2Bz')?.secret).toBe('x/y+z')
   })
 
   it('refuses anything that is not a pairing link', () => {

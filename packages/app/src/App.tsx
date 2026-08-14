@@ -160,11 +160,9 @@ export default function App() {
   // Pair from the QR link on first open, then clean the secret out of the URL.
   useEffect(() => {
     if (token) return
-    const params = new URLSearchParams(location.search)
-    const challengeId = params.get('c')
-    const secret = params.get('s')
-    if (!challengeId || !secret) return
-    pair(challengeId, secret)
+    const pairing = parsePairingLink(location.href)
+    if (pairing === null) return
+    pair(pairing.challengeId, pairing.secret)
       .then((issued) => {
         setToken(issued)
         history.replaceState(null, '', location.pathname)
@@ -790,7 +788,7 @@ function PairGate({
           className="field"
           value={link}
           onChange={(e) => setLink(e.target.value)}
-          placeholder="…or paste the link: https://…/?c=…&s=…"
+          placeholder="…or paste the link: https://…/#c=…&s=…"
           aria-label="Pairing link from your laptop"
           autoCapitalize="off"
           autoCorrect="off"
@@ -819,16 +817,32 @@ function PairGate({
   )
 }
 
-/** Accepts the whole URL or just the query part, so any way of copying it works. */
+/**
+ * Accepts the current fragment form, legacy query links, or only the copied parameter text.
+ * Fragment credentials never leave the browser in an HTTP request; query support remains only so
+ * an already-printed single-use QR from an older daemon does not become mysteriously unreadable.
+ */
 export function parsePairingLink(raw: string): { challengeId: string; secret: string } | null {
   const text = raw.trim()
   if (text.length === 0) return null
-  const query = text.includes('?') ? text.slice(text.indexOf('?') + 1) : text
-  const params = new URLSearchParams(query)
-  const challengeId = params.get('c')
-  const secret = params.get('s')
-  if (!challengeId || !secret) return null
-  return { challengeId, secret }
+
+  const candidates: string[] = []
+  const hashAt = text.indexOf('#')
+  if (hashAt >= 0) candidates.push(text.slice(hashAt + 1))
+  const queryAt = text.indexOf('?')
+  if (queryAt >= 0) {
+    const end = hashAt > queryAt ? hashAt : text.length
+    candidates.push(text.slice(queryAt + 1, end))
+  }
+  if (hashAt < 0 && queryAt < 0) candidates.push(text.replace(/^[?#]/, ''))
+
+  for (const candidate of candidates) {
+    const params = new URLSearchParams(candidate)
+    const challengeId = params.get('c')
+    const secret = params.get('s')
+    if (challengeId && secret) return { challengeId, secret }
+  }
+  return null
 }
 
 /* ------------------------------------------------------------------ screens */

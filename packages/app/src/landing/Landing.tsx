@@ -2,135 +2,411 @@ import { useEffect, useState } from 'react'
 import { motion, useReducedMotion, type Variants } from 'motion/react'
 import {
   ArrowRight,
+  BellRing,
+  BookOpen,
   Check,
+  Clipboard,
+  ExternalLink,
   FileCode2,
   FolderOpen,
   GitBranch,
   Inbox,
   Lock,
+  Radio,
   Search,
   Settings,
+  ShieldCheck,
+  Smartphone,
   SquareTerminal,
   Timer,
+  Wrench,
 } from 'lucide-react'
 import { SPRING } from '../ui/primitives.js'
 
+const REPOSITORY = 'https://github.com/Sahith59/LongLe-sh'
+const INSTALL_COMMAND =
+  'curl -fsSL https://raw.githubusercontent.com/Sahith59/LongLe-sh/main/scripts/install.sh | bash'
+
+const docs = [
+  {
+    title: 'Start here',
+    body: 'Requirements, installation, pairing, daily use, updates, and honest limits.',
+    href: `${REPOSITORY}#install-in-five-minutes`,
+    icon: BookOpen,
+  },
+  {
+    title: 'Troubleshooting',
+    body: 'Symptom-first fixes for pairing, hooks, stale state, handoffs, and connection errors.',
+    href: `${REPOSITORY}/blob/main/docs/TROUBLESHOOTING.md`,
+    icon: Wrench,
+  },
+  {
+    title: 'Security model',
+    body: 'What the laptop, phone, and relay can see—and where LongLeash deliberately stops.',
+    href: `${REPOSITORY}/blob/main/docs/ARCHITECTURE.md#security-model`,
+    icon: ShieldCheck,
+  },
+  {
+    title: 'Session portability',
+    body: 'Move work between phone, Terminal, and VS Code without creating two writers.',
+    href: `${REPOSITORY}/blob/main/docs/SESSION-PORTABILITY.md`,
+    icon: SquareTerminal,
+  },
+]
+
 /**
- * The landing page tells one story: the approval — the last thing chaining you
- * to the desk — arrives on your lock screen, and you answer it from wherever
- * you are. The hero phone plays that exact moment on a loop.
+ * A public site and the paired PWA intentionally use separate hostnames at launch. During local
+ * development and on the legacy workers.dev origin, both still live on one host. This fallback
+ * keeps those paths useful while making an apex domain such as longleash.dev point at
+ * app.longleash.dev without hard-coding a domain that the owner has not chosen yet.
  */
+function appHref(): string {
+  if (typeof window === 'undefined') return '/'
+  const configured = import.meta.env.VITE_LONGLEASH_APP_URL?.trim()
+  if (configured) return configured
+
+  const { hostname, protocol } = window.location
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.endsWith('.workers.dev') ||
+    hostname.startsWith('app.')
+  ) {
+    return '/'
+  }
+
+  const root = hostname.startsWith('www.') ? hostname.slice(4) : hostname
+  return `${protocol}//app.${root}`
+}
+
 export function Landing() {
+  const openApp = appHref()
+
   return (
     <div className="land">
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
+
       <header className="land-rail">
-        <span className="land-mark">
-          <img src="/icon-192.png" alt="" width={30} height={30} />
+        <a className="land-mark" href="#top" aria-label="LongLeash home">
+          <img src="/icon-192.png" alt="" width={32} height={32} />
           Long<i>Leash</i>
-        </span>
-        <a className="key sm" href="/">
-          Open the app
         </a>
+        <nav className="land-nav" aria-label="Primary navigation">
+          <a href="#product">Product</a>
+          <a href="#start">Setup</a>
+          <a href="#docs">Docs</a>
+          <a href="#roadmap">Roadmap</a>
+        </nav>
+        <div className="land-actions">
+          <a className="land-icon-link" href={REPOSITORY} aria-label="LongLeash on GitHub">
+            <ExternalLink size={18} aria-hidden="true" />
+          </a>
+          <a className="key sm" href={openApp}>
+            Open app
+          </a>
+        </div>
       </header>
 
-      <main>
-        <section className="hero">
+      <main id="main">
+        <section className="hero" id="top">
           <div className="hero-copy">
-            <p className="eyebrow">Open source · Self-hosted · Free</p>
+            <p className="eyebrow">
+              <span className="live-dot" aria-hidden="true" /> Public preview · Open source
+            </p>
             <h1>
-              Say <em>yes</em> from anywhere.
+              Your agents keep working. <em>You can leave the desk.</em>
             </h1>
             <p className="lede">
-              Your laptop&rsquo;s AI agents do the work. LongLeash puts their questions on your
-              phone — read what an agent is doing, steer it, and approve the risky steps from the
-              couch, the queue, or the other side of the world. End-to-end encrypted the whole way.
+              Run Claude Code and Codex on your laptop, then read, steer, approve, stop, tune, and
+              hand off their sessions from your phone. Your laptop stays in control; LongLeash is
+              the secure control surface in your pocket.
             </p>
             <div className="hero-acts">
-              <a className="key primary" href="/">
-                Open the app
+              <a className="key primary" href="#start">
+                Install in five minutes
                 <ArrowRight size={17} strokeWidth={2.4} aria-hidden="true" />
               </a>
-              <a className="tap" href="#how">
-                See how it works
+              <a className="tap" href={openApp}>
+                Already paired? Open app
               </a>
             </div>
+            <p className="hero-fine">
+              macOS or Linux · Node.js 22+ · your existing Claude or Codex login · no LongLeash
+              account
+            </p>
           </div>
           <LockPhone />
         </section>
 
-        <section className="how" id="how">
-          <h2 className="land-label">How it works</h2>
+        <section className="signal-strip" aria-label="Current product support">
+          <span>
+            <b>Claude Code</b> managed + observed sessions
+          </span>
+          <span>
+            <b>Codex</b> managed + observed sessions
+          </span>
+          <span>
+            <b>Anywhere</b> encrypted relay
+          </span>
+        </section>
+
+        <section className="product" id="product">
+          <SectionHeading
+            eyebrow="What ships today"
+            title="One place to see what needs you."
+            body="This is working software, not a concept page. The public preview includes the complete Phase 1 control loop and the safe foundations of Phase 2."
+          />
+          <div className="feature-grid">
+            <Feature
+              icon={Inbox}
+              title="Sessions and approvals"
+              body="See phone, Terminal, and VS Code sessions with clear provider and origin labels. Approve, deny, answer, steer, or stop from the exact session."
+            />
+            <Feature
+              icon={GitBranch}
+              title="Safe parallel work"
+              body="Start a second writer in the same Git project through an isolated worktree instead of letting two agents overwrite one checkout."
+            />
+            <Feature
+              icon={Settings}
+              title="Model and reasoning controls"
+              body="Choose model, effort, and supported thinking settings at launch, during a managed conversation, or for a reviewed delegated child."
+            />
+            <Feature
+              icon={Radio}
+              title="Reviewed agent delegation"
+              body="Build and edit a briefing on your phone, start a Claude or Codex child, then review its return before anything reaches the parent."
+            />
+            <Feature
+              icon={SquareTerminal}
+              title="Exact terminal handoff"
+              body="Copy a provider-native resume command and move the same conversation back to your keyboard without pretending a new chat is the old one."
+            />
+            <Feature
+              icon={BellRing}
+              title="Private notifications"
+              body="Push notifications wake the app with identifiers only. Prompt, code, path, and approval content are fetched after the encrypted link reconnects."
+            />
+          </div>
+        </section>
+
+        <section className="system">
+          <SectionHeading
+            eyebrow="How it works"
+            title="The powerful part never leaves your laptop."
+            body="LongLeash is a control plane, not a hosted coding environment. Your provider credentials, repositories, agent processes, transcripts, and durable audit data stay local."
+          />
+          <div className="system-flow" aria-label="LongLeash data flow">
+            <div className="flow-node">
+              <span className="flow-icon">
+                <SquareTerminal size={22} aria-hidden="true" />
+              </span>
+              <div>
+                <b>Your laptop</b>
+                <span>daemon · agents · code · keys</span>
+              </div>
+            </div>
+            <span className="flow-link">
+              <Lock size={13} aria-hidden="true" /> sealed frames
+            </span>
+            <div className="flow-node">
+              <span className="flow-icon">
+                <Radio size={22} aria-hidden="true" />
+              </span>
+              <div>
+                <b>Relay</b>
+                <span>routes ciphertext · stores no history</span>
+              </div>
+            </div>
+            <span className="flow-link">
+              <Lock size={13} aria-hidden="true" /> sealed frames
+            </span>
+            <div className="flow-node">
+              <span className="flow-icon">
+                <Smartphone size={22} aria-hidden="true" />
+              </span>
+              <div>
+                <b>Your phone</b>
+                <span>review · decide · steer</span>
+              </div>
+            </div>
+          </div>
+          <div className="truth-row">
+            <p>
+              <b>No account database.</b> Pairing is your identity, and every device can be revoked
+              from the laptop.
+            </p>
+            <p>
+              <b>No generic remote shell.</b> The phone can call a small typed protocol, not execute
+              arbitrary commands behind your back.
+            </p>
+            <p>
+              <b>No public port at home.</b> The daemon dials outward to the relay; router changes
+              and inbound firewall holes are unnecessary.
+            </p>
+          </div>
+        </section>
+
+        <section className="start" id="start">
+          <SectionHeading
+            eyebrow="Start in five minutes"
+            title="Laptop first. Phone second."
+            body="LongLeash does not include Claude or Codex. Install and sign in to at least one provider CLI first, then follow this path."
+          />
+
+          <div className="install-shell">
+            <div className="install-head">
+              <span>
+                <SquareTerminal size={17} aria-hidden="true" /> Terminal
+              </span>
+              <span className="mono">macOS · Linux</span>
+            </div>
+            <code>{INSTALL_COMMAND}</code>
+            <CopyCommand command={INSTALL_COMMAND} />
+          </div>
+          <p className="inspect-note">
+            Prefer to inspect before running?{' '}
+            <a href={`${REPOSITORY}/blob/main/scripts/install.sh`}>Read the installer source</a>,
+            then run the same command when you are comfortable.
+          </p>
+
           <ol className="steps">
             <li>
               <span className="n">01</span>
               <div>
-                <h3>Run the daemon</h3>
+                <h3>Install LongLeash</h3>
                 <p>
-                  <code>longleashd</code> runs on your laptop beside your agents. Nothing opens a
-                  port to the internet — it only dials out.
+                  The installer never uses <code>sudo</code>. It checks Node, Git, and your agent
+                  CLIs; installs into your home directory; builds the PWA; and wires supported
+                  lifecycle hooks.
                 </p>
               </div>
             </li>
             <li>
               <span className="n">02</span>
               <div>
-                <h3>Pair once</h3>
+                <h3>Start the laptop daemon</h3>
                 <p>
-                  Paste one link from your terminal into your phone. That exchange creates the
-                  keys; there is no account to make and no password to forget.
+                  Run <code>longleash</code>, or name only the roots agents may use—for example{' '}
+                  <code>longleash ~/code</code>. Keep that terminal open.
                 </p>
               </div>
             </li>
             <li>
               <span className="n">03</span>
               <div>
-                <h3>Answer from anywhere</h3>
+                <h3>Pair the phone once</h3>
                 <p>
-                  When an agent needs a human, the question lands on your phone. Approve it, deny
-                  it, or type what it should do instead.
+                  Scan the fresh QR, add the app to your home screen, and require the header to say{' '}
+                  <code>linked · relay</code> or <code>linked · direct</code>. Pairing links are
+                  single-use secrets.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span className="n">04</span>
+              <div>
+                <h3>Verify before relying on it</h3>
+                <p>
+                  Run <code>longleash doctor</code>. The daemon must be reachable, every installed
+                  hook must be current, and laptop, daemon, and relay builds must agree.
                 </p>
               </div>
             </li>
           </ol>
+
+          <div className="first-run">
+            <div>
+              <span className="land-stamp">FIRST REAL TEST</span>
+              <h3>Start with a harmless task</h3>
+              <p>
+                Ask Claude or Codex to inspect a small folder, trigger one approval, answer it from
+                the phone, stop the session, then reopen it from the terminal handoff. Only move to
+                important work after that loop behaves correctly on your devices and network.
+              </p>
+            </div>
+            <a className="key" href={`${REPOSITORY}/blob/main/docs/ACCEPTANCE.md`}>
+              Open acceptance checklist
+              <ExternalLink size={16} aria-hidden="true" />
+            </a>
+          </div>
         </section>
 
-        <section className="trust">
-          <h2 className="land-label">Built like it matters</h2>
-          <ul className="claims">
-            <li>
-              <h3>End-to-end encrypted</h3>
+        <section className="docs" id="docs">
+          <SectionHeading
+            eyebrow="Documentation"
+            title="Answers before guesswork."
+            body="The repository is the documentation source of truth. These are the fastest paths for installation, recovery, security review, and session movement."
+          />
+          <div className="docs-grid">
+            {docs.map(({ title, body, href, icon: Icon }) => (
+              <a className="doc-card" href={href} key={title}>
+                <span className="doc-icon">
+                  <Icon size={19} aria-hidden="true" />
+                </span>
+                <span>
+                  <b>{title}</b>
+                  <span>{body}</span>
+                </span>
+                <ExternalLink size={15} aria-hidden="true" />
+              </a>
+            ))}
+          </div>
+          <div className="support-line">
+            <span>
+              Something failed? Run <code>longleash doctor</code> before restarting anything.
+            </span>
+            <a href={`${REPOSITORY}/issues/new`}>Report a reproducible bug</a>
+          </div>
+        </section>
+
+        <section className="roadmap" id="roadmap">
+          <SectionHeading
+            eyebrow="Roadmap"
+            title="What is next—and what is not being faked."
+            body="Future work is published so users can distinguish a working feature from a direction. Dates are not promised before the release gates pass."
+          />
+          <div className="roadmap-grid">
+            <article>
+              <span className="road-state shipped">Available now</span>
+              <h3>Phone control + reviewed delegation</h3>
               <p>
-                The relay routes ciphertext it cannot read. Keys live on your two devices and
-                nowhere else.
+                Claude and Codex sessions, approvals, tuning, handoffs, safe parallel phone starts,
+                and human-reviewed agent-to-agent briefing and return flows.
               </p>
-            </li>
-            <li>
-              <h3>No accounts, no user database</h3>
+            </article>
+            <article>
+              <span className="road-state building">In development</span>
+              <h3>LongLeash for VS Code</h3>
               <p>
-                Pairing is the identity. There is no signup wall in front of your own laptop — and
-                no honeypot of credentials to breach.
+                Authenticated daemon sync, a native session tree, exact Codex thread views, IDE
+                context, and fail-closed provider compatibility. The VSIX foundation exists but is
+                not yet a public extension release.
               </p>
-            </li>
-            <li>
-              <h3>Notifications carry nothing</h3>
+            </article>
+            <article>
+              <span className="road-state planned">Planned</span>
+              <h3>Parallel specialists + Crew</h3>
               <p>
-                Push payloads are IDs, never content. Your code and conversations never transit a
-                notification service.
+                Multiple isolated delegated children, review and merge UX, bounded coordination,
+                budgets, and explicit human checkpoints—never an invisible autonomous loop.
               </p>
-            </li>
-            <li>
-              <h3>No remote shell</h3>
-              <p>
-                The phone speaks a small, typed protocol. There is no generic exec endpoint to
-                abuse, and every mutating call is audit-logged.
-              </p>
-            </li>
-          </ul>
-          <p className="honesty">
-            LongLeash can capture supported Terminal and VS Code sessions, but it cannot inject a
-            resumed conversation into a vendor&rsquo;s sealed VS Code chat panel. When something
-            can&rsquo;t be done faithfully, it says so — it never pretends.
-          </p>
+            </article>
+          </div>
+          <div className="honesty">
+            <ShieldCheck size={19} aria-hidden="true" />
+            <p>
+              <b>An honest platform boundary:</b> LongLeash never writes into another extension’s
+              private chat webview. Unsupported native-panel continuation fails visibly and keeps
+              a copyable terminal fallback. The companion extension will use only documented or
+              LongLeash-owned surfaces.
+            </p>
+          </div>
+          <a className="roadmap-link" href={`${REPOSITORY}/blob/main/PLAN.md`}>
+            Read the complete product plan <ArrowRight size={16} aria-hidden="true" />
+          </a>
         </section>
       </main>
 
@@ -138,13 +414,74 @@ export function Landing() {
         <span>
           <LeashGlyph size={16} /> LongLeash
         </span>
-        <span className="mono">build {__BUILD__}</span>
+        <span className="foot-links">
+          <a href={REPOSITORY}>GitHub</a>
+          <a href={`${REPOSITORY}/blob/main/LICENSE`}>MIT license</a>
+          <span className="mono">build {__BUILD__}</span>
+        </span>
       </footer>
     </div>
   )
 }
 
-/* ------------------------------------------------------------------ hero phone */
+function SectionHeading({
+  eyebrow,
+  title,
+  body,
+}: {
+  eyebrow: string
+  title: string
+  body: string
+}) {
+  return (
+    <div className="section-heading">
+      <p className="land-label">{eyebrow}</p>
+      <h2>{title}</h2>
+      <p>{body}</p>
+    </div>
+  )
+}
+
+function Feature({
+  icon: Icon,
+  title,
+  body,
+}: {
+  icon: typeof Inbox
+  title: string
+  body: string
+}) {
+  return (
+    <article className="feature">
+      <span className="feature-icon">
+        <Icon size={19} aria-hidden="true" />
+      </span>
+      <h3>{title}</h3>
+      <p>{body}</p>
+    </article>
+  )
+}
+
+function CopyCommand({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(command)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1800)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <button className="copy-command" type="button" onClick={() => void copy()}>
+      {copied ? <Check size={16} aria-hidden="true" /> : <Clipboard size={16} aria-hidden="true" />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  )
+}
 
 const NOTIF_CYCLE_MS = 6200
 
@@ -166,11 +503,6 @@ const notifVariants: Variants = {
   },
 }
 
-/**
- * A lock screen, machined from our materials, playing the product's defining
- * moment on a loop: an approval arrives, a thumb answers it, life goes on.
- * Reduced motion holds the notification steady instead of cycling.
- */
 function LockPhone() {
   const still = useReducedMotion()
   const [phase, setPhase] = useState<'hidden' | 'shown' | 'answered'>('shown')
@@ -189,7 +521,7 @@ function LockPhone() {
     timers.push(setTimeout(cycle, 1200))
     return () => {
       alive = false
-      for (const t of timers) clearTimeout(t)
+      for (const timer of timers) clearTimeout(timer)
     }
   }, [still])
 
@@ -211,12 +543,7 @@ function LockPhone() {
           </span>
         </div>
 
-        <motion.div
-          className="notif"
-          variants={notifVariants}
-          initial="shown"
-          animate={phase}
-        >
+        <motion.div className="notif" variants={notifVariants} initial="shown" animate={phase}>
           <span className="notif-icon">
             <img src="/icon-192.png" alt="" width={32} height={32} />
           </span>
@@ -236,10 +563,10 @@ function LockPhone() {
 
         <div className="phone-grid">
           {[SquareTerminal, GitBranch, FileCode2, Search, FolderOpen, Inbox, Timer, Settings].map(
-            (Glyph, i) => (
-              <span className="phone-key" key={i}>
+            (Glyph, index) => (
+              <span className="phone-key" key={index}>
                 <Glyph size={20} strokeWidth={1.8} />
-                {i === 5 ? <span className="phone-badge">1</span> : null}
+                {index === 5 ? <span className="phone-badge">1</span> : null}
               </span>
             ),
           )}
@@ -247,14 +574,13 @@ function LockPhone() {
       </div>
       <div className="phone-fade" />
       <p className="phone-caption">
-        <b>The moment that matters.</b> An agent hit something only you can answer — and you are
-        not at your desk. Now that&rsquo;s fine.
+        <b>The moment that matters.</b> An agent hit something only you can answer—and you are not
+        at your desk. Now that is fine.
       </p>
     </motion.div>
   )
 }
 
-/** The leash: anchored at your phone, clipped to an agent far away. */
 function LeashGlyph({ size }: { size: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
