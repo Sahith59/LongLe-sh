@@ -1,7 +1,9 @@
 # LongLeash monetization plan
 
-**Decision date:** 2026-08-15  
-**Status:** commercial source of truth; hypotheses remain gated by external usage and interviews  
+**Decision date:** 2026-08-15
+
+**Status:** commercial source of truth; hypotheses remain gated by external usage and interviews
+
 **Engineering checkpoint:** this plan does not advance Phase 2A. Resume engineering from
 [`PHASE2A-CHECKPOINT.md`](PHASE2A-CHECKPOINT.md).
 
