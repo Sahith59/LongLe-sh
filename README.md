@@ -324,6 +324,8 @@ model](docs/ARCHITECTURE.md#security-model).
 | [Delegate plan](docs/DELEGATION.md) | Understanding cross-agent handoffs, guarantees, and remaining phases |
 | [VS Code companion plan](docs/VSCODE-EXTENSION.md) | Understanding the exact-session IDE design, phases, boundaries, and release gates |
 | [Phase 2A / V0 evidence](docs/VSCODE-V0-EVIDENCE.md) | Auditing the vendor contracts, security model, compatibility floors, tests, and remaining live gates |
+| [Phase 2A resume checkpoint](docs/PHASE2A-CHECKPOINT.md) | Resuming extension work at the exact authenticated snapshot-sync slice after public launch |
+| [Public account strategy](docs/PUBLIC-ACCOUNT-STRATEGY.md) | Understanding why preview is accountless and how optional billing can remain local-first |
 | [Public launch and branded domains](docs/PUBLIC-LAUNCH.md) | Publishing the landing site, migrating to branded hostnames, testing, and rolling back safely |
 | [Product plan](PLAN.md) | Reading the historical phase plan, current corrections, and known platform walls |
 | [Decision log](context/DECISIONS.md) | Understanding why major product and security choices were made |

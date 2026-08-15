@@ -43,6 +43,12 @@ The Worker has fail-safe host-aware routing:
 - the old `workers.dev` address remains usable until the migration has passed real-device testing.
 
 The public page is also available at `/welcome` on the legacy origin for preview and rollback.
+Its documentation, troubleshooting, roadmap, privacy, and license pages stay on the public site;
+GitHub is an explicit source-code and issue-tracker destination, not the reading experience.
+
+The preview launches without a mandatory login. Pairing remains device identity, while any future
+billing account is an optional entitlement plane that never stores provider credentials,
+repositories, or transcripts. See [Public launch, accounts, and future billing](PUBLIC-ACCOUNT-STRATEGY.md).
 
 ## One-time owner steps
 
@@ -55,7 +61,10 @@ guess or perform without the exact hostname.
    registered elsewhere, Cloudflare will give you nameservers to set at the registrar.
 3. Confirm there are no existing CNAME records on the exact apex, `www`, or `app` hostnames.
    Cloudflare cannot attach a Worker Custom Domain over a conflicting CNAME.
-4. Give the maintainer the exact zone and desired hostnames. Only then add the three Custom Domains
+4. Enable a private vulnerability-reporting channel in GitHub or provide a dedicated security
+   email, then add that exact channel to the public Security/Privacy copy. Never ask researchers to
+   publish credentials or exploit details in an ordinary issue.
+5. Give the maintainer the exact zone and desired hostnames. Only then add the three Custom Domains
    to `packages/relay/wrangler.jsonc` and configure:
 
    ```jsonc
@@ -73,14 +82,14 @@ guess or perform without the exact hostname.
    }
    ```
 
-5. Build and run a Wrangler dry run before deployment:
+6. Build and run a Wrangler dry run before deployment:
 
    ```sh
    pnpm --filter @longleash/app build
    pnpm --dir packages/relay exec wrangler deploy --dry-run
    ```
 
-6. Deploy, then wait for Cloudflare to provision the DNS records and certificates. Custom Domains
+7. Deploy, then wait for Cloudflare to provision the DNS records and certificates. Custom Domains
    let Cloudflare manage both automatically.
 
 ## Migration order—do not strand paired phones
@@ -124,6 +133,26 @@ curl -fsS https://app.longleash.example/health
 curl -fsS https://app.longleash.example/build.json
 curl -I https://www.longleash.example/
 ```
+
+Also require HTTP 200 and the LongLeash public shell at every first-party route:
+
+```text
+/
+/docs
+/docs/getting-started
+/docs/daily-use
+/docs/troubleshooting
+/docs/security
+/docs/session-portability
+/docs/faq
+/roadmap
+/privacy
+/license
+```
+
+Click every landing documentation card and footer link on desktop and a narrow phone viewport.
+Documentation, roadmap, privacy, and license must stay on the branded site. Only **Source on
+GitHub**, installer source, implementation evidence, and issue-reporting actions should leave it.
 
 Then perform the complete [real-device acceptance checklist](ACCEPTANCE.md) on a new iPhone home
 screen install and on an already-paired device. The QR must open the app hostname, pairing must

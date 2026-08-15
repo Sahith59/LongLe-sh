@@ -89,7 +89,8 @@ in CI. It is not yet signed or publicly released. See [the V0 evidence
 record](docs/VSCODE-V0-EVIDENCE.md). The next V1 slice has also started: a native Activity Bar
 session tree now validates complete typed snapshots, rejects stale cursors, separates attention,
 live processes, and dormant history, and stays honestly empty until authenticated daemon sync is
-implemented.
+implemented. The exact post-public-launch resume point and gates are frozen in the
+[Phase 2A checkpoint](docs/PHASE2A-CHECKPOINT.md).
 
 Verification spikes before building on them: **S0** Agent SDK under subscription OAuth — PASSED, gate for Phase A; S1–S5 from v1 (push payload audit → now ours by construction; killed-state actions; concurrent-resume assumption; Gemini ACP quality; relay push viability → moot, we own the relay).
 

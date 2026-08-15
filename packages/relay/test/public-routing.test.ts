@@ -13,6 +13,15 @@ describe('public host routing', () => {
     expect(publicRoute(new URL('https://longleash.dev/welcome'), config)).toEqual({
       kind: 'landing',
     })
+    expect(publicRoute(new URL('https://longleash.dev/docs/troubleshooting'), config)).toEqual({
+      kind: 'landing',
+    })
+    expect(publicRoute(new URL('https://longleash.dev/license'), config)).toEqual({
+      kind: 'landing',
+    })
+    expect(publicRoute(new URL('https://longleash.dev/not-a-real-page'), config)).toEqual({
+      kind: 'landing',
+    })
   })
 
   it('leaves the paired app and legacy workers.dev origin unchanged', () => {
@@ -22,6 +31,30 @@ describe('public host routing', () => {
     expect(
       publicRoute(new URL('https://longleash-relay.example.workers.dev/'), config),
     ).toEqual({ kind: 'continue' })
+    expect(
+      publicRoute(new URL('https://longleash-relay.example.workers.dev/welcome/docs/security'), config),
+    ).toEqual({ kind: 'landing' })
+  })
+
+  it('does not rewrite public-site assets or relay endpoints', () => {
+    expect(publicRoute(new URL('https://longleash.dev/assets/welcome.js'), config)).toEqual({
+      kind: 'continue',
+    })
+    expect(publicRoute(new URL('https://longleash.dev/icon-192.png'), config)).toEqual({
+      kind: 'continue',
+    })
+    expect(publicRoute(new URL('https://longleash.dev/favicon.png'), config)).toEqual({
+      kind: 'continue',
+    })
+    expect(publicRoute(new URL('https://longleash.dev/apple-touch-icon.png'), config)).toEqual({
+      kind: 'continue',
+    })
+    expect(publicRoute(new URL('https://longleash.dev/health'), config)).toEqual({
+      kind: 'continue',
+    })
+    expect(publicRoute(new URL('https://longleash.dev/ws'), config)).toEqual({
+      kind: 'continue',
+    })
   })
 
   it('moves pairing secrets from the public site to the app without changing them', () => {
@@ -30,6 +63,12 @@ describe('public host routing', () => {
     ).toEqual({
       kind: 'redirect',
       location: 'https://app.longleash.dev/?c=chl_123&s=secret_value',
+    })
+    expect(
+      publicRoute(new URL('https://longleash.dev/welcome?c=chl_456&s=other'), config),
+    ).toEqual({
+      kind: 'redirect',
+      location: 'https://app.longleash.dev/welcome?c=chl_456&s=other',
     })
   })
 

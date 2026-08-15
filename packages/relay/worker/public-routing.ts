@@ -25,6 +25,23 @@ function httpsLocation(host: string, url: URL): string {
   return `https://${host}${url.pathname}${url.search}${url.hash}`
 }
 
+function isLegacyPublicPath(path: string): boolean {
+  return path === '/welcome' || path === '/welcome/' || path.startsWith('/welcome/')
+}
+
+function isPublicAsset(path: string): boolean {
+  return (
+    path.startsWith('/assets/') ||
+    path.startsWith('/fonts/') ||
+    path === '/favicon.png' ||
+    path === '/apple-touch-icon.png' ||
+    path === '/icon-192.png' ||
+    path === '/icon-512.png' ||
+    path === '/manifest.webmanifest' ||
+    path === '/robots.txt'
+  )
+}
+
 /**
  * Host-aware routing lets one Worker keep the old workers.dev PWA alive while a branded apex
  * domain becomes the public site and app.<domain> becomes the product/relay origin. It never
@@ -40,7 +57,11 @@ export function publicRoute(url: URL, config: PublicHostConfig): PublicRouteDeci
     return { kind: 'redirect', location: httpsLocation(siteHost, url) }
   }
 
-  if (host === null || siteHost === null || host !== siteHost) return { kind: 'continue' }
+  if (host === null || siteHost === null || host !== siteHost) {
+    // The legacy shared workers.dev origin keeps the paired app at / and scopes every public page
+    // below /welcome. This also makes docs deep links useful before a custom domain exists.
+    return isLegacyPublicPath(url.pathname) ? { kind: 'landing' } : { kind: 'continue' }
+  }
 
   // A pairing link must never strand a user on the brochure hostname. Preserve the complete
   // query—including the temporary secret—and move it directly to the paired app over HTTPS.
@@ -54,7 +75,9 @@ export function publicRoute(url: URL, config: PublicHostConfig): PublicRouteDeci
     return { kind: 'redirect', location: httpsLocation(appHost, target) }
   }
 
-  return url.pathname === '/' || url.pathname === '/welcome' || url.pathname === '/welcome/'
-    ? { kind: 'landing' }
-    : { kind: 'continue' }
+  // The branded apex is exclusively the public site. Serving its HTML shell for unknown content
+  // paths gives React a real first-party 404 while static build assets continue untouched.
+  return isPublicAsset(url.pathname) || url.pathname === '/health' || url.pathname === '/ws'
+    ? { kind: 'continue' }
+    : { kind: 'landing' }
 }

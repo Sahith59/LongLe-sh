@@ -6,7 +6,6 @@ import {
   BookOpen,
   Check,
   Clipboard,
-  ExternalLink,
   FileCode2,
   FolderOpen,
   GitBranch,
@@ -22,64 +21,48 @@ import {
   Wrench,
 } from 'lucide-react'
 import { SPRING } from '../ui/primitives.js'
-
-const REPOSITORY = 'https://github.com/Sahith59/LongLe-sh'
-const INSTALL_COMMAND =
-  'curl -fsSL https://raw.githubusercontent.com/Sahith59/LongLe-sh/main/scripts/install.sh | bash'
+import { PublicPageRouter } from './PublicPages.js'
+import {
+  INSTALL_COMMAND,
+  REPOSITORY,
+  SiteFooter,
+  SiteHeader,
+  appHref,
+  currentSitePath,
+  siteHref,
+} from './SiteChrome.js'
 
 const docs = [
   {
     title: 'Start here',
     body: 'Requirements, installation, pairing, daily use, updates, and honest limits.',
-    href: `${REPOSITORY}#install-in-five-minutes`,
+    href: '/docs/getting-started',
     icon: BookOpen,
   },
   {
     title: 'Troubleshooting',
     body: 'Symptom-first fixes for pairing, hooks, stale state, handoffs, and connection errors.',
-    href: `${REPOSITORY}/blob/main/docs/TROUBLESHOOTING.md`,
+    href: '/docs/troubleshooting',
     icon: Wrench,
   },
   {
     title: 'Security model',
     body: 'What the laptop, phone, and relay can see—and where LongLeash deliberately stops.',
-    href: `${REPOSITORY}/blob/main/docs/ARCHITECTURE.md#security-model`,
+    href: '/docs/security',
     icon: ShieldCheck,
   },
   {
     title: 'Session portability',
     body: 'Move work between phone, Terminal, and VS Code without creating two writers.',
-    href: `${REPOSITORY}/blob/main/docs/SESSION-PORTABILITY.md`,
+    href: '/docs/session-portability',
     icon: SquareTerminal,
   },
 ]
 
-/**
- * A public site and the paired PWA intentionally use separate hostnames at launch. During local
- * development and on the legacy workers.dev origin, both still live on one host. This fallback
- * keeps those paths useful while making an apex domain such as longleash.dev point at
- * app.longleash.dev without hard-coding a domain that the owner has not chosen yet.
- */
-function appHref(): string {
-  if (typeof window === 'undefined') return '/'
-  const configured = import.meta.env.VITE_LONGLEASH_APP_URL?.trim()
-  if (configured) return configured
-
-  const { hostname, protocol } = window.location
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname.endsWith('.workers.dev') ||
-    hostname.startsWith('app.')
-  ) {
-    return '/'
-  }
-
-  const root = hostname.startsWith('www.') ? hostname.slice(4) : hostname
-  return `${protocol}//app.${root}`
-}
-
 export function Landing() {
+  const publicPath = currentSitePath()
+  if (publicPath !== '/') return <PublicPageRouter path={publicPath} />
+
   const openApp = appHref()
 
   return (
@@ -88,26 +71,7 @@ export function Landing() {
         Skip to content
       </a>
 
-      <header className="land-rail">
-        <a className="land-mark" href="#top" aria-label="LongLeash home">
-          <img src="/icon-192.png" alt="" width={32} height={32} />
-          Long<i>Leash</i>
-        </a>
-        <nav className="land-nav" aria-label="Primary navigation">
-          <a href="#product">Product</a>
-          <a href="#start">Setup</a>
-          <a href="#docs">Docs</a>
-          <a href="#roadmap">Roadmap</a>
-        </nav>
-        <div className="land-actions">
-          <a className="land-icon-link" href={REPOSITORY} aria-label="LongLeash on GitHub">
-            <ExternalLink size={18} aria-hidden="true" />
-          </a>
-          <a className="key sm" href={openApp}>
-            Open app
-          </a>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main id="main">
         <section className="hero" id="top">
@@ -124,7 +88,7 @@ export function Landing() {
               the secure control surface in your pocket.
             </p>
             <div className="hero-acts">
-              <a className="key primary" href="#start">
+              <a className="key primary" href={siteHref('/#start')}>
                 Install in five minutes
                 <ArrowRight size={17} strokeWidth={2.4} aria-hidden="true" />
               </a>
@@ -327,9 +291,9 @@ export function Landing() {
                 important work after that loop behaves correctly on your devices and network.
               </p>
             </div>
-            <a className="key" href={`${REPOSITORY}/blob/main/docs/ACCEPTANCE.md`}>
+            <a className="key" href={siteHref('/docs/getting-started#first-test')}>
               Open acceptance checklist
-              <ExternalLink size={16} aria-hidden="true" />
+              <ArrowRight size={16} aria-hidden="true" />
             </a>
           </div>
         </section>
@@ -338,11 +302,11 @@ export function Landing() {
           <SectionHeading
             eyebrow="Documentation"
             title="Answers before guesswork."
-            body="The repository is the documentation source of truth. These are the fastest paths for installation, recovery, security review, and session movement."
+            body="Read the complete guides here without leaving the product site. GitHub remains available when you want source code or the issue tracker."
           />
           <div className="docs-grid">
             {docs.map(({ title, body, href, icon: Icon }) => (
-              <a className="doc-card" href={href} key={title}>
+              <a className="doc-card" href={siteHref(href)} key={title}>
                 <span className="doc-icon">
                   <Icon size={19} aria-hidden="true" />
                 </span>
@@ -350,7 +314,7 @@ export function Landing() {
                   <b>{title}</b>
                   <span>{body}</span>
                 </span>
-                <ExternalLink size={15} aria-hidden="true" />
+                <ArrowRight size={15} aria-hidden="true" />
               </a>
             ))}
           </div>
@@ -358,7 +322,11 @@ export function Landing() {
             <span>
               Something failed? Run <code>longleash doctor</code> before restarting anything.
             </span>
-            <a href={`${REPOSITORY}/issues/new`}>Report a reproducible bug</a>
+            <span>
+              <a href={siteHref('/docs/troubleshooting')}>Open troubleshooting</a>
+              {' · '}
+              <a href={`${REPOSITORY}/issues/new`}>Report on GitHub</a>
+            </span>
           </div>
         </section>
 
@@ -404,22 +372,13 @@ export function Landing() {
               LongLeash-owned surfaces.
             </p>
           </div>
-          <a className="roadmap-link" href={`${REPOSITORY}/blob/main/PLAN.md`}>
-            Read the complete product plan <ArrowRight size={16} aria-hidden="true" />
+          <a className="roadmap-link" href={siteHref('/roadmap')}>
+            Read the public roadmap <ArrowRight size={16} aria-hidden="true" />
           </a>
         </section>
       </main>
 
-      <footer className="land-foot">
-        <span>
-          <LeashGlyph size={16} /> LongLeash
-        </span>
-        <span className="foot-links">
-          <a href={REPOSITORY}>GitHub</a>
-          <a href={`${REPOSITORY}/blob/main/LICENSE`}>MIT license</a>
-          <span className="mono">build {__BUILD__}</span>
-        </span>
-      </footer>
+      <SiteFooter />
     </div>
   )
 }
@@ -578,20 +537,5 @@ function LockPhone() {
         at your desk. Now that is fine.
       </p>
     </motion.div>
-  )
-}
-
-function LeashGlyph({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
-      <circle cx="9" cy="26" r="5.5" fill="currentColor" />
-      <path
-        d="M9 26C21 26 19 11 31 11"
-        stroke="currentColor"
-        strokeWidth="3.6"
-        strokeLinecap="round"
-      />
-      <circle cx="31" cy="11" r="4.2" fill="var(--sage)" />
-    </svg>
   )
 }
