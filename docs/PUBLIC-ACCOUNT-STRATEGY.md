@@ -33,6 +33,11 @@ and [Turnstile setup](https://developers.cloudflare.com/turnstile/get-started/).
 
 ## Future paid architecture
 
+The current commercial source of truth is
+[`MONETIZATION-PLAN.md`](MONETIZATION-PLAN.md). The public preview remains accountless. If validated
+demand later funds a paid hosted or team service, an account becomes optional commercial identity;
+it does not replace device pairing and is never required for local/self-hosted use.
+
 A paid service can add an **optional commercial account plane** without turning LongLeash into a
 hosted coding environment:
 
@@ -51,10 +56,13 @@ The account database may hold login, billing-customer reference, plan, entitleme
 membership, and support metadata. It must not hold provider credentials, repositories, transcript
 content, tool inputs, or pairing secrets.
 
-Stripe's hosted billing/customer portal, verified webhooks, and entitlement model are the preferred
-direction if subscriptions are introduced. The daemon should receive a short-lived, scoped, signed
-entitlement—not a payment credential. See [Stripe subscription lifecycle](https://docs.stripe.com/billing/subscriptions/overview)
-and [Stripe's subscription/entitlement integration guide](https://docs.stripe.com/billing/subscriptions/build-subscriptions?api-integration=paymentintents&payment-ui=elements).
+The provisional commercial stack is a managed passwordless identity provider plus a Merchant of
+Record and a LongLeash-owned entitlement service. A Merchant of Record is preferred for the first
+global paid launch because sales-tax/VAT handling is material for a solo operator. Lemon Squeezy is
+the current billing hypothesis, subject to eligibility and legal review; Stripe remains an option
+if tax registrations and compliance are deliberately handled. The daemon receives a short-lived,
+scoped, signed entitlement—not a payment credential. This is a plan, not authorization to create
+vendor accounts or collect user data.
 
 ## Gates before accounts ship
 
@@ -65,4 +73,5 @@ and [Stripe's subscription/entitlement integration guide](https://docs.stripe.co
    refund, grace-period, and plan-change states.
 5. The free accountless path and local product boundary remain documented and tested.
 
-Until those gates are funded and scheduled, the product launches accountless.
+Until those gates and the validation thresholds in `MONETIZATION-PLAN.md` pass, the product launches
+accountless and no checkout is built.

@@ -5,6 +5,11 @@
 **Vision:** AI now does the heavy lifting; the human's job is prompting and approving. LongLeash frees that job from the desk — control agent sessions, terminal sessions, and IDE sessions on your laptop from anywhere in the world.
 
 > [!NOTE]
+> The public-preview, pricing, account boundary, competition, and `$5,000 MRR` validation plan is
+> frozen in [`docs/MONETIZATION-PLAN.md`](docs/MONETIZATION-PLAN.md). It does not advance Phase 2A;
+> resume Phase 2A from [`docs/PHASE2A-CHECKPOINT.md`](docs/PHASE2A-CHECKPOINT.md).
+
+> [!NOTE]
 > The phase forecast below is preserved as project history. The shipped architecture has evolved:
 > Claude managed sessions use the official Agent SDK, Codex uses `codex app-server`, supported
 > Terminal/VS Code sessions are observed through provider lifecycle hooks, and safe concurrency

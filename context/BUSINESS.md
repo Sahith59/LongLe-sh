@@ -1,5 +1,11 @@
 # BUSINESS — the plan, in plain language
 
+> [!IMPORTANT]
+> **Historical plan, superseded 2026-08-15.** The `$7/month hosted-relay` thesis predates official
+> Claude and Codex remote products and major open-source competitor changes. Read
+> [`docs/MONETIZATION-PLAN.md`](../docs/MONETIZATION-PLAN.md) for the current evidence-backed plan.
+> This file remains as the original reasoning record.
+
 **This is the file to read.** It explains the money side of LongLeash in ordinary words: what
 we sell, what stays free, how we keep users' trust, how anyone will ever hear about it, and
 what the honest chances are.

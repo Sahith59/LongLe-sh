@@ -1,5 +1,12 @@
 # PRICING — strategy, evidence, and what is still unknown
 
+> [!IMPORTANT]
+> **Historical research, superseded 2026-08-15.** The category changed after this memo: Anthropic
+> and OpenAI now offer first-party remote control, and several open-source competitors expanded.
+> Preserve this file as the original evidence trail, but use
+> [`docs/MONETIZATION-PLAN.md`](../docs/MONETIZATION-PLAN.md) for current pricing, account, market,
+> and `$5,000 MRR` decisions.
+
 > **Read `BUSINESS.md` first.** It is the same plan in plain language, and it also covers
 > trust/security and go-to-market. **This file is the evidence behind it** — sources, raw
 > research, and the reasoning trail. Come here to check a claim, not to learn the plan.
@@ -7,7 +14,7 @@
 The commercial counterpart to `DECISIONS.md`. Same rule: **every conclusion carries its
 evidence**, so a future session can tell a researched finding from a guess.
 
-**Status:** research complete (2026-08-08); strategy settled 2026-08-09 — see `BUSINESS.md` §7.
+**Status:** historical research completed 2026-08-08 and superseded 2026-08-15.
 
 ---
 
