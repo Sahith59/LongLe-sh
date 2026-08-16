@@ -117,6 +117,7 @@ export function SiteFooter({ children }: { children?: ReactNode }) {
         <a href={siteHref('/roadmap')}>Roadmap</a>
         <a href={siteHref('/license')}>License</a>
         <a href={siteHref('/privacy')}>Privacy</a>
+        <a href={siteHref('/terms')}>Terms</a>
         <a href={REPOSITORY}>Source on GitHub</a>
         <span className="mono">build {__BUILD__}</span>
       </nav>

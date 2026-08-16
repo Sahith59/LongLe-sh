@@ -3,7 +3,7 @@
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
   Permissions-Policy: camera=(self), geolocation=(), microphone=(), payment=(), usb=()
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; connect-src 'self' ws: wss:; font-src 'self'; form-action 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; manifest-src 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; connect-src 'self' ws: wss: https://accounts.longleash.dev https://*.clerk.accounts.dev https://api.clerk.com https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.protect.clerk.com https://img.clerk.com; font-src 'self'; form-action 'self' https://accounts.longleash.dev https://*.clerk.accounts.dev; frame-ancestors 'none'; frame-src https://challenges.cloudflare.com https://*.protect.clerk.com; img-src 'self' data: blob: https://img.clerk.com; manifest-src 'self'; object-src 'none'; script-src 'self' https://accounts.longleash.dev https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.protect.clerk.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

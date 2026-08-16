@@ -1,11 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './App.js'
+import HostedAuth from './HostedAuth.js'
 import './styles.css'
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <App />
+    <HostedAuth />
   </StrictMode>,
 )
 

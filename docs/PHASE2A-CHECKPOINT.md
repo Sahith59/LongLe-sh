@@ -1,10 +1,11 @@
 # Phase 2A checkpoint — resume after public-site release
 
-**Checkpoint recorded:** 2026-08-14
+**Checkpoint reaffirmed:** 2026-08-15
 
 **Functional-development baseline:** `2b49028` (`Build Phase 2A VS Code companion foundation`)
 
-**Public-launch work after the baseline:** `cad3f94`, `ec2bf51`, and the pending first-party docs release
+**Public-launch work after the baseline:** tracked independently by [`ACCOUNT-LAUNCH.md`](ACCOUNT-LAUNCH.md)
+and the commits after `2b49028`; it does not move the Phase 2A implementation cursor.
 
 Public-site, documentation, domain, and launch-readiness work after `2b49028` does **not** advance
 the Phase 2A implementation state. Resume from the exact next slice below after the public preview

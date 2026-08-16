@@ -71,8 +71,10 @@ See [Architecture](docs/ARCHITECTURE.md) for the implementation and trust bounda
 - Codex CLI 0.147.0 or newer if you want Terminal/VS Code session discovery
 - A laptop that remains awake and online while you are away
 
-LongLeash itself needs no account and no API key. It does not supply access to Claude or Codex;
-the agent CLIs continue to use your existing provider login and plan.
+The official hosted app uses a free Google-backed LongLeash account; LAN and self-hosted use remain
+accountless. A fresh QR is still required to authorize each browser to a laptop. LongLeash needs no
+provider API key and does not supply access to Claude or Codex; the agent CLIs continue to use your
+existing provider login and plan.
 
 ### 1. Install
 
@@ -325,8 +327,10 @@ model](docs/ARCHITECTURE.md#security-model).
 | [VS Code companion plan](docs/VSCODE-EXTENSION.md) | Understanding the exact-session IDE design, phases, boundaries, and release gates |
 | [Phase 2A / V0 evidence](docs/VSCODE-V0-EVIDENCE.md) | Auditing the vendor contracts, security model, compatibility floors, tests, and remaining live gates |
 | [Phase 2A resume checkpoint](docs/PHASE2A-CHECKPOINT.md) | Resuming extension work at the exact authenticated snapshot-sync slice after public launch |
-| [Public account strategy](docs/PUBLIC-ACCOUNT-STRATEGY.md) | Understanding why preview is accountless and how optional billing can remain local-first |
+| [Public account strategy](docs/PUBLIC-ACCOUNT-STRATEGY.md) | Understanding hosted identity, device authority, account deletion, and future billing boundaries |
+| [Account-enabled launch runbook](docs/ACCOUNT-LAUNCH.md) | Configuring Cloudflare, Clerk, Google OAuth, secrets, email, and physical release gates |
 | [Public launch and branded domains](docs/PUBLIC-LAUNCH.md) | Publishing the landing site, migrating to branded hostnames, testing, and rolling back safely |
+| [Security policy](SECURITY.md) | Reporting sensitive vulnerabilities privately and understanding supported release scope |
 | [Product plan](PLAN.md) | Reading the historical phase plan, current corrections, and known platform walls |
 | [Decision log](context/DECISIONS.md) | Understanding why major product and security choices were made |
 | [Glossary](context/GLOSSARY.md) | Translating LongLeash terminology into plain language |

@@ -19,7 +19,7 @@ completion, and stale-state cleanup. A green unit test is not a substitute for t
    - `app builds` says `match`;
    - both Claude Code and Codex say `hook installed for this build`.
 
-2. Open <https://longleash-relay.tsahith59.workers.dev> on the phone. If LongLeash is installed
+2. Open <https://app.longleash.dev> on the phone and sign in. If LongLeash is installed
    to the home screen, open that copy and pull down to refresh. Accept an offered **Update**.
 3. Confirm the top bar says `linked · relay` (or `linked · direct` when using the laptop's LAN
    address) and that there is no build-mismatch banner.

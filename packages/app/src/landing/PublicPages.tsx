@@ -80,6 +80,7 @@ const titles: Record<string, string> = {
   '/roadmap': 'Roadmap',
   '/license': 'MIT License',
   '/privacy': 'Privacy',
+  '/terms': 'Terms of Service',
 }
 
 const LICENSE_TEXT = `MIT License
@@ -144,6 +145,9 @@ export function PublicPageRouter({ path }: { path: string }) {
       break
     case '/privacy':
       page = <Privacy />
+      break
+    case '/terms':
+      page = <Terms />
       break
     default:
       page = <NotFound />
@@ -459,6 +463,15 @@ function Security() {
       </p>
       <CodeBlock command={'longleash devices\nlongleash revoke <device-id>'} />
 
+      <h2>Account identity is a separate lock</h2>
+      <p>
+        The official hosted app requires Google sign-in before it can request a short-lived relay
+        connection ticket. That account chooses which browser credential slot is visible; the QR
+        still grants authority over a specific laptop. Signing into Google alone cannot control a
+        machine, and a pairing secret is never sent to Google or the account provider. LAN and
+        self-hosted deployments remain accountless.
+      </p>
+
       <h2>The phone cannot execute arbitrary commands</h2>
       <p>
         It sends validated operations such as start a session, reply, approve a specific request,
@@ -539,11 +552,12 @@ function Faq() {
     <DocsLayout
       path="/docs/faq"
       title="Straight answers before you install."
-      summary="The current public preview is deliberately local-first, accountless, and honest about provider and platform boundaries."
+      summary="The current public preview is local-first and honest about hosted identity, provider, and platform boundaries."
     >
       <Question q="Do I need a LongLeash account?">
-        No. Pairing your phone to your laptop is the current identity model. Provider logins remain
-        with Claude Code or Codex on your laptop.
+        The official hosted app requires a free Google-backed LongLeash account. A QR is still
+        required for each laptop: account identity and device authority are separate. LAN and
+        self-hosted use remain accountless. Provider logins stay with Claude Code or Codex.
       </Question>
       <Question q="Does my laptop need to stay awake?">
         Yes. Your laptop runs the agents and daemon. Relay mode reaches it from another network, but
@@ -599,8 +613,8 @@ function Roadmap() {
         merge UX. Human checkpoints remain visible; LongLeash will not hide an unbounded autonomous loop.
       </RoadmapStage>
       <RoadmapStage state="Future" tone="planned" title="Optional commercial services">
-        Billing entitlements, team administration, and hosted-service conveniences may use optional
-        accounts. Provider credentials, repositories, and transcripts remain outside that account plane.
+        Billing entitlements and team administration may extend the hosted account plane. Provider
+        credentials, repositories, and transcripts remain outside it, and local/self-hosted use remains free.
       </RoadmapStage>
       <div className="doc-callout">
         <FileCode2 size={19} aria-hidden="true" />
@@ -619,19 +633,28 @@ function Privacy() {
       path="/privacy"
       eyebrow="Legal & trust"
       title="Privacy by a smaller data boundary."
-      summary="This notice describes the current public preview. It will be revised before any optional account, analytics, payment, or mailing-list service is introduced."
+      summary="This notice describes the account-enabled public preview and the deliberately small hosted data boundary."
     >
-      <p className="effective">Effective 14 August 2026</p>
-      <h2>No LongLeash account today</h2>
+      <p className="effective">Effective 15 August 2026</p>
+      <h2>What the hosted account contains</h2>
       <p>
-        The public preview does not ask you to create an account. Pairing credentials identify a
-        device to your own laptop and are managed there. The landing site currently has no email signup or product analytics integration.
+        The official hosted app uses Clerk for authentication and Google for sign-in. The account
+        may contain a stable account identifier, name, email address, profile image, sign-in times,
+        and security/session metadata needed to prevent abuse. LongLeash currently has no advertising,
+        mailing-list, payment, or product-analytics integration and does not sell personal information.
       </p>
       <h2>Development data stays local</h2>
       <p>
         Repositories, provider credentials, agent processes, transcript history, approval records,
         and the durable audit database stay on the laptop running LongLeash. The phone receives
         current content only after an authenticated, encrypted connection.
+      </p>
+      <h2>Pairing credentials stay in the browser and laptop</h2>
+      <p>
+        Each hosted account receives a separate browser storage slot for its paired-device token,
+        relay key, and relay address. Those credentials are not uploaded to Clerk or Google. A
+        short-lived signed relay ticket contains an opaque one-way account tag, room, role, and
+        expiry; it cannot decrypt session traffic and is not stored as conversation history.
       </p>
       <h2>Relay and hosting metadata</h2>
       <p>
@@ -645,17 +668,97 @@ function Privacy() {
         If enabled, push messages contain identifiers needed to wake and route the app—not prompt,
         source code, path, transcript, or approval content. The app fetches the current item after reconnecting.
       </p>
-      <h2>Future accounts and payments</h2>
+      <h2>Processors and purpose</h2>
       <p>
-        If optional paid services ship, LongLeash will publish the data fields, processors,
-        retention, deletion path, and terms before collecting account or billing information. A
-        commercial account will not silently become a repository or transcript sync account.
+        Cloudflare hosts the public site, static app, abuse controls, and encrypted relay; Clerk
+        provides account and session management; Google verifies the selected identity. LongLeash
+        requests only basic OpenID identity scopes—name, email, and profile—not Gmail, Drive, source
+        repositories, or provider accounts. Each processor may handle ordinary network and security
+        metadata under its own terms and privacy notice.
       </p>
-      <h2>Questions or security reports</h2>
+      <h2>Retention, export, and deletion</h2>
       <p>
-        Use the repository’s <a href={`${REPOSITORY}/issues`}>public issue tracker</a> for non-sensitive
-        questions. Do not place pairing secrets, tokens, private code, or security exploit details
-        in a public issue. A dedicated private reporting channel will be named here before broad public promotion.
+        Account records remain until you delete the account or they must be retained for security or
+        legal obligations. Open the account control in the app header to download the hosted account
+        fields LongLeash exposes or permanently delete the account. Deletion also clears that
+        account’s credentials from the current browser; laptop-local transcripts are outside the
+        hosted account and must be managed on the laptop. You may also contact{' '}
+        <a href="mailto:privacy@longleash.dev">privacy@longleash.dev</a> for an access, correction,
+        export, or deletion request, subject to applicable law and identity verification.
+      </p>
+      <h2>Security and privacy contact</h2>
+      <p>
+        Use <a href="mailto:security@longleash.dev">security@longleash.dev</a> for private security
+        reports and <a href="mailto:support@longleash.dev">support@longleash.dev</a> for ordinary
+        questions. Do not place pairing links, tokens, private code, or exploit details in a public
+        issue. The public <a href={`${REPOSITORY}/issues`}>issue tracker</a> is only for redacted,
+        non-sensitive reports.
+      </p>
+    </DocsLayout>
+  )
+}
+
+function Terms() {
+  return (
+    <DocsLayout
+      path="/terms"
+      eyebrow="Legal"
+      title="Terms of Service"
+      summary="Rules for the free hosted public preview. The MIT license continues to govern the open-source code itself."
+    >
+      <p className="effective">Effective 15 August 2026</p>
+      <h2>Agreement and operator</h2>
+      <p>
+        These terms govern use of the LongLeash-hosted website, account service, and encrypted relay,
+        operated by Sahith Reddy Thummala. By using the hosted service you agree to these terms and
+        the <a href={siteHref('/privacy')}>Privacy Notice</a>. If you do not agree, use the MIT-licensed
+        source locally or stop using the hosted service.
+      </p>
+      <h2>Eligibility and your responsibilities</h2>
+      <p>
+        You must be legally able to enter this agreement and use LongLeash only with computers,
+        repositories, provider accounts, and data you are authorized to control. You are responsible
+        for securing your Google account, phone, laptop, pairing links, provider subscriptions, and
+        actions approved through the product.
+      </p>
+      <h2>Acceptable use</h2>
+      <p>
+        Do not use the hosted service to gain unauthorized access; distribute malware; evade provider
+        or network controls; interfere with another user; probe rooms or accounts you do not own;
+        overload the relay; violate law or third-party rights; or expose another person’s secrets.
+        LongLeash may rate-limit, suspend, or terminate access needed to protect users and infrastructure.
+      </p>
+      <h2>Third-party services</h2>
+      <p>
+        Claude, Codex, Google, Clerk, Cloudflare, GitHub, and any other third-party service have their
+        own terms, availability, and fees. LongLeash does not include an AI subscription and cannot
+        grant rights those providers do not give you.
+      </p>
+      <h2>Preview availability and changes</h2>
+      <p>
+        The hosted service is a free public preview. Features may change, be rate-limited, or be
+        discontinued, and temporary outages may occur. Material changes to these terms or the hosted
+        data boundary will be published before they take effect when reasonably possible.
+      </p>
+      <h2>Open-source license and feedback</h2>
+      <p>
+        Repository code is offered under the <a href={siteHref('/license')}>MIT License</a>. These
+        service terms do not remove rights granted by that license. You may provide feedback; unless
+        separately agreed, LongLeash may use it without obligation while respecting confidential information.
+      </p>
+      <h2>Disclaimers and liability</h2>
+      <p>
+        To the maximum extent permitted by applicable law, the preview is provided “as is” and “as
+        available,” without warranties. You remain responsible for reviewing agent output, approvals,
+        backups, repository state, and consequences of commands. To the maximum extent permitted by
+        law, LongLeash is not liable for indirect, incidental, special, consequential, or lost-profit
+        damages arising from the free hosted preview. Rights that cannot legally be excluded remain unaffected.
+      </p>
+      <h2>Ending use and contact</h2>
+      <p>
+        You may stop using the service and delete your account at any time. LongLeash may suspend or
+        end hosted access for breach, abuse, security risk, or service closure. Questions about these
+        terms may be sent to <a href="mailto:support@longleash.dev">support@longleash.dev</a>.
       </p>
     </DocsLayout>
   )

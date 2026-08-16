@@ -19,7 +19,7 @@ REPO_URL="${LONGLEASH_REPO:-https://github.com/Sahith59/LongLe-sh.git}"
 INSTALL_DIR="${LONGLEASH_HOME:-$HOME/.longleash-app}"
 BIN_DIR="$HOME/.local/bin"
 DATA_DIR="$HOME/.longleash"
-DEFAULT_RELAY="wss://longleash-relay.tsahith59.workers.dev/ws"
+DEFAULT_RELAY="wss://app.longleash.dev/ws"
 NEEDED_NODE_MAJOR=22
 
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }

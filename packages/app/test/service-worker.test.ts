@@ -75,3 +75,10 @@ describe('notification navigation', () => {
     expect(h.opened).toEqual([])
   })
 })
+
+describe('service worker trust boundary', () => {
+  it('never handles or caches hosted account API responses', () => {
+    expect(source).toContain("url.pathname.startsWith('/api/')")
+    expect(source).toContain("const CACHE = 'longleash-shell-v3'")
+  })
+})

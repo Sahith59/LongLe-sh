@@ -4,7 +4,7 @@
  * already have it. Network-first with cache fallback: updates flow whenever the laptop is
  * reachable, and the cached shell carries the app the rest of the time.
  */
-const CACHE = 'longleash-shell-v2'
+const CACHE = 'longleash-shell-v3'
 
 self.addEventListener('install', () => {
   self.skipWaiting()
@@ -111,7 +111,7 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== location.origin) return
   // Liveness and pairing must never be answered from cache: a cached /health would make an
   // unreachable laptop look reachable, which is precisely the lie this app exists to avoid.
-  if (url.pathname === '/health' || url.pathname === '/pair') return
+  if (url.pathname === '/health' || url.pathname === '/pair' || url.pathname.startsWith('/api/')) return
 
   // Navigations bypass the HTTP cache entirely: the shell must always revalidate with
   // the server (cheap — it answers 304 unless the build changed).

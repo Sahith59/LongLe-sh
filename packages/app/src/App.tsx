@@ -17,6 +17,9 @@ import {
   GitBranchPlus,
   ShieldAlert,
   SlidersHorizontal,
+  LogOut,
+  Trash2,
+  X,
 } from 'lucide-react'
 import type { DelegationPreview, DelegationReturnPreview, DelegationSummary } from '@longleash/protocol'
 import {
@@ -76,6 +79,7 @@ import {
   type SettingsUpdateState,
   type UpdateSessionSettingsInput,
 } from './ui/SessionSettingsSheet.js'
+import { useAccount } from './lib/account-context.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
@@ -694,6 +698,8 @@ export function Rail({
   updating?: boolean
   onUpdate?: () => void
 }) {
+  const account = useAccount()
+  const [accountOpen, setAccountOpen] = useState(false)
   return (
     <div className={`rail${onUpdate ? ' has-update' : ''}`}>
       <div className="rail-in">
@@ -720,6 +726,19 @@ export function Rail({
             {updating ? 'Updating…' : 'Update'}
           </Key>
         ) : null}
+        {account.hosted && account.signOut ? (
+          <button
+            type="button"
+            className="account-pill"
+            onClick={() => setAccountOpen(true)}
+            title={account.label ? `Signed in as ${account.label}. Account settings` : 'Account settings'}
+            aria-label={account.label ? `Signed in as ${account.label}. Account settings` : 'Account settings'}
+            aria-expanded={accountOpen}
+          >
+            <span aria-hidden="true">{account.label?.slice(0, 1).toUpperCase() ?? 'L'}</span>
+            <LogOut size={13} strokeWidth={2.2} aria-hidden="true" />
+          </button>
+        ) : null}
         <span className={`link-state${connected ? ' on' : ''}`}>
           {connected ? <Led status="running" /> : <Link2 size={13} strokeWidth={2.3} aria-hidden="true" />}
           {connected ? (
@@ -736,6 +755,82 @@ export function Rail({
             : 'Reconnecting to your laptop'}
         </span>
       </div>
+      {accountOpen ? <AccountSheet account={account} onClose={() => setAccountOpen(false)} /> : null}
+    </div>
+  )
+}
+
+function AccountSheet({ account, onClose }: { account: ReturnType<typeof useAccount>; onClose: () => void }) {
+  const [confirming, setConfirming] = useState(false)
+  const [confirmation, setConfirmation] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const remove = async () => {
+    if (confirmation !== 'DELETE' || !account.deleteAccount || deleting) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await account.deleteAccount()
+    } catch {
+      setDeleteError('The account could not be deleted. Nothing was removed; retry or contact privacy@longleash.dev.')
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div className="account-sheet-scrim" role="presentation" onPointerDown={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <section className="account-sheet" role="dialog" aria-modal="true" aria-labelledby="account-sheet-title">
+        <button className="sheetclose" type="button" onClick={onClose} aria-label="Close account settings">
+          <X size={20} aria-hidden="true" />
+        </button>
+        <p className="account-kicker">Hosted identity</p>
+        <h2 id="account-sheet-title">Your LongLeash account</h2>
+        <p className="account-sheet-label mono">{account.label ?? 'Signed in'}</p>
+        <div className="account-data-boundary">
+          This account identifies you to the hosted app. Laptop code, transcripts, provider
+          credentials, and pairing secrets are outside the account database.
+        </div>
+        <div className="account-sheet-actions">
+          <Key className="wide" {...(account.exportAccount ? { onClick: account.exportAccount } : {})} disabled={!account.exportAccount}>
+            <Download size={16} aria-hidden="true" /> Download account data
+          </Key>
+          <Key className="wide" {...(account.signOut ? { onClick: account.signOut } : {})} disabled={!account.signOut}>
+            <LogOut size={16} aria-hidden="true" /> Sign out
+          </Key>
+        </div>
+        {!confirming ? (
+          <button className="account-delete-link" type="button" onClick={() => setConfirming(true)}>
+            <Trash2 size={14} aria-hidden="true" /> Delete account
+          </button>
+        ) : (
+          <div className="account-delete-confirm">
+            <strong>Delete hosted identity?</strong>
+            <p>
+              This permanently deletes the account and this browser’s paired credentials. It does
+              not delete local laptop transcripts. Type <code>DELETE</code> to continue.
+            </p>
+            <input
+              className="field"
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              placeholder="DELETE"
+              aria-label="Type DELETE to confirm account deletion"
+              autoCapitalize="characters"
+              autoComplete="off"
+            />
+            <div className="account-delete-actions">
+              <Key onClick={() => { setConfirming(false); setConfirmation(''); setDeleteError(null) }}>Keep account</Key>
+              <Key className="danger" onClick={() => void remove()} disabled={confirmation !== 'DELETE' || deleting}>
+                <Trash2 size={15} aria-hidden="true" /> {deleting ? 'Deleting…' : 'Delete permanently'}
+              </Key>
+            </div>
+            {deleteError ? <p className="err" role="alert">{deleteError}</p> : null}
+          </div>
+        )}
+      </section>
     </div>
   )
 }

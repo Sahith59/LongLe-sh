@@ -9,7 +9,7 @@ hostnames even though the same Worker may serve both:
 | Public website | `longleash.<tld>` | Product, setup guide, security, docs, and roadmap |
 | Canonical alias | `www.longleash.<tld>` | Permanent redirect to the public website |
 | Product + relay | `app.longleash.<tld>` | Pairing/PWA at `/`, relay at `/ws`, status at `/health` |
-| Legacy compatibility | `longleash-relay.<account>.workers.dev` | Existing paired devices and rollback path during migration |
+| Legacy compatibility | `longleash-relay.<account>.workers.dev` | Existing laptop relay sockets and rollback; browser pages redirect to the branded app |
 
 This split prevents an unpaired visitor from seeing the pairing gate instead of the product site,
 and prevents a paired home-screen app from being replaced by a brochure on refresh.
@@ -40,44 +40,51 @@ The Worker has fail-safe host-aware routing:
   with its complete query intact;
 - new pairing links put their temporary secret in the URL fragment (`#c=…&s=…`), which a browser
   does not send in the HTTP request to Cloudflare;
-- the old `workers.dev` address remains usable until the migration has passed real-device testing.
+- browser visits to the configured legacy `workers.dev` address redirect to the account-gated app,
+  while `/ws`, `/health`, and account API paths remain available for migration;
+- an existing laptop may keep its old `workers.dev` relay URL while the newly signed-in phone uses
+  `app.longleash.dev`, because both hostnames reach the same Worker and room namespace.
 
-The public page is also available at `/welcome` on the legacy origin for preview and rollback.
+Before public-host configuration, the public page remains available at `/welcome` for preview.
+After branded launch, ordinary legacy browser paths redirect to `app.longleash.dev`; rollback means
+restoring the prior Worker version, not leaving an accountless public entrance live.
 Its documentation, troubleshooting, roadmap, privacy, and license pages stay on the public site;
 GitHub is an explicit source-code and issue-tracker destination, not the reading experience.
 
-The preview launches without a mandatory login. Pairing remains device identity, while any future
-billing account is an optional entitlement plane that never stores provider credentials,
-repositories, or transcripts. See [Public launch, accounts, and future billing](PUBLIC-ACCOUNT-STRATEGY.md).
+The official hosted app launches with a Google-backed LongLeash account. Pairing remains a separate
+device-authority lock, and LAN/self-hosted use remains accountless. The account never stores provider
+credentials, repositories, transcripts, or pairing secrets. See
+[Public accounts, device authority, and future billing](PUBLIC-ACCOUNT-STRATEGY.md) and the
+[account-enabled launch runbook](ACCOUNT-LAUNCH.md).
 
 ## One-time owner steps
 
 These steps require the domain owner and therefore are not safe for an automated coding session to
 guess or perform without the exact hostname.
 
-1. Own a domain appropriate for LongLeash. Do not buy a domain based only on an unverified search
-   result; confirm the registrar price, renewal price, and trademark risk yourself.
-2. Add that domain as an active zone in the same Cloudflare account as the Worker. If it is
-   registered elsewhere, Cloudflare will give you nameservers to set at the registrar.
+1. `longleash.dev` is owned in the same Cloudflare account as the Worker. Keep auto-renew, registrar
+   lock, DNSSEC, account MFA, and recovery codes enabled and tested.
+2. Before attaching production, finish Clerk, Google OAuth, contact aliases, terms, privacy, Worker
+   secrets, and account acceptance in [ACCOUNT-LAUNCH.md](ACCOUNT-LAUNCH.md).
 3. Confirm there are no existing CNAME records on the exact apex, `www`, or `app` hostnames.
    Cloudflare cannot attach a Worker Custom Domain over a conflicting CNAME.
 4. Enable a private vulnerability-reporting channel in GitHub or provide a dedicated security
    email, then add that exact channel to the public Security/Privacy copy. Never ask researchers to
    publish credentials or exploit details in an ordinary issue.
-5. Give the maintainer the exact zone and desired hostnames. Only then add the three Custom Domains
-   to `packages/relay/wrangler.jsonc` and configure:
+5. The exact hostnames are now fixed in `packages/relay/wrangler.jsonc`:
 
    ```jsonc
    {
      "routes": [
-       { "pattern": "longleash.example", "custom_domain": true },
-       { "pattern": "www.longleash.example", "custom_domain": true },
-       { "pattern": "app.longleash.example", "custom_domain": true }
+       { "pattern": "longleash.dev", "custom_domain": true },
+       { "pattern": "www.longleash.dev", "custom_domain": true },
+       { "pattern": "app.longleash.dev", "custom_domain": true }
      ],
      "vars": {
-       "PUBLIC_SITE_HOST": "longleash.example",
-       "PUBLIC_WWW_HOST": "www.longleash.example",
-       "PUBLIC_APP_HOST": "app.longleash.example"
+       "PUBLIC_SITE_HOST": "longleash.dev",
+       "PUBLIC_WWW_HOST": "www.longleash.dev",
+       "PUBLIC_APP_HOST": "app.longleash.dev",
+       "PUBLIC_LEGACY_APP_HOST": "longleash-relay.<account>.workers.dev"
      }
    }
    ```
@@ -98,7 +105,8 @@ The legacy origin stays enabled during the transition. Migration is deliberately
 
 ```mermaid
 flowchart LR
-    Old["Existing workers.dev app"] --> Keep["Keep serving existing devices"]
+    Old["Existing workers.dev laptop relay"] --> Keep["Keep socket compatibility"]
+    Browser["Legacy browser visit"] --> App
     Domain["Add branded Custom Domains"] --> Site["Apex landing page"]
     Domain --> App["app hostname · PWA + /ws"]
     App --> Verify["Desktop + iPhone acceptance matrix"]
@@ -117,8 +125,9 @@ After branded routing passes, update these public defaults together in one relea
 - the landing page's production app URL, if it cannot be derived from `app.<apex>`.
 
 Existing installations remember their relay URL. Do not silently rewrite it while a daemon is
-running. They can keep using `workers.dev` through the compatibility window or explicitly update
-after the new host is verified.
+running. Their laptop socket can keep using `workers.dev` through the compatibility window while
+the browser is redirected to the signed-in branded app; users may explicitly update after the new
+host is verified.
 
 ## Mandatory release gate
 
@@ -129,9 +138,10 @@ pnpm typecheck
 pnpm test
 pnpm build
 pnpm --dir packages/relay exec wrangler deploy --dry-run
-curl -fsS https://app.longleash.example/health
-curl -fsS https://app.longleash.example/build.json
-curl -I https://www.longleash.example/
+curl -fsS https://app.longleash.dev/health
+curl -fsS https://app.longleash.dev/api/auth/config
+curl -fsS https://app.longleash.dev/build.json
+curl -I https://www.longleash.dev/
 ```
 
 Also require HTTP 200 and the LongLeash public shell at every first-party route:
@@ -147,6 +157,7 @@ Also require HTTP 200 and the LongLeash public shell at every first-party route:
 /docs/faq
 /roadmap
 /privacy
+/terms
 /license
 ```
 
@@ -163,7 +174,7 @@ complete, the app must reconnect over cellular, and `longleash doctor` must repo
 Do not delete the `workers.dev` deployment during launch. If a branded certificate, DNS record,
 PWA update, or WebSocket route fails:
 
-1. leave existing devices on the legacy origin;
+1. keep existing laptop relay sockets on the legacy endpoint;
 2. restore the previous Worker version in Cloudflare;
 3. point new-install documentation back to the known-good origin;
 4. preserve the failing build ID, exact hostname, time, and Cloudflare request ID before retrying.

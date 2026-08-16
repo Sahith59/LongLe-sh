@@ -32,6 +32,41 @@ export interface Diagnostics {
 const TOKEN_KEY = 'longleash.token'
 const RELAY_SECRET_KEY = 'longleash.relaySecret'
 const RELAY_URL_KEY = 'longleash.relayUrl'
+const RELAY_PROTOCOL = 'longleash-v1'
+
+let credentialAccount: string | null = null
+let accountToken: (() => Promise<string | null>) | null = null
+
+/**
+ * The hosted app calls this before App mounts. Pairing credentials then belong to exactly one
+ * signed-in LongLeash account in this browser. LAN/self-hosted mode passes null and retains the
+ * original accountless keys. Existing unscoped credentials are deliberately not migrated: a
+ * public account must prove ownership by pairing again instead of silently inheriting a device.
+ */
+export function configureCredentialAccount(userId: string | null): void {
+  credentialAccount = userId
+}
+
+/** Supplies a short-lived Clerk session token only to the hosted relay-ticket endpoint. */
+export function configureAccountToken(provider: (() => Promise<string | null>) | null): void {
+  accountToken = provider
+}
+
+export function credentialKey(base: string, userId: string | null = credentialAccount): string {
+  return userId === null ? base : `${base}.account.${encodeURIComponent(userId)}`
+}
+
+function readCredential(base: string): string | null {
+  return localStorage.getItem(credentialKey(base))
+}
+
+function writeCredential(base: string, value: string): void {
+  localStorage.setItem(credentialKey(base), value)
+}
+
+function removeCredential(base: string): void {
+  localStorage.removeItem(credentialKey(base))
+}
 
 /** How long an attempt may sit silent before the other path gets its turn. */
 const OPEN_TIMEOUT_MS = 4000
@@ -46,15 +81,15 @@ const HOME_PROBE_MS = 15_000
 const KEEPALIVE_MS = 30_000
 
 export function storedToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+  return readCredential(TOKEN_KEY)
 }
 
 export function storedRelaySecret(): string | null {
-  return localStorage.getItem(RELAY_SECRET_KEY)
+  return readCredential(RELAY_SECRET_KEY)
 }
 
 export function storedRelayUrl(): string | null {
-  return localStorage.getItem(RELAY_URL_KEY)
+  return readCredential(RELAY_URL_KEY)
 }
 
 /**
@@ -90,6 +125,53 @@ function withRoom(endpoint: string, roomTag: string): string {
   return url.toString()
 }
 
+function withRelayRole(endpoint: string, roomTag: string, role: 'host' | 'guest'): string {
+  const url = new URL(withRoom(endpoint, roomTag))
+  url.searchParams.set('role', role)
+  return url.toString()
+}
+
+function relayTicketEndpoint(endpoint: string): string {
+  const url = new URL(endpoint)
+  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
+  url.pathname = '/api/relay-ticket'
+  url.search = ''
+  url.hash = ''
+  return url.toString()
+}
+
+async function guestProtocols(endpoint: string, room: string): Promise<string[] | undefined> {
+  if (accountToken === null) return undefined
+  const token = await accountToken()
+  if (token === null) throw new Error('Your LongLeash sign-in expired. Sign in again, then retry.')
+  const response = await fetch(relayTicketEndpoint(endpoint), {
+    method: 'POST',
+    cache: 'no-store',
+    credentials: 'omit',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ room, role: 'guest' }),
+  })
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Your LongLeash sign-in expired. Sign in again, then retry.')
+    if (response.status === 429) throw new Error('Too many reconnects. Wait one minute, then retry.')
+    throw new Error('The hosted relay could not authorize this connection.')
+  }
+  const body = (await response.json()) as { protocol?: unknown }
+  if (typeof body.protocol !== 'string' || !body.protocol.startsWith('ll-ticket.')) {
+    throw new Error('The hosted relay returned an invalid connection ticket.')
+  }
+  return [RELAY_PROTOCOL, body.protocol]
+}
+
+async function guestSocket(endpoint: string, room: string): Promise<WebSocket> {
+  const protocols = await guestProtocols(endpoint, room)
+  const url = withRelayRole(endpoint, room, 'guest')
+  return protocols === undefined ? new WebSocket(url) : new WebSocket(url, protocols)
+}
+
 export async function pair(challengeId: string, secret: string): Promise<string> {
   if ((await detectOrigin()) === 'relay') return pairViaRelay(challengeId, secret)
   const res = await fetch(`/pair?c=${encodeURIComponent(challengeId)}&s=${encodeURIComponent(secret)}`, {
@@ -100,10 +182,10 @@ export async function pair(challengeId: string, secret: string): Promise<string>
     throw new Error(body.reason ?? 'pairing rejected')
   }
   const { token, relaySecret } = (await res.json()) as { token: string; relaySecret?: string }
-  localStorage.setItem(TOKEN_KEY, token)
+  writeCredential(TOKEN_KEY, token)
   // The E2E root for the relay path. Captured now, at the one moment the laptop and phone
   // share a LAN-only channel, so this pairing works remotely without ever re-pairing.
-  if (relaySecret) localStorage.setItem(RELAY_SECRET_KEY, relaySecret)
+  if (relaySecret) writeCredential(RELAY_SECRET_KEY, relaySecret)
   return token
 }
 
@@ -115,9 +197,9 @@ export async function pair(challengeId: string, secret: string): Promise<string>
 async function pairViaRelay(challengeId: string, secret: string): Promise<string> {
   const identity = await derivePairingIdentity(secret)
   const endpoint = ownRelayEndpoint()
+  const socket = await guestSocket(endpoint, identity.roomTag)
 
   return new Promise<string>((resolve, reject) => {
-    const socket = new WebSocket(withRoom(endpoint, identity.roomTag))
     let settled = false
     const finish = (result: { token: string } | Error): void => {
       if (settled) return
@@ -166,9 +248,9 @@ async function pairViaRelay(challengeId: string, secret: string): Promise<string
           if (text === null) return
           const reply = JSON.parse(text) as { type?: string; token?: string; relaySecret?: string; reason?: string }
           if (reply.type === 'paired' && reply.token && reply.relaySecret) {
-            localStorage.setItem(TOKEN_KEY, reply.token)
-            localStorage.setItem(RELAY_SECRET_KEY, reply.relaySecret)
-            localStorage.setItem(RELAY_URL_KEY, endpoint)
+            writeCredential(TOKEN_KEY, reply.token)
+            writeCredential(RELAY_SECRET_KEY, reply.relaySecret)
+            writeCredential(RELAY_URL_KEY, endpoint)
             finish({ token: reply.token })
           } else if (reply.type === 'pair-error') {
             finish(new Error(`Pairing refused: ${reply.reason ?? 'unknown'}`))
@@ -180,9 +262,15 @@ async function pairViaRelay(challengeId: string, secret: string): Promise<string
 }
 
 export function forgetToken(): void {
-  localStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(RELAY_SECRET_KEY)
-  localStorage.removeItem(RELAY_URL_KEY)
+  removeCredential(TOKEN_KEY)
+  removeCredential(RELAY_SECRET_KEY)
+  removeCredential(RELAY_URL_KEY)
+}
+
+export function forgetCredentialsFor(userId: string): void {
+  localStorage.removeItem(credentialKey(TOKEN_KEY, userId))
+  localStorage.removeItem(credentialKey(RELAY_SECRET_KEY, userId))
+  localStorage.removeItem(credentialKey(RELAY_URL_KEY, userId))
 }
 
 /**
@@ -324,10 +412,10 @@ function lanWire(token: string, events: WireEvents): Wire {
   }
 }
 
-function relayWire(url: string, identity: RelayIdentity, events: WireEvents): Wire {
+async function relayWire(url: string, identity: RelayIdentity, events: WireEvents): Promise<Wire> {
   // The room tag rides the URL as well as the join message: the Worker relay must pick a
   // Durable Object before the upgrade completes, and the Node relay simply ignores it.
-  const socket = new WebSocket(withRoom(url, identity.roomTag))
+  const socket = await guestSocket(url, identity.roomTag)
   let ready = false
   let keepalive: ReturnType<typeof setInterval> | null = null
   const stopKeepalive = () => {
@@ -518,7 +606,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     if (message.type === 'hello') {
       const hello = message as unknown as Hello
       // Learn where the daemon lives beyond the LAN, so leaving home is survivable.
-      if (hello.relay?.url) localStorage.setItem(RELAY_URL_KEY, hello.relay.url)
+      if (hello.relay?.url) writeCredential(RELAY_URL_KEY, hello.relay.url)
       // Rebuild the list, then resume each stream from wherever this client left off.
       store.seedSessions(hello.sessions ?? [])
       for (const session of hello.sessions ?? []) subscribe(session.sessionId)
@@ -650,7 +738,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       if (secret !== null && url !== null) {
         try {
           identity ??= await deriveRelayIdentity(secret)
-          wire = relayWire(url, identity, events)
+          wire = await relayWire(url, identity, events)
           return
         } catch {
           // A corrupt stored secret must not wedge the app; fall through to the LAN.

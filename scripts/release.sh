@@ -65,7 +65,7 @@ bold "Verifying the phone would really get it"
 # reports the Worker active. A single request to the bare path can therefore turn a successful
 # release into a false failure. Cache-bust with the immutable build id and retry for a bounded
 # window; this still fails closed if the new bundle never becomes publicly readable.
-VERIFY_URL="https://longleash-relay.tsahith59.workers.dev/build.json?release=$BUILD"
+VERIFY_URL="https://app.longleash.dev/build.json?release=$BUILD"
 SERVED_BUILD=""
 ATTEMPT=1
 while [ "$ATTEMPT" -le 10 ]; do

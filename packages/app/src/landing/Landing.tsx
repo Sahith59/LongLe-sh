@@ -97,8 +97,7 @@ export function Landing() {
               </a>
             </div>
             <p className="hero-fine">
-              macOS or Linux · Node.js 22+ · your existing Claude or Codex login · no LongLeash
-              account
+              macOS or Linux · Node.js 22+ · your existing Claude or Codex login · free hosted account
             </p>
           </div>
           <LockPhone />
@@ -199,8 +198,8 @@ export function Landing() {
           </div>
           <div className="truth-row">
             <p>
-              <b>No account database.</b> Pairing is your identity, and every device can be revoked
-              from the laptop.
+              <b>Two separate locks.</b> Google identifies the hosted user; a fresh QR grants one
+              browser authority over one laptop. Local/self-hosted use stays accountless.
             </p>
             <p>
               <b>No generic remote shell.</b> The phone can call a small typed protocol, not execute
@@ -261,9 +260,10 @@ export function Landing() {
             <li>
               <span className="n">03</span>
               <div>
-                <h3>Pair the phone once</h3>
+                <h3>Sign in, then pair the phone</h3>
                 <p>
-                  Scan the fresh QR, add the app to your home screen, and require the header to say{' '}
+                  Continue with Google in the hosted app, scan the fresh QR, add the app to your home
+                  screen, and require the header to say{' '}
                   <code>linked · relay</code> or <code>linked · direct</code>. Pairing links are
                   single-use secrets.
                 </p>

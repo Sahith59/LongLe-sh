@@ -20,8 +20,8 @@ measurable customer, product, and reliability gates.
 3. Eventually charge for two operated products:
    - **Personal Cloud:** managed remote connectivity, push delivery, device recovery, and support.
    - **Team Control:** governed multi-agent coordination, shared audit, roles, policies, and support.
-4. Add login only to the optional commercial control plane. Pairing and local/self-hosted use must
-   never require an account.
+4. Require the existing free account only for the official hosted service. Pairing remains a
+   separate device-authority lock; local/self-hosted use must never require an account.
 5. Validate teams through founder-led design partnerships. Reddit can seed awareness, but it is not
    a complete acquisition strategy.
 6. Treat the first pricing numbers below as testable offers, not promises engraved in the UI.
@@ -313,8 +313,9 @@ measured rather than assumed.
 
 ## Measurement without betraying the product
 
-Do not require signup merely to count users. During the preview, collect only documented,
-privacy-preserving operational events with consent where required.
+Clerk is the authoritative registered-user count for the hosted preview; do not duplicate identity
+into another database merely for vanity metrics. Collect only documented, privacy-preserving
+operational events with consent where required.
 
 Never include paths, repository names, prompts, transcript text, tool content, notification content,
 pairing secrets, URL fragments, or provider conversation IDs in product analytics.

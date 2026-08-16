@@ -51,7 +51,7 @@ export function hostPairing(opts: PairingHostOptions): () => void {
     }
     if (disposed) return
 
-    const ws = new WebSocket(withRoom(opts.relayUrl, identity.roomTag))
+    const ws = new WebSocket(withRoom(opts.relayUrl, identity.roomTag, 'host'))
     socket = ws
     ws.on('open', () => {
       ws.send(JSON.stringify({ v: 1, type: 'join', room: identity.roomTag, role: 'host' }))

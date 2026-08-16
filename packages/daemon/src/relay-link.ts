@@ -4,9 +4,10 @@ import { deriveRelayIdentity, open, seal, type RelayIdentity } from '@longleash/
 export type RelayLinkStatus = 'stopped' | 'connecting' | 'connected'
 
 /** Both relay implementations accept it; only the Worker one needs it. */
-export function withRoom(endpoint: string, roomTag: string): string {
+export function withRoom(endpoint: string, roomTag: string, role?: 'host' | 'guest'): string {
   const url = new URL(endpoint)
   url.searchParams.set('room', roomTag)
+  if (role !== undefined) url.searchParams.set('role', role)
   return url.toString()
 }
 
@@ -113,7 +114,7 @@ export class RelayLink {
 
     // The room tag rides the URL too: the Worker relay picks its Durable Object from it,
     // and the Node relay ignores the query string entirely.
-    const socket = new WebSocket(withRoom(this.opts.url, identity.roomTag))
+    const socket = new WebSocket(withRoom(this.opts.url, identity.roomTag, 'host'))
     this.socket = socket
 
     socket.on('open', () => {

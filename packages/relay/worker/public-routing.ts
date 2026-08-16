@@ -3,6 +3,8 @@ export interface PublicHostConfig {
   PUBLIC_SITE_HOST?: string
   /** Paired PWA + WebSocket hostname, for example app.longleash.dev. */
   PUBLIC_APP_HOST?: string
+  /** Previous workers.dev app. Browser pages redirect; laptop relay sockets remain compatible. */
+  PUBLIC_LEGACY_APP_HOST?: string
   /** Optional www alias that permanently redirects to PUBLIC_SITE_HOST. */
   PUBLIC_WWW_HOST?: string
 }
@@ -15,6 +17,11 @@ export type PublicRouteDecision =
 function cleanHost(value: string | undefined): string | null {
   const host = value?.trim().toLowerCase().replace(/\.$/, '')
   return host ? host : null
+}
+
+export function isPublicSiteHost(url: URL, config: PublicHostConfig): boolean {
+  const siteHost = cleanHost(config.PUBLIC_SITE_HOST)
+  return siteHost !== null && cleanHost(url.hostname) === siteHost
 }
 
 function hasPairingSecret(url: URL): boolean {
@@ -51,10 +58,27 @@ export function publicRoute(url: URL, config: PublicHostConfig): PublicRouteDeci
   const host = cleanHost(url.hostname)
   const siteHost = cleanHost(config.PUBLIC_SITE_HOST)
   const appHost = cleanHost(config.PUBLIC_APP_HOST)
+  const legacyAppHost = cleanHost(config.PUBLIC_LEGACY_APP_HOST)
   const wwwHost = cleanHost(config.PUBLIC_WWW_HOST)
 
   if (host !== null && wwwHost !== null && siteHost !== null && host === wwwHost) {
     return { kind: 'redirect', location: httpsLocation(siteHost, url) }
+  }
+
+  // Registration must not be optional just because somebody remembers the old workers.dev URL.
+  // Keep API, health and WebSocket requests on the legacy host so already-installed laptop daemons
+  // can finish the migration; move every browser navigation and static asset to the account-gated
+  // branded app. Pairing query parameters are preserved by httpsLocation.
+  if (
+    host !== null &&
+    legacyAppHost !== null &&
+    appHost !== null &&
+    host === legacyAppHost &&
+    url.pathname !== '/health' &&
+    url.pathname !== '/ws' &&
+    !url.pathname.startsWith('/api/')
+  ) {
+    return { kind: 'redirect', location: httpsLocation(appHost, url) }
   }
 
   if (host === null || siteHost === null || host !== siteHost) {

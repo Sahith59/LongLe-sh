@@ -8,21 +8,44 @@
   "compatibility_date": "2026-08-14",
   "observability": { "enabled": true },
 
-  // Empty means legacy routing: workers.dev stays the paired app and /welcome stays the site.
-  // The exact branded hosts are filled only after the owner has added the chosen zone to
-  // Cloudflare. See docs/PUBLIC-LAUNCH.md.
+  // Cloudflare owns DNS and certificates for these exact hosts. workers.dev stays enabled for old
+  // laptop relay sockets and rollback; browser traffic is moved to the account-gated app host.
+  "routes": [
+    { "pattern": "longleash.dev", "custom_domain": true },
+    { "pattern": "www.longleash.dev", "custom_domain": true },
+    { "pattern": "app.longleash.dev", "custom_domain": true }
+  ],
+
+  // The exact branded and legacy hosts keep migration behavior deterministic. See
+  // docs/PUBLIC-LAUNCH.md before changing any of them.
   "vars": {
-    "PUBLIC_SITE_HOST": "",
-    "PUBLIC_WWW_HOST": "",
-    "PUBLIC_APP_HOST": ""
+    "PUBLIC_SITE_HOST": "longleash.dev",
+    "PUBLIC_WWW_HOST": "www.longleash.dev",
+    "PUBLIC_APP_HOST": "app.longleash.dev",
+    "PUBLIC_LEGACY_APP_HOST": "longleash-relay.tsahith59.workers.dev"
   },
+
+  // Never put these values in this file, .env, chat, screenshots, or Git. Set them with
+  // `wrangler secret put` after creating the production Clerk instance.
+  "secrets": {
+    "required": ["CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY", "RELAY_TICKET_SECRET"]
+  },
+
+  // The authenticated account API is keyed by Clerk subject; guest upgrades use a one-way account
+  // tag; unauthenticated laptop hosts are the narrow exception and use a generous IP storm limit.
+  "ratelimits": [
+    { "name": "ACCOUNT_API_RATE", "namespace_id": "811501", "simple": { "limit": 30, "period": 60 } },
+    { "name": "RELAY_GUEST_RATE", "namespace_id": "811502", "simple": { "limit": 120, "period": 60 } },
+    { "name": "RELAY_HOST_RATE", "namespace_id": "811503", "simple": { "limit": 60, "period": 60 } }
+  ],
 
   // The built app shell. Requests for it never reach the Worker, so they cost nothing.
   "assets": {
     "directory": "../app/dist",
     "binding": "ASSETS",
     // Host-aware routing applies to every path: the branded apex is the public site, every www
-    // path redirects canonically, while app.<domain> and workers.dev remain the paired PWA.
+    // path redirects canonically, app.<domain> is the paired PWA, and workers.dev only keeps the
+    // compatibility endpoints needed by older laptop configurations.
     // The Worker immediately delegates ordinary assets to the asset binding.
     "run_worker_first": true,
     // The Worker deliberately rewrites /welcome to /welcome.html. Disable automatic HTML

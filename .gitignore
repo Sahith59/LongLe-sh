@@ -12,6 +12,8 @@ npm-debug.log*
 # Env / secrets — never commit these
 .env
 .env.*
+.dev.vars
+.dev.vars.*
 *.pem
 *.key
 

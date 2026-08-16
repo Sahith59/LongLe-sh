@@ -26,6 +26,7 @@ describe('first-party public site', () => {
       '/docs/faq',
       '/roadmap',
       '/privacy',
+      '/terms',
       '/license',
     ]) {
       expect(pages).toContain(`case '${path}'`)
@@ -39,6 +40,7 @@ describe('first-party public site', () => {
     expect(chrome).toContain("siteHref('/docs')")
     expect(chrome).toContain("siteHref('/license')")
     expect(chrome).toContain("siteHref('/privacy')")
+    expect(chrome).toContain("siteHref('/terms')")
     expect(chrome).toContain('Source on GitHub')
   })
 
