@@ -12,7 +12,8 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const HOOK_COMMAND = `node ${resolve(here, 'longleash-hook.mjs')}`
+const shellQuote = (value) => `'${value.replace(/'/g, `'"'"'`)}'`
+const HOOK_COMMAND = `${shellQuote(process.execPath)} ${shellQuote(resolve(here, 'longleash-hook.mjs'))}`
 const SETTINGS = join(homedir(), '.claude', 'settings.json')
 const EVENTS = {
   SessionStart: [{ matcher: '*', command: HOOK_COMMAND, timeout: 5 }],

@@ -106,6 +106,9 @@ mode with no relay at all.
 
 ## Workstream B: verified npm distribution
 
+**Implementation checkpoint (17 August 2026):** complete in the local Workstream B commit. Public
+availability is deliberately not claimed yet because the package has not been pushed or published.
+
 ### Package shape
 
 - `@longleash/cli`: the supported `longleash` executable, setup wizard, service lifecycle, doctor,
@@ -146,6 +149,33 @@ action required for package identity; no npm token should be shared in chat or c
 - Install, upgrade, downgrade, doctor, and uninstall are idempotent and preserve user data unless the
   user explicitly requests data removal.
 - The old GitHub-pipe installer remains documented only as a transparent fallback during migration.
+
+### Implementation evidence and remaining release gates
+
+- `@longleash/cli` packages the built phone app, daemon, device utility, and provider hooks without
+  cloning a mutable branch or running a LongLeash install lifecycle script.
+- Setup stages a versioned release, serializes concurrent installers, verifies package identity,
+  restores configuration and managed files on failure, switches the active symlink atomically, and
+  never starts the daemon. Uninstall removes only managed files and preserves user data.
+- Direct and transitive runtime dependencies are pinned through exact manifest versions plus a
+  checked npm shrinkwrap. The package verifier enforces the file allowlist, official-registry
+  SHA-512 integrity, expected bundled dependency notices, public package identity, and an 8 MiB
+  unpacked-size ceiling.
+- The real tarball passed macOS arm64 install, doctor, repeat setup, forced activation failure,
+  rollback, wrapper execution, and uninstall. The production dependency audit reported no known
+  vulnerabilities. Repository typechecks, 837 ordinary tests, production builds, relay dry-run,
+  and VSIX packaging passed.
+- The tokenless publish workflow uses an exact tag/version match, a protected GitHub environment,
+  pinned actions, npm 11, `contents: read`, and `id-token: write`. It runs the tarball matrix on
+  Linux Node 22.14 and macOS Node 24 before publishing.
+- The real Claude reopen contract passed after its assertion was corrected to count assistant text
+  instead of the user's prompt. The Codex live contract is currently blocked by the local Codex
+  account's provider usage limit; it is not recorded as a product pass or failure.
+
+Before changing the public website to npm, the maintainer must push this commit, let the clean
+Linux/macOS workflow pass, bootstrap the first `rc` package with npm 2FA, bind the trusted publisher,
+verify `npm view` ownership/integrity/provenance, and repeat the real tarball matrix from the public
+registry. Until then, `@latest` is not a valid public promise.
 
 ## Workstream C: resilient background service
 

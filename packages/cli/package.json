@@ -1,0 +1,77 @@
+{
+  "name": "@longleash/cli",
+  "version": "0.1.0-rc.1",
+  "description": "Securely control Claude Code and Codex sessions on your laptop from your phone.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "longleash": "bin/longleash.mjs"
+  },
+  "files": [
+    "bin/",
+    "runtime/",
+    "LICENSE",
+    "npm-shrinkwrap.json",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "engines": {
+    "node": ">=22.14.0",
+    "npm": ">=10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sahith59/LongLe-sh.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://longleash.dev/docs/getting-started",
+  "bugs": {
+    "url": "https://github.com/Sahith59/LongLe-sh/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "developer-tools",
+    "local-first",
+    "remote-control"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "pnpm --filter @longleash/app build && node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "shrinkwrap:generate": "node scripts/shrinkwrap.mjs",
+    "shrinkwrap:check": "node scripts/shrinkwrap.mjs --check",
+    "pack:verify": "node scripts/verify-package.mjs",
+    "prepack": "pnpm build"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.115.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.220",
+    "@fastify/static": "10.1.2",
+    "@fastify/websocket": "11.3.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "better-sqlite3": "12.11.1",
+    "fastify": "5.11.0",
+    "qrcode-terminal": "0.12.0",
+    "web-push": "3.6.7",
+    "ws": "8.21.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@longleash/app": "workspace:*",
+    "@longleash/daemon": "workspace:*",
+    "@longleash/protocol": "workspace:*",
+    "@types/node": "22.20.1",
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}
