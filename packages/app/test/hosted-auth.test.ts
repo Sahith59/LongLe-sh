@@ -66,6 +66,7 @@ describe('hosted account boundary', () => {
 
   it('ships a Clerk-compatible CSP without opening scripts to unsafe evaluation', () => {
     const headers = readFileSync(new URL('../public/_headers', import.meta.url), 'utf8')
+    expect(headers).toContain('https://clerk.longleash.dev')
     expect(headers).toContain('https://accounts.longleash.dev')
     expect(headers).toContain('https://*.protect.clerk.com')
     expect(headers).toContain('frame-src https://challenges.cloudflare.com')

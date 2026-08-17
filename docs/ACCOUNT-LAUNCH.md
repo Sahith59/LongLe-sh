@@ -9,7 +9,8 @@ secret-bearing dashboard work with the owner and code/test/deployment work in th
 flowchart TB
     Site[longleash.dev\nsite + docs] --> App[app.longleash.dev\nsigned-in PWA]
     WWW[www.longleash.dev] -->|308| Site
-    App --> Clerk[accounts.longleash.dev\nClerk Frontend API]
+    App --> Clerk[clerk.longleash.dev\nClerk Frontend API]
+    App --> Portal[accounts.longleash.dev\nClerk Account Portal]
     App --> Ticket[authenticated relay ticket API]
     Laptop[Laptop daemon\naccountless outbound host] --> Room[Cloudflare Durable Object\nopaque E2E frames]
     Ticket --> Room
@@ -52,8 +53,8 @@ until all three deliver. Do not route security reports into a public issue track
    a separate production instance for launch.
 3. Enable Google as the only production sign-in method for this release. Do not enable passwords,
    phone/SMS, organizations, or extra social providers merely because they are available.
-4. Configure the production root domain as `longleash.dev` and the Frontend API/custom auth host as
-   `accounts.longleash.dev`.
+4. Configure the production root domain as `longleash.dev`. Clerk provisions the Frontend API at
+   `clerk.longleash.dev` and the Account Portal at `accounts.longleash.dev`.
 5. Add the DNS records Clerk displays. Cloudflare may need those exact records set to **DNS only**;
    follow Clerk's live domain-verification instructions rather than guessing.
 6. Restrict Clerk's subdomain allowlist to `app.longleash.dev`. Do not allow `*.longleash.dev`.
@@ -73,8 +74,10 @@ In a project-owned Google Cloud project:
    - homepage: `https://longleash.dev`;
    - privacy: `https://longleash.dev/privacy`;
    - terms: `https://longleash.dev/terms`;
-   - authorized JavaScript origin: `https://app.longleash.dev`.
-3. Copy the **exact production redirect URI shown by Clerk** into Google. Do not construct or shorten it.
+   - authorized JavaScript origins: `https://longleash.dev`, `https://www.longleash.dev`, and
+     `https://app.longleash.dev`.
+3. Copy the **exact production redirect URI shown by Clerk** into Google. For the current production
+   instance it is `https://clerk.longleash.dev/v1/oauth_callback`; do not construct or shorten it.
 4. Request only `openid`, `email`, and `profile`. Never request Gmail, Drive, Contacts, Calendar,
    GitHub, source repository, or provider scopes.
 5. Put the Google Client ID and Client Secret directly into Clerk's production dashboard. Do not

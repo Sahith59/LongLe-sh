@@ -63,7 +63,7 @@ The production OAuth client requests only `openid`, `email`, and `profile`. It m
 Gmail, Drive, GitHub, repository, contacts, calendar, or provider scopes. Clerk production must use:
 
 - root domain `longleash.dev`;
-- Frontend API host `accounts.longleash.dev`;
+- Frontend API host `clerk.longleash.dev` and Account Portal host `accounts.longleash.dev`;
 - subdomain allowlist containing only `app.longleash.dev` (plus an explicit host later if needed);
 - Worker-side `authorizedParties: ['https://app.longleash.dev']`;
 - redirect URLs copied exactly from Clerk into Google Cloud;
