@@ -50,6 +50,23 @@ function verifySecurityHeaders(response, label) {
   assert((response.headers.get('permissions-policy') ?? '').includes('camera=(self)'), `${label}: camera policy drifted`)
 }
 
+async function waitForBuild(expected) {
+  let last = 'unreachable'
+  for (let attempt = 1; attempt <= 15; attempt += 1) {
+    try {
+      const response = await expectStatus(`${app}/build.json?verify=${Date.now()}-${attempt}`, 200)
+      const build = await response.json()
+      assert(typeof build.build === 'string' && build.build.length >= 7, 'production build stamp is missing')
+      last = build.build
+      if (!expected || expected.startsWith(build.build)) return build.build
+    } catch (error) {
+      last = error instanceof Error ? error.message : String(error)
+    }
+    if (attempt < 15) await new Promise((resolve) => setTimeout(resolve, 2_000))
+  }
+  throw new Error(`production serves ${last}, expected commit ${expected}`)
+}
+
 async function main() {
   for (const path of ['/', '/docs', '/docs/security', '/docs/troubleshooting', '/privacy', '/terms']) {
     await expectStatus(`${apex}${path}`, 200)
@@ -86,11 +103,9 @@ async function main() {
     body: '{}',
   })
 
-  const build = await (await expectStatus(`${app}/build.json?verify=${Date.now()}`, 200)).json()
-  assert(typeof build.build === 'string' && build.build.length >= 7, 'production build stamp is missing')
-  if (expectedCommit) {
-    assert(expectedCommit.startsWith(build.build), `production serves ${build.build}, expected commit ${expectedCommit}`)
-  }
+  // Static assets can take a few seconds to converge across Cloudflare edges after Wrangler
+  // activates the Worker. Retry for a bounded window; an actually stale release still fails closed.
+  const build = await waitForBuild(expectedCommit)
 
   // Any non-server-error HTTPS response proves Node accepted the certificate chain and hostname.
   // Clerk may challenge a non-browser client at the Account Portal root, so a 403 is reachable,
@@ -98,7 +113,7 @@ async function main() {
   await expectStatus('https://clerk.longleash.dev/v1/environment', 200)
   await expectTlsReachable('https://accounts.longleash.dev/')
 
-  console.log(`Production matrix passed for build ${build.build}.`)
+  console.log(`Production matrix passed for build ${build}.`)
   console.log('Verified: branded routes, legacy compatibility, TLS, security headers, auth readiness, and unauthenticated API boundaries.')
 }
 
