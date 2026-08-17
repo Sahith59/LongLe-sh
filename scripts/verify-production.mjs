@@ -17,8 +17,11 @@ function assert(condition, message) {
 }
 
 async function request(url, init = {}) {
+  const headers = new Headers(init.headers)
+  headers.set('cache-control', 'no-cache')
   return fetch(url, {
     ...init,
+    headers,
     cache: 'no-store',
     signal: AbortSignal.timeout(timeoutMs),
   })
@@ -52,7 +55,7 @@ function verifySecurityHeaders(response, label) {
 
 async function waitForBuild(expected) {
   let last = 'unreachable'
-  for (let attempt = 1; attempt <= 15; attempt += 1) {
+  for (let attempt = 1; attempt <= 60; attempt += 1) {
     try {
       const response = await expectStatus(`${app}/build.json?verify=${Date.now()}-${attempt}`, 200)
       const build = await response.json()
@@ -62,7 +65,7 @@ async function waitForBuild(expected) {
     } catch (error) {
       last = error instanceof Error ? error.message : String(error)
     }
-    if (attempt < 15) await new Promise((resolve) => setTimeout(resolve, 2_000))
+    if (attempt < 60) await new Promise((resolve) => setTimeout(resolve, 2_000))
   }
   throw new Error(`production serves ${last}, expected commit ${expected}`)
 }
