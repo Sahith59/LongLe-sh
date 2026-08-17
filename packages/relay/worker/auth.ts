@@ -92,7 +92,11 @@ function decodeBase64Url(value: string): Uint8Array | null {
   try {
     const padding = '='.repeat((4 - (value.length % 4)) % 4)
     const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/') + padding)
-    return Uint8Array.from(binary, (char) => char.charCodeAt(0))
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+    // Reject alternate spellings that only change unused trailing bits. They decode to the same
+    // bytes and do not defeat HMAC, but accepting two strings for one ticket complicates audit,
+    // replay, and tamper semantics. Issued tickets always use this canonical representation.
+    return base64Url(bytes) === value ? bytes : null
   } catch {
     return null
   }
