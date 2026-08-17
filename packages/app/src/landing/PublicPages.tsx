@@ -39,6 +39,12 @@ const guides: PageMeta[] = [
     icon: BookOpen,
   },
   {
+    path: '/docs/connectivity',
+    label: 'Connectivity choices',
+    description: 'Compare the hosted relay, your own relay, and LAN-only operation.',
+    icon: Radio,
+  },
+  {
     path: '/docs/daily-use',
     label: 'Daily use',
     description: 'Sessions, approvals, tuning, handoffs, updates, and stopping.',
@@ -73,6 +79,7 @@ const guides: PageMeta[] = [
 const titles: Record<string, string> = {
   '/docs': 'Documentation',
   '/docs/getting-started': 'Getting started',
+  '/docs/connectivity': 'Connectivity choices',
   '/docs/daily-use': 'Daily use',
   '/docs/troubleshooting': 'Troubleshooting',
   '/docs/security': 'Security model',
@@ -109,7 +116,7 @@ SOFTWARE.`
 export function PublicPageRouter({ path }: { path: string }) {
   useEffect(() => {
     const title = titles[path]
-    document.title = title ? `${title} — LongLeash` : 'Page not found — LongLeash'
+    document.title = title ? `${title} | LongLeash` : 'Page not found | LongLeash'
     window.scrollTo(0, 0)
     const hash = window.location.hash.slice(1)
     if (hash) window.requestAnimationFrame(() => document.getElementById(hash)?.scrollIntoView())
@@ -122,6 +129,9 @@ export function PublicPageRouter({ path }: { path: string }) {
       break
     case '/docs/getting-started':
       page = <GettingStarted />
+      break
+    case '/docs/connectivity':
+      page = <Connectivity />
       break
     case '/docs/daily-use':
       page = <DailyUse />
@@ -246,7 +256,7 @@ function DocsHome() {
       <CodeBlock command={'longleash doctor\ntail -n 150 ~/.longleash/daemon.log'} />
       <p>
         Then follow the <a href={siteHref('/docs/troubleshooting')}>symptom-first recovery guide</a>.
-        Pairing URLs are secrets—remove them before sharing a screenshot.
+        Pairing URLs are secrets. Remove them before sharing a screenshot.
       </p>
     </DocsLayout>
   )
@@ -291,7 +301,7 @@ function GettingStarted() {
           Home Screen</b>, then open LongLeash from the new home-screen icon.
         </li>
         <li>Sign in inside that installed app with Google, an email code, or email and password.</li>
-        <li>Choose <b>Scan the QR</b> inside the installed app—not from the iPhone Camera app.</li>
+        <li>Choose <b>Scan the QR</b> inside the installed app, not from the iPhone Camera app.</li>
         <li>Scan the fresh QR shown by the daemon. Keep its entire quiet border in view.</li>
         <li>Require the header to show <code>linked · relay</code> or <code>linked · direct</code>.</li>
       </ol>
@@ -322,6 +332,119 @@ function GettingStarted() {
       </ol>
       <p>
         If any step is ambiguous, stop there and use <a href={siteHref('/docs/troubleshooting')}>Troubleshooting</a>.
+      </p>
+    </DocsLayout>
+  )
+}
+
+function Connectivity() {
+  return (
+    <DocsLayout
+      path="/docs/connectivity"
+      title="Choose who operates the path."
+      summary="Your agents and code stay on the laptop in every mode. The difference is how the phone reaches that laptop and who keeps that route online."
+    >
+      <div className="mode-summary" aria-label="LongLeash connectivity modes">
+        <section>
+          <span className="doc-icon"><Radio size={19} aria-hidden="true" /></span>
+          <div><b>Hosted relay</b><small>Fastest setup. LongLeash operates the encrypted route.</small></div>
+        </section>
+        <section>
+          <span className="doc-icon"><Laptop size={19} aria-hidden="true" /></span>
+          <div><b>Self-hosted relay</b><small>Remote access through infrastructure you operate.</small></div>
+        </section>
+        <section>
+          <span className="doc-icon"><Smartphone size={19} aria-hidden="true" /></span>
+          <div><b>LAN-only</b><small>No relay. Phone and laptop must share a trusted network.</small></div>
+        </section>
+      </div>
+
+      <h2 id="compare">Compare the three modes</h2>
+      <div className="comparison-scroll" role="region" aria-label="Connectivity mode comparison" tabIndex={0}>
+        <table className="mode-table">
+          <thead>
+            <tr><th scope="col">Question</th><th scope="col">Hosted relay</th><th scope="col">Self-hosted relay</th><th scope="col">LAN-only</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Works away from home</th><td>Yes</td><td>Yes, when your relay is internet reachable</td><td>No</td></tr>
+            <tr><th scope="row">Internet service operator</th><td>LongLeash</td><td>You</td><td>None</td></tr>
+            <tr><th scope="row">LongLeash account</th><td>Required for the official hosted service</td><td>Not required by the reference relay</td><td>Not required</td></tr>
+            <tr><th scope="row">Can the relay read content</th><td>No</td><td>No, when the reference protocol is unchanged</td><td>Not applicable</td></tr>
+            <tr><th scope="row">Who manages TLS and uptime</th><td>LongLeash</td><td>You</td><td>Not applicable</td></tr>
+            <tr><th scope="row">Best fit</th><td>Quick, managed remote access</td><td>Remote access with infrastructure control</td><td>Same-network use with no internet relay</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="hosted">Hosted relay: the shortest path</h2>
+      <ol>
+        <li>Install LongLeash on the laptop and connect at least one supported provider.</li>
+        <li>Use the default <code>wss://app.longleash.dev/ws</code> relay during setup.</li>
+        <li>Install the phone app from Safari, sign in, and scan a fresh QR inside the installed app.</li>
+        <li>Confirm the app reports <code>linked · relay</code> and run one harmless acceptance test.</li>
+      </ol>
+      <p>
+        The hosted service sees ordinary routing metadata such as timing, frame sizes, opaque room
+        identifiers, and network addresses. End-to-end encryption keeps prompts, code, paths,
+        transcripts, approvals, and device credentials unreadable to the relay.
+      </p>
+      <AgentSetupNote mode="hosted relay" />
+
+      <h2 id="self-hosted">Self-hosted relay: remote access you operate</h2>
+      <p>
+        Self-hosting does not mean remote access can run only on the laptop. Access from another
+        network still needs an internet-reachable relay with DNS, TLS, WebSocket support, monitoring,
+        and updates. You operate that service and its metadata boundary.
+      </p>
+      <ol>
+        <li>Choose Cloudflare Workers or the reference container behind an HTTPS reverse proxy.</li>
+        <li>From a trusted source checkout, install dependencies and build the app.</li>
+        <li>Dry-run the accountless configuration before creating anything in your Cloudflare account.</li>
+      </ol>
+      <CodeBlock command={'pnpm install\npnpm --filter @longleash/relay check:selfhost'} />
+      <ol start={4}>
+        <li>Deploy only after the dry run lists <code>ROOM</code> and <code>ASSETS</code>, with no LongLeash production domains or Clerk bindings.</li>
+      </ol>
+      <CodeBlock command="pnpm --filter @longleash/relay deploy:selfhost" />
+      <ol start={5}>
+        <li>Copy the <code>workers.dev</code> URL printed by Wrangler and verify <code>https://your-worker.workers.dev/health</code>.</li>
+        <li>Configure the laptop once with your <code>wss://your-relay.example/ws</code> endpoint.</li>
+        <li>Pair through the app served by that deployment and require matching builds in <code>longleash doctor</code>.</li>
+      </ol>
+      <div className="doc-callout warn">
+        <ShieldCheck size={19} aria-hidden="true" />
+        <p>
+          <b>You own the operations boundary.</b> LongLeash does not govern your server, DNS, TLS,
+          logs, retention, availability, access policy, backups, or upgrades. Preserve the reference
+          encryption protocol if you want the relay to remain content-blind.
+        </p>
+      </div>
+      <p>
+        Docker/VPS setup, custom-domain TLS, updates, logs, and failure recovery are documented in{' '}
+        <a href={`${REPOSITORY}/blob/main/docs/DEPLOY.md`}>the advanced operator guide</a>. The
+        copyable default above deliberately uses the separate accountless Worker configuration.
+      </p>
+      <AgentSetupNote mode="self-hosted relay" />
+
+      <h2 id="lan">LAN-only: no internet relay</h2>
+      <ol>
+        <li>Set the relay to <code>off</code> during installation or configuration.</li>
+        <li>Keep the phone and laptop on the same trusted local network.</li>
+        <li>Start LongLeash, scan the local QR, and require <code>linked · direct</code>.</li>
+      </ol>
+      <p>
+        This is the only mode with no relay service. It does not provide away-from-home access, and
+        some guest Wi-Fi, VPN, hotspot, or client-isolation policies may block direct discovery.
+      </p>
+      <AgentSetupNote mode="LAN-only" />
+
+      <h2 id="daemon">What must remain running</h2>
+      <p>
+        The laptop must be awake, online, and running the LongLeash daemon because the actual agents
+        live there. npm can distribute the software and MCP can configure it, but neither is a
+        background runtime. Today the daemon is a foreground command. A per-user macOS LaunchAgent
+        and Linux systemd service are in development so closing a terminal will no longer end the
+        connection.
       </p>
     </DocsLayout>
   )
@@ -431,7 +554,7 @@ function Troubleshooting() {
       <p>
         LongLeash requires proof that the native process exited before granting another writer.
         Close the relevant Terminal or IDE process on the laptop, wait for its lifecycle event, and
-        retry once. If it still fails, keep the log—the refusal is protecting the conversation and checkout.
+        retry once. If it still fails, keep the log. The refusal is protecting the conversation and checkout.
       </p>
 
       <div className="doc-callout">
@@ -607,33 +730,53 @@ function Roadmap() {
     <DocsLayout
       path="/roadmap"
       eyebrow="Product roadmap"
-      title="Built in gates, not promises."
-      summary="Available means tested and usable today. In development means code or evidence exists but the public release gate has not passed. Planned means direction, not a date."
+      title="What works. What comes next."
+      summary="A quick view of the product you can use today and the capabilities we are proving next. Building and exploring are directions, not promised dates."
     >
-      <RoadmapStage state="Available now" tone="shipped" title="Phase 1 — control and reviewed delegation">
-        Claude and Codex sessions; approvals and replies; stop; provider-aware tuning; terminal
-        handoffs; safe parallel phone launches; and human-reviewed agent-to-agent briefings and returns.
+      <RoadmapStage icon={Smartphone} state="Available now" tone="shipped" title="Control real agent sessions from your phone">
+        <ul className="roadmap-list">
+          <li>See Claude Code and Codex sessions from Terminal, VS Code, and phone launches.</li>
+          <li>Reply, approve, deny, stop, tune, and return to a provider-native terminal conversation.</li>
+          <li>Run safe parallel work in isolated Git worktrees without creating two writers.</li>
+          <li>Review and edit an agent-to-agent briefing before starting an attributed child session.</li>
+          <li>Choose the hosted relay, your own relay, or LAN-only operation.</li>
+        </ul>
       </RoadmapStage>
-      <RoadmapStage state="Checkpoint saved" tone="building" title="Phase 2A — VS Code companion">
-        The authenticated protocol contract, fail-closed provider compatibility, workspace-trust
-        policy, verified VSIX packaging, live host evidence, and typed native session tree are built.
-        The exact next slice is authenticated daemon-to-extension snapshot sync with reconnect and stale-cursor tests.
+      <RoadmapStage icon={SquareTerminal} state="Building" tone="building" title="Install once and keep the laptop ready">
+        <ul className="roadmap-list">
+          <li>A provenance-backed npm package with no maintainer-specific install URL.</li>
+          <li>A per-user macOS and Linux background service with status, logs, updates, and clean removal.</li>
+          <li>A matching code on phone and terminal before a durable device is trusted.</li>
+          <li>A local dashboard for service health, devices, sessions, approvals, roots, and updates.</li>
+        </ul>
       </RoadmapStage>
-      <RoadmapStage state="Next after 2A" tone="planned" title="Parallel specialists and review">
-        Multiple isolated children, explicit scope and budgets, comparison, return review, and safe
-        merge UX. Human checkpoints remain visible; LongLeash will not hide an unbounded autonomous loop.
+      <RoadmapStage icon={FileCode2} state="Building" tone="building" title="A trustworthy VS Code companion">
+        <ul className="roadmap-list">
+          <li>An authenticated extension connection with workspace-trust enforcement.</li>
+          <li>A native session tree and exact provider-aware status inside the IDE.</li>
+          <li>Visible fallbacks when a vendor does not expose an existing conversation to its chat panel.</li>
+          <li>Fail-closed compatibility when a provider changes an integration contract.</li>
+        </ul>
       </RoadmapStage>
-      <RoadmapStage state="Future" tone="planned" title="Optional commercial services">
-        Billing entitlements and team administration may extend the hosted account plane. Provider
-        credentials, repositories, and transcripts remain outside it, and local/self-hosted use remains free.
+      <RoadmapStage icon={Wrench} state="Building" tone="building" title="Let your agent set it up safely">
+        <ul className="roadmap-list">
+          <li>A local MCP server for setup plans, diagnostics, service lifecycle, devices, and sessions.</li>
+          <li>Dry-run first, explicit confirmation for persistent changes, and atomic rollback.</li>
+          <li>No generic shell, secret return, approval bypass, or public MCP listener.</li>
+        </ul>
       </RoadmapStage>
-      <div className="doc-callout">
-        <FileCode2 size={19} aria-hidden="true" />
-        <p>
-          Maintainers can inspect the granular <a href={`${REPOSITORY}/blob/main/PLAN.md`}>engineering plan</a>{' '}
-          and <a href={`${REPOSITORY}/blob/main/docs/PHASE2A-CHECKPOINT.md`}>Phase 2A checkpoint</a> on GitHub.
-        </p>
-      </div>
+      <RoadmapStage icon={GitBranch} state="Exploring" tone="planned" title="Teams of specialists with visible human review">
+        <ul className="roadmap-list">
+          <li>Multiple isolated children with explicit scope, budgets, comparison, and return review.</li>
+          <li>Safe merge workflows that never hide an unbounded autonomous loop.</li>
+          <li>Optional team administration and operated services without moving provider credentials or code into our account plane.</li>
+        </ul>
+      </RoadmapStage>
+      <p className="roadmap-engineering-note">
+        Want implementation detail? Maintainers can inspect the granular{' '}
+        <a href={`${REPOSITORY}/blob/main/PLAN.md`}>engineering plan</a>. Public product language stays
+        focused on outcomes rather than internal milestones.
+      </p>
     </DocsLayout>
   )
 }
@@ -677,15 +820,15 @@ function Privacy() {
       </p>
       <h2>Push notifications</h2>
       <p>
-        If enabled, push messages contain identifiers needed to wake and route the app—not prompt,
+        If enabled, push messages contain identifiers needed to wake and route the app, not prompt,
         source code, path, transcript, or approval content. The app fetches the current item after reconnecting.
       </p>
       <h2>Processors and purpose</h2>
       <p>
         Cloudflare hosts the public site, static app, abuse controls, and encrypted relay; Clerk
         provides account, credential, verification, and session management; Google verifies identity
-        only when you choose Google sign-in. LongLeash requests only basic OpenID identity scopes—name,
-        email, and profile—not Gmail, Drive, source
+        only when you choose Google sign-in. LongLeash requests only basic OpenID identity scopes:
+        name, email, and profile. It does not request Gmail, Drive, source
         repositories, or provider accounts. Each processor may handle ordinary network and security
         metadata under its own terms and privacy notice.
       </p>
@@ -819,8 +962,30 @@ function Question({ q, children }: { q: string; children: ReactNode }) {
   return <section className="faq-item"><h2>{q}</h2><p>{children}</p></section>
 }
 
-function RoadmapStage({ state, tone, title, children }: { state: string; tone: string; title: string; children: ReactNode }) {
-  return <section className="roadmap-stage"><span className={`road-state ${tone}`}>{state}</span><h2>{title}</h2><p>{children}</p></section>
+function AgentSetupNote({ mode }: { mode: string }) {
+  return (
+    <section className="agent-setup-note">
+      <span className="doc-icon"><Wrench size={19} aria-hidden="true" /></span>
+      <div>
+        <span className="road-state building">Coming before public release</span>
+        <h3>Got no time? Let your agent wire it.</h3>
+        <p>
+          The LongLeash MCP will inspect prerequisites, propose a dry-run plan for {mode}, apply only
+          the changes you approve, and return a redacted health report. It will not receive pairing
+          secrets, provider credentials, or generic shell access.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+function RoadmapStage({ icon: Icon, state, tone, title, children }: { icon: typeof Laptop; state: string; tone: string; title: string; children: ReactNode }) {
+  return (
+    <section className="roadmap-stage">
+      <span className="roadmap-stage-icon"><Icon size={20} aria-hidden="true" /></span>
+      <div><span className={`road-state ${tone}`}>{state}</span><h2>{title}</h2>{children}</div>
+    </section>
+  )
 }
 
 function CodeBlock({ command }: { command: string }) {

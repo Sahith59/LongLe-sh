@@ -88,6 +88,7 @@ export function SiteHeader() {
         <a href={siteHref('/#product')}>Product</a>
         <a href={siteHref('/#start')}>Setup</a>
         <a href={siteHref('/docs')}>Docs</a>
+        <a href={siteHref('/docs/connectivity')}>Connectivity</a>
         <a href={siteHref('/roadmap')}>Roadmap</a>
       </nav>
       <div className="land-actions">
@@ -114,6 +115,7 @@ export function SiteFooter({ children }: { children?: ReactNode }) {
       {children}
       <nav className="foot-links" aria-label="Footer navigation">
         <a href={siteHref('/docs')}>Documentation</a>
+        <a href={siteHref('/docs/connectivity')}>Connectivity</a>
         <a href={siteHref('/roadmap')}>Roadmap</a>
         <a href={siteHref('/license')}>License</a>
         <a href={siteHref('/privacy')}>Privacy</a>

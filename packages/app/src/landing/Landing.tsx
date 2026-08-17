@@ -40,6 +40,12 @@ const docs = [
     icon: BookOpen,
   },
   {
+    title: 'Choose your connection',
+    body: 'Compare the hosted relay, your own relay, and LAN-only operation before setup.',
+    href: '/docs/connectivity',
+    icon: Radio,
+  },
+  {
     title: 'Troubleshooting',
     body: 'Symptom-first fixes for pairing, hooks, stale state, handoffs, and connection errors.',
     href: '/docs/troubleshooting',
@@ -47,7 +53,7 @@ const docs = [
   },
   {
     title: 'Security model',
-    body: 'What the laptop, phone, and relay can see—and where LongLeash deliberately stops.',
+    body: 'What the laptop, phone, and relay can see, plus where LongLeash deliberately stops.',
     href: '/docs/security',
     icon: ShieldCheck,
   },
@@ -119,7 +125,7 @@ export function Landing() {
           <SectionHeading
             eyebrow="What ships today"
             title="One place to see what needs you."
-            body="This is working software, not a concept page. The public preview includes the complete Phase 1 control loop and the safe foundations of Phase 2."
+            body="This is working software, not a concept page. See Claude Code and Codex sessions, make typed decisions, preserve provider conversations, and delegate work with a human review point."
           />
           <div className="feature-grid">
             <Feature
@@ -252,7 +258,7 @@ export function Landing() {
               <div>
                 <h3>Start the laptop daemon</h3>
                 <p>
-                  Run <code>longleash</code>, or name only the roots agents may use—for example{' '}
+                  Run <code>longleash</code>, or name only the roots agents may use. For example,{' '}
                   <code>longleash ~/code</code>. Keep that terminal open.
                 </p>
               </div>
@@ -334,33 +340,35 @@ export function Landing() {
         <section className="roadmap" id="roadmap">
           <SectionHeading
             eyebrow="Roadmap"
-            title="What is next—and what is not being faked."
-            body="Future work is published so users can distinguish a working feature from a direction. Dates are not promised before the release gates pass."
+            title="What works. What comes next."
+            body="See the product you can use today and the capabilities we are proving next. Building means active work, not a promised date."
           />
           <div className="roadmap-grid">
             <article>
+              <span className="roadmap-card-icon"><Smartphone size={19} aria-hidden="true" /></span>
               <span className="road-state shipped">Available now</span>
-              <h3>Phone control + reviewed delegation</h3>
+              <h3>Phone control and reviewed delegation</h3>
               <p>
                 Claude and Codex sessions, approvals, tuning, handoffs, safe parallel phone starts,
                 and human-reviewed agent-to-agent briefing and return flows.
               </p>
             </article>
             <article>
-              <span className="road-state building">In development</span>
-              <h3>LongLeash for VS Code</h3>
+              <span className="roadmap-card-icon"><SquareTerminal size={19} aria-hidden="true" /></span>
+              <span className="road-state building">Building</span>
+              <h3>Reliable install, service, and pairing</h3>
               <p>
-                Authenticated daemon sync, a native session tree, exact Codex thread views, IDE
-                context, and fail-closed provider compatibility. The VSIX foundation exists but is
-                not yet a public extension release.
+                Verified npm distribution, a per-user background service, a phone-to-terminal
+                matching code, and a local operations dashboard.
               </p>
             </article>
             <article>
-              <span className="road-state planned">Planned</span>
-              <h3>Parallel specialists + Crew</h3>
+              <span className="roadmap-card-icon"><FileCode2 size={19} aria-hidden="true" /></span>
+              <span className="road-state building">Building</span>
+              <h3>VS Code companion and agent setup</h3>
               <p>
-                Multiple isolated delegated children, review and merge UX, bounded coordination,
-                budgets, and explicit human checkpoints—never an invisible autonomous loop.
+                Authenticated IDE visibility plus a local MCP that can plan setup, diagnose failures,
+                and apply only the changes you approve.
               </p>
             </article>
           </div>
@@ -534,7 +542,7 @@ function LockPhone() {
       </div>
       <div className="phone-fade" />
       <p className="phone-caption">
-        <b>The moment that matters.</b> An agent hit something only you can answer—and you are not
+        <b>The moment that matters.</b> An agent hit something only you can answer, and you are not
         at your desk. Now that is fine.
       </p>
     </motion.div>

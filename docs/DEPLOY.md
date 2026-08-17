@@ -25,31 +25,41 @@ The Worker also serves the app itself over HTTPS.
 
 <https://dash.cloudflare.com/sign-up> — email and password. No card, no plan to choose.
 
-### 2. Deploy (3 minutes)
+### 2. Validate the accountless configuration
 
 ```sh
 cd ~/LongLeash
-pnpm --filter @longleash/app build          # the app shell the relay will serve
-pnpm --filter @longleash/relay deploy:worker
+pnpm install
+pnpm --filter @longleash/relay check:selfhost
 ```
 
-The first run opens a browser to authorise wrangler. When it finishes it prints your URL:
+The dry run must list only the `ROOM` Durable Object and `ASSETS` binding. It must not list
+`longleash.dev`, Clerk secrets, hosted ticket secrets, or the production rate-limit namespaces.
+The separate `wrangler.selfhost.jsonc` file is intentionally accountless; `wrangler.jsonc` is the
+LongLeash-operated production configuration and is not the self-hosting template.
+
+### 3. Deploy
+
+```sh
+pnpm --filter @longleash/relay deploy:selfhost
+```
+
+The first deploy opens a browser to authorize Wrangler. When it finishes it prints your URL:
 
 ```
-https://longleash-relay.<your-subdomain>.workers.dev
+https://longleash-relay-selfhost.<your-subdomain>.workers.dev
 ```
 
 Check it:
 
 ```sh
-curl https://longleash-relay.<your-subdomain>.workers.dev/health   # → {"ok":true,"role":"relay"}
+curl https://longleash-relay-selfhost.<your-subdomain>.workers.dev/health   # returns {"ok":true,"role":"relay"}
 ```
 
-### 3. Point your laptop at it
+### 4. Point your laptop at it
 
 ```sh
-cd ~/LongLeash/packages/daemon
-LONGLEASH_RELAY_URL=wss://longleash-relay.<your-subdomain>.workers.dev pnpm start ~
+LONGLEASH_RELAY_URL=wss://longleash-relay-selfhost.<your-subdomain>.workers.dev/ws longleash
 ```
 
 Scan the QR it prints, add the page to your home screen, and it works from any network.
@@ -57,7 +67,7 @@ Scan the QR it prints, add the page to your home screen, and it works from any n
 ### Updating later
 
 ```sh
-pnpm --filter @longleash/app build && pnpm --filter @longleash/relay deploy:worker
+pnpm --filter @longleash/relay deploy:selfhost
 ```
 
 ### Notes
