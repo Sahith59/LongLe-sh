@@ -8,7 +8,8 @@ describe('public Worker configuration', () => {
     for (const host of ['longleash.dev', 'www.longleash.dev', 'app.longleash.dev']) {
       expect(config).toContain(`"pattern": "${host}"`)
     }
-    expect(config).not.toContain('"workers_dev": false')
+    expect(config).toContain('"workers_dev": true')
+    expect(config).toContain('"preview_urls": false')
     expect(config).toContain('"PUBLIC_LEGACY_APP_HOST"')
   })
 

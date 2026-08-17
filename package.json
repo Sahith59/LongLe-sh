@@ -12,6 +12,7 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r build",
+    "verify:production": "node scripts/verify-production.mjs",
     "vscode:package": "pnpm --dir packages/vscode package:vsix",
     "vscode:verify-package": "pnpm --dir packages/vscode package:verify",
     "vscode:install": "pnpm --dir packages/vscode install:local"

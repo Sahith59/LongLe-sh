@@ -157,3 +157,26 @@ Privacy Notice for the operator's actual country/state, business name/entity, se
 consumer cancellation rules, age threshold, limitation language, and tax obligations. Do not put a
 home address in the repository; use a legitimate business mailing address or registered agent where
 law permits.
+
+## 9. GitHub production deployment
+
+Pull requests and every push to `main` run typechecks, the complete test suite, a production build,
+dependency audit, Worker dry-run, VS Code extension packaging check, and Docker relay smoke test.
+Production deployment runs only after both CI jobs pass and only when the repository variable
+`CLOUDFLARE_DEPLOY_ENABLED` is `true`.
+
+Create a dedicated Cloudflare API token for GitHub rather than copying the broad Wrangler login from
+a maintainer laptop. Limit it to this account and the `longleash.dev` zone, with Workers Scripts
+Edit, Workers Routes Edit, Account Settings Read, and Zone Read. In the GitHub `production`
+environment configure:
+
+- secret `CLOUDFLARE_API_TOKEN` — the dedicated token; never put it in a repository variable;
+- variable `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account ID;
+- repository variable `CLOUDFLARE_DEPLOY_ENABLED=true` only after the two values above exist.
+
+The deployment rebuilds from the exact Git SHA, preserves Worker secrets already stored at
+Cloudflare, publishes all branded and compatibility routes together, and runs
+`scripts/verify-production.mjs`. That verifier fails the workflow if the public build stamp does not
+match the commit or if routing, TLS, headers, Clerk readiness, legacy compatibility, or anonymous API
+boundaries drift. Human sign-in, pairing, cellular, and device-isolation checks remain the physical
+iPhone matrix above; CI cannot truthfully replace them.
