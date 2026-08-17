@@ -74,4 +74,12 @@ describe('hosted account boundary', () => {
     expect(headers).not.toContain("script-src *")
     expect(headers).not.toContain("'unsafe-eval'")
   })
+
+  it('describes every configured account path without implying that Google is required', () => {
+    const auth = readFileSync(new URL('../src/HostedAuth.tsx', import.meta.url), 'utf8')
+    expect(auth).toContain('Continue to sign in')
+    expect(auth).toContain('Google, email code, or email and password')
+    expect(auth).not.toContain('Continue with Google')
+    expect(auth).not.toContain('Google confirms your account')
+  })
 })

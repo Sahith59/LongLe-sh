@@ -198,7 +198,7 @@ export function Landing() {
           </div>
           <div className="truth-row">
             <p>
-              <b>Two separate locks.</b> Google identifies the hosted user; a fresh QR grants one
+              <b>Two separate locks.</b> Your verified account identifies the hosted user; a fresh QR grants one
               browser authority over one laptop. Local/self-hosted use stays accountless.
             </p>
             <p>
@@ -262,7 +262,7 @@ export function Landing() {
               <div>
                 <h3>Sign in, then pair the phone</h3>
                 <p>
-                  Continue with Google in the hosted app, scan the fresh QR, add the app to your home
+                  Sign in with Google or verified email, scan the fresh QR, add the app to your home
                   screen, and require the header to say{' '}
                   <code>linked · relay</code> or <code>linked · direct</code>. Pairing links are
                   single-use secrets.

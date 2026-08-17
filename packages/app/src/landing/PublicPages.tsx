@@ -465,9 +465,9 @@ function Security() {
 
       <h2>Account identity is a separate lock</h2>
       <p>
-        The official hosted app requires Google sign-in before it can request a short-lived relay
+        The official hosted app requires a verified LongLeash account before it can request a short-lived relay
         connection ticket. That account chooses which browser credential slot is visible; the QR
-        still grants authority over a specific laptop. Signing into Google alone cannot control a
+        still grants authority over a specific laptop. Signing into an account alone cannot control a
         machine, and a pairing secret is never sent to Google or the account provider. LAN and
         self-hosted deployments remain accountless.
       </p>
@@ -555,7 +555,7 @@ function Faq() {
       summary="The current public preview is local-first and honest about hosted identity, provider, and platform boundaries."
     >
       <Question q="Do I need a LongLeash account?">
-        The official hosted app requires a free Google-backed LongLeash account. A QR is still
+        The official hosted app requires a free LongLeash account through Google or verified email. A QR is still
         required for each laptop: account identity and device authority are separate. LAN and
         self-hosted use remain accountless. Provider logins stay with Claude Code or Codex.
       </Question>
@@ -638,7 +638,8 @@ function Privacy() {
       <p className="effective">Effective 15 August 2026</p>
       <h2>What the hosted account contains</h2>
       <p>
-        The official hosted app uses Clerk for authentication and Google for sign-in. The account
+        The official hosted app uses Clerk for authentication. You may sign in with Google, an email
+        verification code, or email and password. LongLeash never receives or stores your password. The account
         may contain a stable account identifier, name, email address, profile image, sign-in times,
         and security/session metadata needed to prevent abuse. LongLeash currently has no advertising,
         mailing-list, payment, or product-analytics integration and does not sell personal information.
@@ -671,8 +672,9 @@ function Privacy() {
       <h2>Processors and purpose</h2>
       <p>
         Cloudflare hosts the public site, static app, abuse controls, and encrypted relay; Clerk
-        provides account and session management; Google verifies the selected identity. LongLeash
-        requests only basic OpenID identity scopes—name, email, and profile—not Gmail, Drive, source
+        provides account, credential, verification, and session management; Google verifies identity
+        only when you choose Google sign-in. LongLeash requests only basic OpenID identity scopes—name,
+        email, and profile—not Gmail, Drive, source
         repositories, or provider accounts. Each processor may handle ordinary network and security
         metadata under its own terms and privacy notice.
       </p>
@@ -718,7 +720,7 @@ function Terms() {
       <p>
         You must be legally able to enter this agreement and use LongLeash only with computers,
         repositories, provider accounts, and data you are authorized to control. You are responsible
-        for securing your Google account, phone, laptop, pairing links, provider subscriptions, and
+        for securing your LongLeash sign-in method, phone, laptop, pairing links, provider subscriptions, and
         actions approved through the product.
       </p>
       <h2>Acceptable use</h2>

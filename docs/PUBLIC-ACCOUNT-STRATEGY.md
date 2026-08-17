@@ -1,14 +1,14 @@
 # Public accounts, device authority, and future billing
 
-**Decision updated 2026-08-15:** the official hosted app requires a free Google-backed LongLeash
-account. LAN and self-hosted deployments remain accountless. The account is an identity and hosted-
+**Decision updated 2026-08-17:** the official hosted app requires a free LongLeash account through
+Google or verified email. LAN and self-hosted deployments remain accountless. The account is an identity and hosted-
 service boundary; it does not replace the pairing QR or become a repository/transcript sync plane.
 
 ## The two-lock model
 
 ```mermaid
 flowchart LR
-    G[Google sign-in] --> A[Hosted account identity]
+    G[Google or verified email] --> A[Hosted account identity]
     A --> T[Short-lived relay ticket]
     Q[Fresh one-time pairing QR] --> D[Revocable device credential]
     T --> C{Both locks present?}
@@ -18,7 +18,7 @@ flowchart LR
     L[Provider credentials, repositories, transcripts] --> H[Stay on laptop]
 ```
 
-Google sign-in answers **who is using the hosted service**. Pairing answers **which browser may
+Account sign-in answers **who is using the hosted service**. Pairing answers **which browser may
 control which laptop**. Signing in alone grants no laptop authority. Possessing an account does not
 reveal another account's browser credentials. The pairing secret and frame key are never sent to
 Google, Clerk, or a central LongLeash database.
@@ -57,7 +57,7 @@ The hosted relay ticket is:
 - stripped before the request enters the room Durable Object;
 - unable to decrypt or forge end-to-end encrypted session frames.
 
-## Google and Clerk configuration
+## Hosted identity configuration
 
 The production OAuth client requests only `openid`, `email`, and `profile`. It must not request
 Gmail, Drive, GitHub, repository, contacts, calendar, or provider scopes. Clerk production must use:
@@ -109,7 +109,8 @@ repositories, transcript content, tool inputs, approval content, pairing secrets
 ## Release gates
 
 1. Canonical domains, certificates, redirect, health, and workers.dev rollback are verified.
-2. Google production OAuth and Clerk custom domain are configured with MFA and least scopes.
+2. Google production OAuth and Clerk custom domain are configured with least scopes, and every
+   operator account is protected with MFA.
 3. Cross-account storage isolation, OAuth pairing-fragment preservation, ticket tampering, expiry,
    room/role binding, rate limits, and fail-closed configuration pass automated tests.
 4. Terms, privacy, export, deletion, support, and private security reporting are actually reachable.

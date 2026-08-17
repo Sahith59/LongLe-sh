@@ -51,7 +51,7 @@ restoring the prior Worker version, not leaving an accountless public entrance l
 Its documentation, troubleshooting, roadmap, privacy, and license pages stay on the public site;
 GitHub is an explicit source-code and issue-tracker destination, not the reading experience.
 
-The official hosted app launches with a Google-backed LongLeash account. Pairing remains a separate
+The official hosted app launches with a LongLeash account through Google or verified email. Pairing remains a separate
 device-authority lock, and LAN/self-hosted use remains accountless. The account never stores provider
 credentials, repositories, transcripts, or pairing secrets. See
 [Public accounts, device authority, and future billing](PUBLIC-ACCOUNT-STRATEGY.md) and the

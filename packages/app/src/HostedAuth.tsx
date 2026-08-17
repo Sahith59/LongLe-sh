@@ -236,17 +236,6 @@ export function AccountUnavailable() {
   )
 }
 
-function GoogleGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
-      <path fill="#EA4335" d="M12 10.2v4.1h5.7c-.3 1.3-1.5 3.9-5.7 3.9A6.2 6.2 0 1 1 12 5.8c2.4 0 4 .9 4.9 1.8l3-2.9A10.2 10.2 0 1 0 22.2 12c0-.7-.1-1.3-.2-1.8z" />
-      <path fill="#4285F4" d="M22.2 12c0-.7-.1-1.3-.2-1.8H12v4.1h5.7c-.5 2.4-2.5 3.9-5.7 3.9v4c6 0 10.2-4.2 10.2-10.2z" />
-      <path fill="#FBBC05" d="M5.8 14.7A6.3 6.3 0 0 1 5.5 12c0-.9.2-1.8.5-2.6l-3.3-2.5A10.2 10.2 0 0 0 2.7 17z" />
-      <path fill="#34A853" d="M12 22.2c2.8 0 5.2-.9 7-2.5l-3.3-2.7c-.9.6-2.1 1.1-3.7 1.1-2.7 0-5-1.8-5.8-4.3l-3.4 2.6A10.2 10.2 0 0 0 12 22.2z" />
-    </svg>
-  )
-}
-
 export function SignInGate() {
   return (
     <AccountShell>
@@ -258,22 +247,22 @@ export function SignInGate() {
         </div>
       </div>
       <p className="account-copy">
-        Google confirms your account. A fresh QR still decides which laptop you control. They are
-        separate locks, and neither gives LongLeash your provider credentials.
+        Your verified account confirms who you are. A fresh QR still decides which laptop you
+        control. They are separate locks, and neither gives LongLeash your provider credentials.
       </p>
       <div className="account-boundaries" aria-label="LongLeash security boundaries">
-        <Boundary icon={<UserRoundCheck />} title="Google" detail="Identity only" />
+        <Boundary icon={<UserRoundCheck />} title="Account" detail="Google or email" />
         <Boundary icon={<KeyRound />} title="Pairing QR" detail="Device authority" />
         <Boundary icon={<Laptop />} title="Your laptop" detail="Code stays here" />
       </div>
       <SignInButton mode="redirect" oauthFlow="redirect" fallbackRedirectUrl={window.location.href} withSignUp>
         <button className="key account-action" type="button">
-          <GoogleGlyph /> Continue with Google <ArrowRight size={17} aria-hidden="true" />
+          <UserRoundCheck size={19} aria-hidden="true" /> Continue to sign in <ArrowRight size={17} aria-hidden="true" />
         </button>
       </SignInButton>
       <p className="account-footnote">
-        <ShieldCheck size={15} aria-hidden="true" /> Only your name, email, and profile image are requested.
-        Repositories, transcripts, prompts, and pairing secrets are not sent to Google.
+        <ShieldCheck size={15} aria-hidden="true" /> Choose Google, email code, or email and password.
+        Clerk handles credentials; repositories, transcripts, prompts, and pairing secrets stay outside your account.
       </p>
     </AccountShell>
   )

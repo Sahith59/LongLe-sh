@@ -20,7 +20,7 @@ flowchart TB
 ```
 
 Cloudflare remains registrar, DNS/TLS provider, static host, Worker, rate limiter, and relay. Clerk
-provides account/session management. Google proves identity. The laptop still runs the agents and
+provides account/session management and verifies the selected Google or email identity. The laptop still runs the agents and
 stores provider credentials, repositories, transcripts, audit history, pairing secrets, and frame keys.
 
 ## 1. Lock the domain and owner accounts
@@ -51,8 +51,9 @@ until all three deliver. Do not route security reports into a public issue track
 1. Create a project-owned Clerk account, enable MFA, and store recovery codes offline.
 2. Create an application named **LongLeash**. Keep a development instance for setup tests and create
    a separate production instance for launch.
-3. Enable Google as the only production sign-in method for this release. Do not enable passwords,
-   phone/SMS, organizations, or extra social providers merely because they are available.
+3. Enable Google, verified email codes, and email/password as the production sign-in methods. Require
+   email verification, compromised-password screening, device trust, and verified password recovery. Do not
+   enable phone/SMS, organizations, or extra social providers merely because they are available.
 4. Configure the production root domain as `longleash.dev`. Clerk provisions the Frontend API at
    `clerk.longleash.dev` and the Account Portal at `accounts.longleash.dev`.
 5. Add the DNS records Clerk displays. Cloudflare may need those exact records set to **DNS only**;
@@ -135,10 +136,10 @@ config to say `required: true` and `ready: true`, and every host to use a valid 
 Then run the physical iPhone matrix:
 
 1. Open the app signed out; no paired session may be visible.
-2. Continue with Google; return to the exact app URL.
+2. Complete Google, email-code, and email/password sign-in checks; each must return to the exact app URL.
 3. Scan a fresh QR; the fragment must survive OAuth and pair only once.
 4. Complete one harmless approval over Wi-Fi, then over cellular.
-5. Sign out; the session disappears. Sign in as a second Google user; the first user's device must
+5. Sign out; the session disappears. Sign in as a second LongLeash user; the first user's device must
    remain invisible and require a fresh QR.
 6. Return to the first account; its own paired credential may reappear.
 7. Download account data and inspect that it contains no path, prompt, transcript, token, or key.

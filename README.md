@@ -71,7 +71,7 @@ See [Architecture](docs/ARCHITECTURE.md) for the implementation and trust bounda
 - Codex CLI 0.147.0 or newer if you want Terminal/VS Code session discovery
 - A laptop that remains awake and online while you are away
 
-The official hosted app uses a free Google-backed LongLeash account; LAN and self-hosted use remain
+The official hosted app uses a free LongLeash account through Google or verified email; LAN and self-hosted use remain
 accountless. A fresh QR is still required to authorize each browser to a laptop. LongLeash needs no
 provider API key and does not supply access to Claude or Codex; the agent CLIs continue to use your
 existing provider login and plan.
