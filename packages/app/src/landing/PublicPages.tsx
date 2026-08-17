@@ -20,6 +20,7 @@ import {
   INSTALL_COMMAND,
   REPOSITORY,
   SiteFrame,
+  appHref,
   siteHref,
 } from './SiteChrome.js'
 
@@ -283,12 +284,22 @@ function GettingStarted() {
         relay; it does not ask you to expose a router port.
       </p>
 
-      <h2 id="pair">3. Pair the installed phone app</h2>
+      <h2 id="pair">3. Install, sign in, then pair the phone app</h2>
       <ol>
-        <li>Open the LongLeash home-screen app and choose <b>Scan the QR</b>.</li>
+        <li>
+          On iPhone, open <a href={appHref()}>the hosted app</a> in Safari, use <b>Share → Add to
+          Home Screen</b>, then open LongLeash from the new home-screen icon.
+        </li>
+        <li>Sign in inside that installed app with Google, an email code, or email and password.</li>
+        <li>Choose <b>Scan the QR</b> inside the installed app—not from the iPhone Camera app.</li>
         <li>Scan the fresh QR shown by the daemon. Keep its entire quiet border in view.</li>
         <li>Require the header to show <code>linked · relay</code> or <code>linked · direct</code>.</li>
       </ol>
+      <p>
+        If you opened or paired the link in an ordinary Safari tab first, nothing unsafe happened,
+        but that tab and the installed app may not share credentials. Open the home-screen app and
+        scan a fresh QR there instead.
+      </p>
       <div className="doc-callout warn">
         <Lock size={19} aria-hidden="true" />
         <p>

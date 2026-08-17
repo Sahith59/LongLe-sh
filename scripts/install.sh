@@ -219,7 +219,8 @@ printf '\n'
 bold "LongLeash is installed."
 printf '\n'
 echo "  Start it:      longleash"
-echo "  Then:          scan the QR with your phone and add it to your home screen"
+echo "  On iPhone:     open https://app.longleash.dev in Safari, add it to your home screen,"
+echo "                 open that installed app, sign in, then scan the QR from inside it"
 printf '\n'
 dim "  If 'longleash' is not found, open a new terminal window first."
 [ "$HAVE_CLAUDE" = "1" ] || dim "  Install Claude Code, then run: longleash hooks"

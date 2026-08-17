@@ -102,9 +102,10 @@ Keep that terminal open. Press `q`, then Enter, for a clean shutdown.
 
 ### 3. Pair the phone
 
-1. Scan the fresh QR printed by the laptop.
-2. On first use, open the link and add LongLeash to the phone's home screen.
-3. For later pairings, scan from **inside the installed LongLeash app** so the paired credentials
+1. On iPhone, open <https://app.longleash.dev> in Safari, choose **Share → Add to Home Screen**, and
+   open LongLeash from the new home-screen icon.
+2. Sign in inside that installed app.
+3. Scan the fresh QR from **inside the installed LongLeash app** so the paired credentials
    belong to that app rather than a separate browser tab. Pasting the complete link also works.
 4. Confirm the header says `linked · relay` or `linked · direct`.
 

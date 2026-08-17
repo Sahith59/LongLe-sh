@@ -34,6 +34,19 @@ describe('first-party public site', () => {
     expect(pages).toContain('<NotFound />')
   })
 
+  it('installs the iPhone PWA before pairing so credentials land in the right browser', () => {
+    const addToHome = pages.indexOf('Share → Add to')
+    const signIn = pages.indexOf('Sign in inside that installed app')
+    const scanInside = pages.indexOf('Choose <b>Scan the QR</b> inside the installed app')
+
+    expect(addToHome).toBeGreaterThan(-1)
+    expect(signIn).toBeGreaterThan(addToHome)
+    expect(scanInside).toBeGreaterThan(signIn)
+    expect(landing).toContain('add it to your home screen first')
+    expect(landing).toContain('then use its')
+    expect(landing).toContain('scanner on the fresh QR')
+  })
+
   it('uses the canonical product icon and first-party footer navigation', () => {
     expect(chrome).toContain('<img src="/icon-192.png"')
     expect(chrome).not.toContain('LeashGlyph')

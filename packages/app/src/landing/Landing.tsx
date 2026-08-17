@@ -260,10 +260,11 @@ export function Landing() {
             <li>
               <span className="n">03</span>
               <div>
-                <h3>Sign in, then pair the phone</h3>
+                <h3>Install the phone app, sign in, then pair</h3>
                 <p>
-                  Sign in with Google or verified email, scan the fresh QR, add the app to your home
-                  screen, and require the header to say{' '}
+                  On iPhone, open the hosted app in Safari and add it to your home screen first.
+                  Open that installed copy, sign in with Google or verified email, then use its
+                  scanner on the fresh QR. Require the header to say{' '}
                   <code>linked · relay</code> or <code>linked · direct</code>. Pairing links are
                   single-use secrets.
                 </p>

@@ -9,7 +9,7 @@ These are physics, not policy. Without them, nothing can work.
 | Requirement | Why | Who does it |
 |---|---|---|
 | **Your laptop stays awake** while you're away | A sleeping machine cannot answer your phone. | The installer offers to configure it, with your consent. You can decline and wake the Mac manually instead. |
-| **The daemon is running** | It is the thing your phone talks to. | Installed as a login item that restarts itself. |
+| **The daemon is running** | It is the thing your phone talks to. | Run `longleash` and keep that terminal open. A login item is not installed today. |
 | **Your phone can reach the daemon** | Same network (LAN mode) or through the relay (anywhere mode). | The app tells you which mode it's using and diagnoses failures in plain language. |
 | **An agent CLI installed** (e.g. Claude Code) | LongLeash drives agents; it isn't one. | You already have it if you're the target user. |
 
