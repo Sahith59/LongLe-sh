@@ -71,8 +71,19 @@ export function verifyInstalledPackage(prefix: string, expectedVersion: string):
 
 export interface PreparedInstall {
   cli: string
-  activate(): void
+  activate(): { migratedLegacyWrapper: boolean }
   rollback(): void
+}
+
+interface LegacyWrapperBackup {
+  content: string
+  mode: number
+}
+
+interface InstallMarker {
+  schema?: number
+  package?: string
+  legacyWrapper?: LegacyWrapperBackup
 }
 
 export function prepareManagedInstall(version: string, env: NodeJS.ProcessEnv = process.env): PreparedInstall {
@@ -151,29 +162,44 @@ export function prepareManagedInstall(version: string, env: NodeJS.ProcessEnv = 
         const hadWrapper = pathExists(paths.wrapper)
         const hadMarker = pathExists(marker)
         let previousWrapper: string | undefined
+        let previousWrapperMode = 0o700
         let previousMarker: string | undefined
         let wrapperWritten = false
         let markerWritten = false
+        let migratedLegacyWrapper = false
+        let legacyWrapper: LegacyWrapperBackup | undefined
         const tempLink = join(paths.home, `.current-${process.pid}-${randomUUID()}`)
         try {
           mkdirSync(paths.bin, { recursive: true, mode: 0o700 })
           if (hadWrapper) {
-            if (lstatSync(paths.wrapper).isSymbolicLink()) throw new Error(`Refusing symlinked executable: ${paths.wrapper}`)
+            const wrapperStat = lstatSync(paths.wrapper)
+            if (wrapperStat.isSymbolicLink()) throw new Error(`Refusing symlinked executable: ${paths.wrapper}`)
+            if (!wrapperStat.isFile()) throw new Error(`Refusing non-file executable: ${paths.wrapper}`)
+            if (process.getuid !== undefined && wrapperStat.uid !== process.getuid()) {
+              throw new Error(`Refusing executable owned by another user: ${paths.wrapper}`)
+            }
             previousWrapper = readFileSync(paths.wrapper, 'utf8')
+            previousWrapperMode = wrapperStat.mode & 0o777
             if (!previousWrapper.includes(WRAPPER_MARKER)) {
-              throw new Error(`Refusing to replace an unmanaged executable: ${paths.wrapper}`)
+              legacyWrapper = recognizeLegacyWrapper(previousWrapper, wrapperStat.mode & 0o777, paths.wrapper)
+              migratedLegacyWrapper = true
             }
           }
           if (hadMarker) {
             if (lstatSync(marker).isSymbolicLink()) throw new Error(`Refusing symlinked install marker: ${marker}`)
             previousMarker = readFileSync(marker, 'utf8')
+            const parsed = parseInstallMarker(previousMarker, marker)
+            if (parsed.package !== PACKAGE_NAME) throw new Error(`Refusing unrecognized install marker: ${marker}`)
+            legacyWrapper = parsed.legacyWrapper ?? legacyWrapper
           }
           const activeCli = join(paths.current, 'node_modules', '@longleash', 'cli', 'bin', 'longleash.mjs')
           // Login services do not inherit a shell's PATH. Pin the exact Node executable that
           // successfully verified and installed this release instead of hoping `node` resolves.
           writeExecutableAtomically(paths.wrapper, wrapper(activeCli, process.execPath))
           wrapperWritten = true
-          writeFileAtomically(marker, `${JSON.stringify({ schema: 1, package: PACKAGE_NAME }, null, 2)}\n`, 0o600)
+          const nextMarker: InstallMarker = { schema: 1, package: PACKAGE_NAME }
+          if (legacyWrapper) nextMarker.legacyWrapper = legacyWrapper
+          writeFileAtomically(marker, `${JSON.stringify(nextMarker, null, 2)}\n`, 0o600)
           markerWritten = true
 
           symlinkSync(release, tempLink, 'dir')
@@ -182,11 +208,12 @@ export function prepareManagedInstall(version: string, env: NodeJS.ProcessEnv = 
           }
           renameSync(tempLink, paths.current)
           activated = true
+          return { migratedLegacyWrapper }
         } catch (error) {
           try { rmSync(tempLink, { force: true }) } catch { /* best-effort cleanup */ }
           const restorationFailures: string[] = []
           if (wrapperWritten) {
-            try { restoreManagedFile(paths.wrapper, hadWrapper ? previousWrapper : undefined, 0o700) }
+            try { restoreManagedFile(paths.wrapper, hadWrapper ? previousWrapper : undefined, previousWrapperMode) }
             catch (restoreError) { restorationFailures.push(`executable: ${String(restoreError)}`) }
           }
           if (markerWritten) {
@@ -219,22 +246,88 @@ export function prepareManagedInstall(version: string, env: NodeJS.ProcessEnv = 
   }
 }
 
-export function uninstallManagedRuntime(env: NodeJS.ProcessEnv = process.env): { removed: boolean; configPreserved: string } {
+export function uninstallManagedRuntime(env: NodeJS.ProcessEnv = process.env): {
+  removed: boolean
+  configPreserved: string
+  legacyWrapperRestored: boolean
+} {
   const paths = installPaths(env)
   const marker = join(paths.home, MARKER)
-  if (!pathExists(marker)) return { removed: false, configPreserved: resolve(env.LONGLEASH_DATA ?? join(homedir(), '.longleash')) }
+  if (!pathExists(marker)) {
+    return {
+      removed: false,
+      configPreserved: resolve(env.LONGLEASH_DATA ?? join(homedir(), '.longleash')),
+      legacyWrapperRestored: false,
+    }
+  }
   if (lstatSync(marker).isSymbolicLink()) throw new Error(`Refusing symlinked install marker: ${marker}`)
-  const parsed = JSON.parse(readFileSync(marker, 'utf8')) as { package?: string }
+  const parsed = parseInstallMarker(readFileSync(marker, 'utf8'), marker)
   if (parsed.package !== PACKAGE_NAME) throw new Error(`Refusing to remove unrecognized install directory: ${paths.home}`)
 
+  let legacyWrapperRestored = false
   if (pathExists(paths.wrapper)) {
     if (lstatSync(paths.wrapper).isSymbolicLink()) throw new Error(`Refusing symlinked executable: ${paths.wrapper}`)
     const wrapperText = readFileSync(paths.wrapper, 'utf8')
     if (!wrapperText.includes(WRAPPER_MARKER)) throw new Error(`Refusing to remove an unmanaged executable: ${paths.wrapper}`)
-    rmSync(paths.wrapper)
+    if (parsed.legacyWrapper) {
+      const backup = validateLegacyBackup(parsed.legacyWrapper, paths.wrapper)
+      writeFileAtomically(paths.wrapper, backup.content, backup.mode)
+      legacyWrapperRestored = true
+    } else {
+      rmSync(paths.wrapper)
+    }
   }
   rmSync(paths.home, { recursive: true })
-  return { removed: true, configPreserved: resolve(env.LONGLEASH_DATA ?? join(homedir(), '.longleash')) }
+  return {
+    removed: true,
+    configPreserved: resolve(env.LONGLEASH_DATA ?? join(homedir(), '.longleash')),
+    legacyWrapperRestored,
+  }
+}
+
+function recognizeLegacyWrapper(content: string, mode: number, wrapperPath: string): LegacyWrapperBackup {
+  if (Buffer.byteLength(content, 'utf8') > 16 * 1024) {
+    throw new Error(`Refusing to replace an unmanaged executable: ${wrapperPath}`)
+  }
+  const match = content.match(
+    /^#!\/usr\/bin\/env bash\n# Created by the LongLeash installer\. The three values below are the settings; the behaviour\n# lives in \$LONGLEASH_DIR\/scripts\/longleash\.sh and updates with the code\.\nset -euo pipefail\nexport LONGLEASH_DIR="([^"\n]+)"\nexport LONGLEASH_DEFAULT_ROOTS="([^"\n]*)"\nexport LONGLEASH_DEFAULT_RELAY="([^"\n]*)"\nexec bash "\$LONGLEASH_DIR\/scripts\/longleash\.sh" "\$@"\n?$/,
+  )
+  if (!match) throw new Error(`Refusing to replace an unmanaged executable: ${wrapperPath}`)
+  const legacyRoot = match[1]
+  if (!legacyRoot || resolve(legacyRoot) !== legacyRoot) {
+    throw new Error(`Refusing legacy executable with an unsafe checkout path: ${wrapperPath}`)
+  }
+  const legacyEntrypoint = join(legacyRoot, 'scripts', 'longleash.sh')
+  if (!pathExists(legacyEntrypoint) || lstatSync(legacyEntrypoint).isSymbolicLink() || !lstatSync(legacyEntrypoint).isFile()) {
+    throw new Error(`The verified legacy executable points to a missing checkout: ${legacyRoot}`)
+  }
+  return { content, mode: normalizeExecutableMode(mode) }
+}
+
+function validateLegacyBackup(value: LegacyWrapperBackup, wrapperPath: string): LegacyWrapperBackup {
+  if (!value || typeof value.content !== 'string' || !Number.isSafeInteger(value.mode)) {
+    throw new Error(`Refusing invalid legacy executable backup in the install marker: ${wrapperPath}`)
+  }
+  return recognizeLegacyWrapper(value.content, value.mode, wrapperPath)
+}
+
+function parseInstallMarker(content: string, markerPath: string): InstallMarker {
+  let parsed: unknown
+  try { parsed = JSON.parse(content) } catch {
+    throw new Error(`Refusing invalid install marker: ${markerPath}`)
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`Refusing invalid install marker: ${markerPath}`)
+  }
+  const marker = parsed as InstallMarker
+  if (marker.legacyWrapper !== undefined) validateLegacyBackup(marker.legacyWrapper, markerPath)
+  return marker
+}
+
+function normalizeExecutableMode(mode: number): number {
+  const normalized = mode & 0o777
+  if ((normalized & 0o100) === 0) throw new Error('The legacy LongLeash executable is not owner-executable.')
+  return normalized
 }
 
 function wrapper(cli: string, node: string): string {

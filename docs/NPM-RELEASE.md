@@ -109,8 +109,8 @@ Every later release is tag-driven and tokenless. The publish job downloads the e
 the completed clean-machine job; it does not rebuild different bytes after verification:
 
 ```sh
-git tag --annotate cli-v0.1.0-rc.5 --message "Release @longleash/cli 0.1.0-rc.5"
-git push origin cli-v0.1.0-rc.5
+git tag --annotate cli-v0.1.0-rc.6 --message "Release @longleash/cli 0.1.0-rc.6"
+git push origin cli-v0.1.0-rc.6
 ```
 
 The tag must exactly match `packages/cli/package.json`. A prerelease publishes under the `rc`
