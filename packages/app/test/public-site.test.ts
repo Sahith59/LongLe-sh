@@ -5,20 +5,29 @@ import { currentSitePathForLocation, siteHrefForLocation } from '../src/landing/
 const landing = readFileSync(new URL('../src/landing/Landing.tsx', import.meta.url), 'utf8')
 const pages = readFileSync(new URL('../src/landing/PublicPages.tsx', import.meta.url), 'utf8')
 const chrome = readFileSync(new URL('../src/landing/SiteChrome.tsx', import.meta.url), 'utf8')
+const css = readFileSync(new URL('../src/landing/landing.css', import.meta.url), 'utf8')
+const welcome = readFileSync(new URL('../welcome.html', import.meta.url), 'utf8')
 
 describe('first-party public site', () => {
   it('routes every landing documentation card to a LongLeash page', () => {
     expect(landing).toContain("href: '/docs/getting-started'")
+    expect(landing).toContain("href: '/docs/connectivity'")
     expect(landing).toContain("href: '/docs/troubleshooting'")
     expect(landing).toContain("href: '/docs/security'")
     expect(landing).toContain("href: '/docs/session-portability'")
     expect(landing).not.toMatch(/href: `\$\{REPOSITORY\}\/blob\/main\/docs/)
   })
 
+  it('uses the scoped npm release channel without a maintainer-specific installer URL', () => {
+    expect(chrome).toContain('npm exec --yes --package=@longleash/cli@rc -- longleash setup')
+    expect(chrome).not.toContain('raw.githubusercontent.com')
+  })
+
   it('ships guides, legal pages, a roadmap, and an honest internal 404', () => {
     for (const path of [
       '/docs',
       '/docs/getting-started',
+      '/docs/connectivity',
       '/docs/daily-use',
       '/docs/troubleshooting',
       '/docs/security',
@@ -32,6 +41,11 @@ describe('first-party public site', () => {
       expect(pages).toContain(`case '${path}'`)
     }
     expect(pages).toContain('<NotFound />')
+    expect(pages).not.toMatch(/Phase 1|Phase 2A/)
+    expect(pages).toContain('Hosted relay')
+    expect(pages).toContain('Self-hosted relay')
+    expect(pages).toContain('LAN-only')
+    expect(pages).toContain('Let your agent wire it')
   })
 
   it('installs the iPhone PWA before pairing so credentials land in the right browser', () => {
@@ -51,10 +65,29 @@ describe('first-party public site', () => {
     expect(chrome).toContain('<img src="/icon-192.png"')
     expect(chrome).not.toContain('LeashGlyph')
     expect(chrome).toContain("siteHref('/docs')")
+    expect(chrome).toContain("siteHref('/docs/connectivity')")
     expect(chrome).toContain("siteHref('/license')")
     expect(chrome).toContain("siteHref('/privacy')")
     expect(chrome).toContain("siteHref('/terms')")
     expect(chrome).toContain('Source on GitHub')
+  })
+
+  it('uses customer-facing browser titles without em dashes', () => {
+    expect(pages).toContain('`${title} | LongLeash`')
+    expect(pages).not.toContain('`${title} — LongLeash`')
+    expect(welcome).toContain('<title>LongLeash | Leave the desk. Keep control.</title>')
+    expect(landing).not.toContain('—')
+    expect(pages).not.toContain('—')
+    expect(welcome).not.toContain('—')
+  })
+
+  it('keeps the mode comparison readable and keyboard reachable on narrow screens', () => {
+    expect(pages).toContain('role="region" aria-label="Connectivity mode comparison" tabIndex={0}')
+    expect(pages).toContain('<th scope="col">Question</th>')
+    expect(pages).toContain('<th scope="row">Works away from home</th>')
+    expect(css).toMatch(/\.comparison-scroll\s*{[\s\S]*?overflow-x: auto;/)
+    expect(css).toMatch(/\.mode-table\s*{[\s\S]*?min-width: 680px;/)
+    expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.mode-summary\s*{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/)
   })
 
   it('keeps public routes separate from the paired app on every supported host shape', () => {
@@ -94,5 +127,12 @@ describe('first-party public site', () => {
         search: '?site=%2Froadmap',
       }),
     ).toBe('/roadmap')
+    expect(
+      currentSitePathForLocation({
+        hostname: '127.0.0.1',
+        pathname: '/welcome.html',
+        search: '?site=%2Fdocs%2Fconnectivity',
+      }),
+    ).toBe('/docs/connectivity')
   })
 })

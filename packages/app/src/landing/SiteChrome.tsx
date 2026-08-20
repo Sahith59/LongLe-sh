@@ -3,7 +3,7 @@ import { ExternalLink } from 'lucide-react'
 
 export const REPOSITORY = 'https://github.com/Sahith59/LongLe-sh'
 export const INSTALL_COMMAND =
-  'curl -fsSL https://raw.githubusercontent.com/Sahith59/LongLe-sh/main/scripts/install.sh | bash'
+  'npm exec --yes --package=@longleash/cli@rc -- longleash setup'
 
 function splitHash(path: string): { pathname: string; hash: string } {
   const index = path.indexOf('#')
@@ -88,6 +88,7 @@ export function SiteHeader() {
         <a href={siteHref('/#product')}>Product</a>
         <a href={siteHref('/#start')}>Setup</a>
         <a href={siteHref('/docs')}>Docs</a>
+        <a href={siteHref('/docs/connectivity')}>Connectivity</a>
         <a href={siteHref('/roadmap')}>Roadmap</a>
       </nav>
       <div className="land-actions">
@@ -114,6 +115,7 @@ export function SiteFooter({ children }: { children?: ReactNode }) {
       {children}
       <nav className="foot-links" aria-label="Footer navigation">
         <a href={siteHref('/docs')}>Documentation</a>
+        <a href={siteHref('/docs/connectivity')}>Connectivity</a>
         <a href={siteHref('/roadmap')}>Roadmap</a>
         <a href={siteHref('/license')}>License</a>
         <a href={siteHref('/privacy')}>Privacy</a>

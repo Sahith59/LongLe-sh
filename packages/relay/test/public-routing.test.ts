@@ -17,6 +17,9 @@ describe('public host routing', () => {
     expect(publicRoute(new URL('https://longleash.dev/docs/troubleshooting'), config)).toEqual({
       kind: 'landing',
     })
+    expect(publicRoute(new URL('https://longleash.dev/docs/connectivity'), config)).toEqual({
+      kind: 'landing',
+    })
     expect(publicRoute(new URL('https://longleash.dev/license'), config)).toEqual({
       kind: 'landing',
     })

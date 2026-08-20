@@ -1,5 +1,5 @@
 /* ==========================================================================
-   LongLeash public site — the product's matte graphite, widened into a guide.
+   LongLeash public site: the product's matte graphite, widened into a guide.
 
    Raised surfaces are actions, recessed surfaces contain information, and mono
    text is machine output. The landing page does not introduce a parallel brand.
@@ -744,10 +744,23 @@ html {
   gap: 12px;
 }
 .roadmap-grid article {
+  position: relative;
   padding: 20px 18px;
   border-radius: var(--r);
   background: var(--recess);
   box-shadow: var(--sink);
+}
+.roadmap-card-icon,
+.roadmap-stage-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 16px;
+  border-radius: 11px;
+  color: var(--ink-2);
+  background: var(--grad-key);
+  box-shadow: var(--raise);
 }
 .road-state {
   display: inline-flex;
@@ -1161,6 +1174,100 @@ html {
   background: var(--grad-panel);
   box-shadow: var(--raise);
 }
+.mode-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 30px;
+}
+.mode-summary section {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  border-radius: var(--r);
+  background: var(--grad-panel);
+  box-shadow: var(--raise);
+}
+.mode-summary b,
+.mode-summary small {
+  display: block;
+}
+.mode-summary b {
+  margin-bottom: 4px;
+  font-size: 13.5px;
+}
+.mode-summary small {
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.comparison-scroll {
+  overflow-x: auto;
+  margin: 16px 0 28px;
+  border: 1px solid var(--hair-soft);
+  border-radius: var(--r);
+  background: var(--recess);
+  box-shadow: var(--sink);
+}
+.comparison-scroll:focus-visible {
+  outline: 2px solid var(--sage);
+  outline-offset: 3px;
+}
+.mode-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.mode-table th,
+.mode-table td {
+  padding: 14px;
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  vertical-align: top;
+}
+.mode-table tr:last-child th,
+.mode-table tr:last-child td {
+  border-bottom: 0;
+}
+.mode-table thead th {
+  color: var(--ink);
+  font: 600 10px/1.3 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mode-table tbody th {
+  width: 22%;
+  color: var(--ink);
+  font-weight: 600;
+}
+.agent-setup-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 24px 0 34px;
+  padding: 18px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  background: var(--grad-panel);
+  box-shadow: var(--raise);
+}
+.agent-setup-note .doc-icon {
+  flex: none;
+}
+.agent-setup-note .road-state {
+  margin-bottom: 10px;
+}
+.agent-setup-note h3 {
+  margin: 0 0 7px;
+}
+.agent-setup-note p {
+  margin-bottom: 0;
+}
 .definition-grid dt {
   font-size: 13px;
 }
@@ -1183,6 +1290,14 @@ html {
 .roadmap-stage + .roadmap-stage {
   margin-top: 14px;
 }
+.roadmap-stage {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 15px;
+}
+.roadmap-stage-icon {
+  margin-bottom: 0;
+}
 .roadmap-stage h2 {
   margin: 0 0 9px;
   font-size: 19px;
@@ -1190,6 +1305,19 @@ html {
 .roadmap-stage p {
   margin: 0;
   font-size: 13.5px;
+}
+.roadmap-list {
+  margin-bottom: 0 !important;
+}
+.roadmap-list li {
+  font-size: 13.5px;
+}
+.roadmap-engineering-note {
+  margin-top: 24px !important;
+  padding: 16px;
+  border-radius: var(--r);
+  background: var(--recess);
+  box-shadow: var(--sink);
 }
 .effective {
   color: var(--ink-3) !important;
@@ -1304,7 +1432,8 @@ html {
     grid-column: 1 / -1;
   }
   .guide-grid,
-  .definition-grid {
+  .definition-grid,
+  .mode-summary {
     grid-template-columns: minmax(0, 1fr);
   }
   .mental-model,

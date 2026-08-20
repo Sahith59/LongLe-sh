@@ -46,7 +46,7 @@ const transcript = (sessionId: string): string => {
   const replay = eventLog.replay(sessionId, 0)
   if (replay.gap) throw new Error('unexpected gap')
   return replay.events
-    .filter((e) => e.type === 'stream.delta')
+    .filter((e) => e.type === 'stream.delta' && (e.payload as { kind?: string }).kind === 'text')
     .map((e) => (e.payload as { text: string }).text)
     .join('')
 }
@@ -91,7 +91,10 @@ describe('reopening against real Claude', () => {
 
     // Now carry it on with actual words; the agent must remember its own past.
     expect(manager.sendMessage(sessionId, 'What did you just say? Repeat it exactly.', 'dev_phone')).toBe(true)
-    await settle(sessionId, () => statusOf(sessionId) === 'waiting' && transcript(sessionId).length > beforeTyping.length + 20)
+    await settle(
+      sessionId,
+      () => statusOf(sessionId) === 'waiting' && (transcript(sessionId).match(/BETA/g)?.length ?? 0) >= 2,
+    )
 
     const full = transcript(sessionId)
     expect(full.match(/BETA/g)!.length).toBeGreaterThanOrEqual(2)

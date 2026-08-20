@@ -1,0 +1,33 @@
+{
+  // Accountless reference deployment for people operating their own relay.
+  // This file deliberately contains no longleash.dev routes, Clerk secrets, hosted-account
+  // variables, or production rate-limit namespace IDs. The public production service uses
+  // wrangler.jsonc; never merge the two operational boundaries.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "longleash-relay-selfhost",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 }
+  },
+
+  // The same PWA and protocol are served from the operator's workers.dev address. With no
+  // PUBLIC_APP_HOST, the Worker follows the accountless relay path and never calls Clerk or the
+  // hosted ticket/rate-limit bindings.
+  "assets": {
+    "directory": "../app/dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "single-page-application"
+  },
+
+  "durable_objects": {
+    "bindings": [{ "name": "ROOM", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
+}

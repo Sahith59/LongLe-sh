@@ -26,11 +26,16 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - run: npm install --global npm@11.12.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --prod --audit-level=moderate
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - run: pnpm --filter @longleash/cli shrinkwrap:check
+      - run: pnpm --filter @longleash/cli pack:verify
+      - name: Install and exercise the CLI tarball
+        run: LONGLEASH_SMOKE_DAEMON=1 node packages/cli/scripts/smoke-tarball.mjs packages/cli/dist-pack/*.tgz
       - run: pnpm --dir packages/relay exec wrangler deploy --dry-run
       - run: pnpm vscode:package
       - run: pnpm vscode:verify-package

@@ -103,6 +103,7 @@ export class LongLeashServer {
   private external: ExternalSessions | null = null
   private delegations: DelegationManager | null = null
   private hookSecret: string | null = null
+  private localPairing: (() => string) | null = null
   private readonly staticRoot: string | undefined
   /** Captured at process start so updating files on disk cannot impersonate a daemon restart. */
   private readonly expectedBuild: string | null
@@ -307,6 +308,16 @@ export class LongLeashServer {
       return { revoked: true, deviceId }
     })
 
+    this.app.post('/local/pairing', async (request, reply) => {
+      if (!localOnly(request as never)) return reply.code(401).send({ reason: 'unauthorized' })
+      if (this.localPairing === null) return reply.code(503).send({ reason: 'pairing-unavailable' })
+      try {
+        return { url: this.localPairing() }
+      } catch {
+        return reply.code(503).send({ reason: 'pairing-failed' })
+      }
+    })
+
     // Pairing is POST-only: link previews and crawlers issue GETs, and must never be able
     // to burn a one-time challenge on the user's behalf.
     this.app.get('/pair', async (_request, reply) => reply.code(405).send({ reason: 'use-post' }))
@@ -473,6 +484,11 @@ export class LongLeashServer {
   attachExternal(external: ExternalSessions, hookSecret: string): void {
     this.external = external
     this.hookSecret = hookSecret
+  }
+
+  /** A laptop-local CLI may request a transient QR without persisting its secret in service logs. */
+  attachLocalPairing(create: () => string): void {
+    this.localPairing = create
   }
 
 

@@ -29,7 +29,8 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const HOOK_COMMAND = `node ${resolve(here, 'longleash-codex-hook.mjs')}`
+const shellQuote = (value) => `'${value.replace(/'/g, `'"'"'`)}'`
+const HOOK_COMMAND = `${shellQuote(process.execPath)} ${shellQuote(resolve(here, 'longleash-codex-hook.mjs'))}`
 const CONFIG = process.env.CODEX_HOME
   ? join(process.env.CODEX_HOME, 'config.toml')
   : join(homedir(), '.codex', 'config.toml')

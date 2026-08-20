@@ -9,9 +9,32 @@ import { hostPairing } from '../src/pairing-host.js'
 import { pairingUrl } from '../src/pairing-url.js'
 import { terminalQr } from '../src/terminal-qr.js'
 import { findCandidates, noAddressReason, vpnWarning } from '../demo/lan.js'
+import { acquireDaemonInstance } from '../src/instance-lock.js'
+import { persistentServiceLogLine } from '../src/service-log.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const APP_DIR = resolve(here, '../../app/dist')
+const serviceMode = process.env.LONGLEASH_SERVICE === '1'
+
+if (serviceMode) {
+  // Node's default uncaught-error output includes absolute source paths and arbitrary exception
+  // values. Durable service stderr must fail closed; interactive foreground mode keeps full stacks.
+  const fatal = () => {
+    console.error('LongLeash service stopped unexpectedly; details omitted. Run `longleash doctor`.')
+    process.exit(1)
+  }
+  process.on('uncaughtException', fatal)
+  process.on('unhandledRejection', fatal)
+}
+
+function daemonLog(line: string): void {
+  if (!serviceMode) {
+    console.log(line)
+    return
+  }
+  const safe = persistentServiceLogLine(line)
+  if (safe !== null) console.log(safe)
+}
 
 const roots = process.argv.slice(2).filter((arg) => !arg.startsWith('-'))
 if (roots.length === 0) {
@@ -24,7 +47,7 @@ if (roots.length === 0) {
 const dataDir = process.env.LONGLEASH_DATA ?? join(homedir(), '.longleash')
 const relay = resolveRelayUrl(process.env.LONGLEASH_RELAY_URL, dataDir)
 if (relay?.source === 'remembered') {
-  console.log(`Relay: ${relay.url} (remembered — LONGLEASH_RELAY_URL=off forgets it)`)
+  console.log(serviceMode ? 'Relay configuration loaded.' : `Relay: ${relay.url} (remembered — LONGLEASH_RELAY_URL=off forgets it)`)
 }
 
 /**
@@ -101,10 +124,13 @@ async function boot(host: string, port: number) {
     // LONGLEASH_ASK_EVERYTHING=1 pre-approves nothing, so even reading a file comes to your phone.
     ...(process.env.LONGLEASH_ASK_EVERYTHING === '1' ? { allowedTools: [] } : {}),
     dataDir,
-    log: (line) => console.log(line),
+    log: daemonLog,
     ...(relay === null ? {} : { relayUrl: relay.url }),
   })
 }
+
+const instanceLock = acquireDaemonInstance(dataDir)
+process.once('exit', () => instanceLock.release())
 
 const started = await (async () => {
   const firstPort = holder === 'other' ? 0 : wantedPort
@@ -152,7 +178,7 @@ function relayAppOrigin(wsUrl: string): string {
 function freshPairingUrl(): string {
   const challenge = daemon.registry.createPairingChallenge()
   if (relay !== null) {
-    hostPairing({ registry: daemon.registry, relayUrl: relay.url, challenge, log: (line) => console.log(`[pair] ${line}`) })
+    hostPairing({ registry: daemon.registry, relayUrl: relay.url, challenge, log: (line) => daemonLog(`[pair] ${line}`) })
     // The secret belongs in the fragment, never the query. Browsers do not send fragments in an
     // HTTP request, so neither the relay Worker nor edge request logs receive the pairing key.
     return pairingUrl(relayAppOrigin(relay.url), challenge.challengeId, challenge.secret)
@@ -164,7 +190,8 @@ function freshPairingUrl(): string {
   )
 }
 
-const url = freshPairingUrl()
+daemon.server.attachLocalPairing(freshPairingUrl)
+const url = serviceMode ? null : freshPairingUrl()
 
 console.log('\n=== LongLeash ===\n')
 const warn = vpnWarning()
@@ -172,7 +199,7 @@ if (warn) console.log(`!!! ${warn}\n`)
 if (!existsSync(join(APP_DIR, 'index.html'))) {
   console.log('The web app is not built yet — run `pnpm --filter @longleash/app build` first.\n')
 }
-if (daemon.posture.gateWeakened) {
+if (daemon.posture.gateWeakened && !serviceMode) {
   console.log(`Note: your Claude Code settings pre-approve ${daemon.posture.allowRuleCount} pattern(s),`)
   console.log('e.g. ' + daemon.posture.examples.join(', '))
   console.log('Those commands run WITHOUT asking your phone. They still appear in the activity')
@@ -194,23 +221,29 @@ if (preApproved.length > 0) {
 } else {
   console.log('')
 }
-console.log('Agents may work only in:')
-for (const root of roots) console.log(`  ${resolve(root)}`)
-console.log(
-  servedOnLan && best
-    ? `\nListening on ${servedHost}:${daemon.port} (${best.iface}, ${best.label})`
-    : `\nListening on ${servedHost}:${daemon.port} (no local network — relay only)`,
-)
-console.log(
-  relay !== null
-    ? `Relay: ${relay.url} — your phone can reach this laptop from anywhere.`
-    : 'Relay: not configured (LAN only). Set LONGLEASH_RELAY_URL once to enable remote access — it is remembered.',
-)
-console.log('\nScan this with your phone, then add it to your home screen:\n')
-console.log(terminalQr(url))
-console.log(`\n  ${url}\n`)
-if (relay !== null && servedOnLan) {
-  console.log(`(LAN fallback for pairing at home: http://${servedHost}:${daemon.port}/#c=…&s=… — same code)`)
+if (serviceMode) {
+  console.log(`Background service ready with ${roots.length} allowed project root(s).`)
+  console.log(`Connectivity: ${relay !== null ? 'encrypted relay enabled' : 'LAN only'}.`)
+  console.log('Pairing secrets are never written to service logs. Run `longleash pair` in a terminal.\n')
+} else {
+  console.log('Agents may work only in:')
+  for (const root of roots) console.log(`  ${resolve(root)}`)
+  console.log(
+    servedOnLan && best
+      ? `\nListening on ${servedHost}:${daemon.port} (${best.iface}, ${best.label})`
+      : `\nListening on ${servedHost}:${daemon.port} (no local network — relay only)`,
+  )
+  console.log(
+    relay !== null
+      ? `Relay: ${relay.url} — your phone can reach this laptop from anywhere.`
+      : 'Relay: not configured (LAN only). Set LONGLEASH_RELAY_URL once to enable remote access — it is remembered.',
+  )
+  console.log('\nScan this with your phone, then add it to your home screen:\n')
+  console.log(terminalQr(url!))
+  console.log(`\n  ${url}\n`)
+  if (relay !== null && servedOnLan) {
+    console.log(`(LAN fallback for pairing at home: http://${servedHost}:${daemon.port}/#c=…&s=… — same code)`)
+  }
 }
 /**
  * Follow the machine onto whatever network it lands on.
@@ -232,7 +265,7 @@ const networkWatch = setInterval(() => {
     .rebind(nextHost)
     .then((port) => {
       servingPort = port
-      console.log(`\nNetwork changed: ${was} -> ${nextHost}. Now serving ${nextHost}:${port}.`)
+      console.log(serviceMode ? '\nNetwork changed; the local listener recovered.' : `\nNetwork changed: ${was} -> ${nextHost}. Now serving ${nextHost}:${port}.`)
       console.log(
         nextBest
           ? 'Press n + Enter for a pairing QR on this network.'
@@ -240,18 +273,18 @@ const networkWatch = setInterval(() => {
       )
     })
     .catch((err: unknown) => {
-      console.log(`\nNetwork changed but rebinding failed (${String(err)}).`)
+      console.log(serviceMode ? '\nNetwork changed but local listener recovery failed; details omitted.' : `\nNetwork changed but rebinding failed (${String(err)}).`)
       console.log(relay !== null ? 'The relay is unaffected.' : 'Restart the daemon to recover.')
     })
 }, NETWORK_WATCH_MS)
 networkWatch.unref?.()
 
-console.log('Press n + Enter for a fresh pairing QR, r + Enter to revoke every device, q + Enter to quit.\n')
+if (!serviceMode) console.log('Press n + Enter for a fresh pairing QR, r + Enter to revoke every device, q + Enter to quit.\n')
 
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk: string) => {
   const key = chunk.trim().toLowerCase()
-  if (key === 'n') {
+  if (key === 'n' && !serviceMode) {
     const next = freshPairingUrl()
     console.log('\nScan this with your phone:\n')
     console.log(terminalQr(next))
@@ -264,13 +297,13 @@ process.stdin.on('data', (chunk: string) => {
   }
   if (key === 'q') {
     clearInterval(networkWatch)
-    void daemon.stop().then(() => process.exit(0))
+    void daemon.stop().then(() => { instanceLock.release(); process.exit(0) })
   }
 })
 
 const shutdown = () => {
   clearInterval(networkWatch)
-  void daemon.stop().then(() => process.exit(0))
+  void daemon.stop().then(() => { instanceLock.release(); process.exit(0) })
 }
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
