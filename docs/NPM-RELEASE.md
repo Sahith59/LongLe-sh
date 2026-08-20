@@ -75,12 +75,21 @@ Replace the tarball filename with the exact version being bootstrapped. Never pu
 directory after verifying a tarball; that would rebuild and publish different bytes.
 
 npm may create `latest` automatically on the package's first publication even when `--tag rc` was
-supplied. Verify the tags immediately and remove that premature stable promise with fresh 2FA:
+supplied. Verify the tags immediately and attempt to remove that premature stable promise with
+fresh 2FA:
 
 ```sh
 npm view @longleash/cli dist-tags --json
 npm dist-tag rm @longleash/cli latest
 ```
+
+The public registry can reject removal of `latest` with HTTP 400 while the prerelease is the
+package's only published version. Authentication may still have completed successfully; verify the
+registry response rather than repeatedly authenticating. If removal is rejected, keep every public
+install command pinned to `@rc`, record the exception in the release evidence, and move `latest` to
+the first fully verified stable version. The rejected removal does not change or republish the
+tarball. Escalate to npm support if the stable release is not ready and an untagged install must be
+disabled sooner.
 
 Do not paste an OTP into a command argument, chat, issue, environment file, or repository secret.
 Enter it only into npm's interactive prompt.
