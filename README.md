@@ -93,7 +93,9 @@ longleash setup
 ```
 
 Setup recommends a per-user background service, so the setup terminal can close. It shows the roots,
-relay mode, and login behavior before applying them. Foreground mode remains available for diagnosis:
+relay mode, and login behavior before applying them. At the folder question, press Enter to accept
+the displayed folder or type an existing directory path; it is not a yes/no question. Foreground
+mode remains available for diagnosis:
 
 ```sh
 longleash run ~/code ~/work/client-project

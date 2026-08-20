@@ -300,6 +300,8 @@ function GettingStarted() {
       <CodeBlock command="longleash setup" />
       <p>
         Review the allowed folders, connectivity choice, and login-start behavior before accepting.
+        At the folder question, press Enter to accept the displayed folder or type an existing
+        directory path; answer <code>y</code> only when the prompt explicitly shows a yes/no choice.
         The recommended per-user service keeps the laptop reachable after this terminal closes.
         Use <code>longleash run</code> only when you deliberately want foreground diagnosis.
       </p>
