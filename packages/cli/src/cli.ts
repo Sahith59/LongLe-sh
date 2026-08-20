@@ -210,7 +210,10 @@ async function setup(options: SetupOptions): Promise<number> {
       throw new Error('The staged package could not be configured. The active version was not changed.')
     }
     try {
-      prepared.activate()
+      const activation = prepared.activate()
+      if (activation.migratedLegacyWrapper) {
+        console.log('Migrated the verified legacy LongLeash command. Its checkout was preserved and will be restored if you uninstall this runtime.')
+      }
     } catch (error) {
       prepared.rollback()
       restoreConfigSnapshot(configSnapshot)
@@ -425,6 +428,7 @@ async function uninstall(): Promise<number> {
   if (hooksRemoved !== 0) throw new Error('Provider hooks could not be removed safely. The managed runtime was preserved.')
   const result = uninstallManagedRuntime()
   console.log(result.removed ? 'Removed the managed LongLeash runtime and executable.' : 'No managed LongLeash runtime was installed.')
+  if (result.legacyWrapperRestored) console.log('Restored the verified legacy LongLeash command that existed before the npm migration.')
   console.log(`Preserved settings, paired devices, and audit data in ${result.configPreserved}.`)
   return 0
 }
