@@ -93,7 +93,7 @@ jobs:
           shopt -s nullglob
           tarballs=(release/*.tgz)
           test "${#tarballs[@]}" -eq 1
-          tarball=${tarballs[0]}
+          tarball=$(realpath "${tarballs[0]}")
           package_version=$(tar -xOf "$tarball" package/package.json | node -e \
             "let body=''; process.stdin.on('data', chunk => body += chunk); process.stdin.on('end', () => console.log(JSON.parse(body).version))")
           tag_version=${GITHUB_REF_NAME#cli-v}
@@ -104,7 +104,10 @@ jobs:
           shopt -s nullglob
           tarballs=(release/*.tgz)
           test "${#tarballs[@]}" -eq 1
-          tarball=${tarballs[0]}
+          # An unqualified `release/file.tgz` is a valid npm package spec and can be parsed as a
+          # GitHub shorthand. Resolve the verified artifact to an absolute filesystem path so npm
+          # cannot reinterpret it as a repository.
+          tarball=$(realpath "${tarballs[0]}")
           package_version=${GITHUB_REF_NAME#cli-v}
           if [[ "$package_version" == *-* ]]; then
             npm publish "$tarball" --access public --tag rc
