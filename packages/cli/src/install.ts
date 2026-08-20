@@ -44,6 +44,12 @@ export function assertVersion(value: string): string {
   return value
 }
 
+export function updatePackageSpec(target: string | undefined, currentVersion: string): string {
+  const selected = target ?? (currentVersion.includes('-') ? 'rc' : 'latest')
+  if (selected === 'latest' || selected === 'rc') return `@longleash/cli@${selected}`
+  return `@longleash/cli@${assertVersion(selected)}`
+}
+
 export function packageLocation(prefix: string): string {
   return join(prefix, 'node_modules', '@longleash', 'cli')
 }

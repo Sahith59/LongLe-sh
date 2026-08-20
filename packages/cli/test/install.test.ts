@@ -8,6 +8,7 @@ import {
   installPaths,
   prepareManagedInstall,
   uninstallManagedRuntime,
+  updatePackageSpec,
   verifyInstalledPackage,
 } from '../src/install.js'
 
@@ -18,6 +19,14 @@ describe('managed npm installation boundary', () => {
     for (const unsafe of ['latest', '^1.2.3', '../file.tgz', '1.2.3 && touch x', '@other/pkg']) {
       expect(() => assertVersion(unsafe)).toThrow('Invalid LongLeash version')
     }
+  })
+
+  it('keeps prerelease updates on rc while stable builds follow latest', () => {
+    expect(updatePackageSpec(undefined, '0.1.0-rc.3')).toBe('@longleash/cli@rc')
+    expect(updatePackageSpec(undefined, '0.1.0')).toBe('@longleash/cli@latest')
+    expect(updatePackageSpec('rc', '0.1.0')).toBe('@longleash/cli@rc')
+    expect(updatePackageSpec('0.1.0-rc.1', '0.1.0-rc.3')).toBe('@longleash/cli@0.1.0-rc.1')
+    expect(() => updatePackageSpec('next', '0.1.0')).toThrow('Invalid LongLeash version')
   })
 
   it('verifies package identity and required runtime files before activation', () => {

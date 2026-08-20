@@ -16,7 +16,7 @@ import {
   restoreConfigSnapshot,
   saveConfig,
 } from './config.js'
-import { assertVersion, installPaths, prepareManagedInstall, uninstallManagedRuntime } from './install.js'
+import { installPaths, prepareManagedInstall, uninstallManagedRuntime, updatePackageSpec } from './install.js'
 import {
   installService,
   restartService,
@@ -70,7 +70,7 @@ async function main(): Promise<number> {
   if (command === 'hooks') return runHooks(args.slice(1))
   if (command === 'devices') return runNode(devicesEntry, [])
   if (command === 'revoke') return runNode(devicesEntry, ['revoke', ...args.slice(1)])
-  if (command === 'update') return update(args[1] ?? 'latest')
+  if (command === 'update') return update(args[1])
   if (command === 'uninstall') return uninstall()
   if (command === 'run') return runDaemon(args.slice(1))
   if (command?.startsWith('-')) {
@@ -99,7 +99,7 @@ Usage:
   longleash hooks [--remove]      install or remove supported provider hooks
   longleash devices               list paired phones
   longleash revoke <id|--all>     revoke paired phone access
-  longleash update [version]      atomically install latest or an exact version
+  longleash update [version]      atomically update this channel or install an exact version
   longleash uninstall             remove runtime and hooks; preserve user data
   longleash where                 print the active npm package directory`)
 }
@@ -395,8 +395,8 @@ async function runHooks(args: string[]): Promise<number> {
   return failed ? 1 : 0
 }
 
-async function update(target: string): Promise<number> {
-  const spec = target === 'latest' ? '@longleash/cli@latest' : `@longleash/cli@${assertVersion(target)}`
+async function update(target?: string): Promise<number> {
+  const spec = updatePackageSpec(target, VERSION)
   const child = spawn('npm', [
     'exec', '--yes', '--registry=https://registry.npmjs.org/', `--package=${spec}`,
     '--', 'longleash', 'setup', '--reuse-config', '--yes',

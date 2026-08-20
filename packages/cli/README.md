@@ -26,9 +26,12 @@ longleash doctor
 longleash run ~/code
 ```
 
-Until the background-service workstream ships, `longleash run` is foreground operation and the
-terminal must remain open. See the [first-party setup guide](https://longleash.dev/docs/getting-started)
-and [connectivity comparison](https://longleash.dev/docs/connectivity) before pairing.
+Setup recommends a per-user background service, so the setup terminal may close after installation.
+Use `longleash service status` to verify it, and `longleash pair` to print a fresh QR. Explicit
+`longleash run` remains available for foreground diagnosis and requires that terminal to stay open.
+See the [first-party setup guide](https://longleash.dev/docs/getting-started),
+[background-service guide](https://longleash.dev/docs/background-service), and
+[connectivity comparison](https://longleash.dev/docs/connectivity) before pairing.
 
 ## Security notes
 
