@@ -237,7 +237,7 @@ and obtains concurrency through separate Git worktrees. Non-Git folders remain s
 | `longleash devices` | List phones paired with this laptop |
 | `longleash revoke <id>` | Immediately revoke one paired device |
 | `longleash revoke --all` | Revoke every device and start pairing again |
-| `longleash update` | Pull code, install dependencies, rebuild the app, and reapply hooks |
+| `longleash update` | Atomically install the newest verified build from the current release channel |
 | `longleash hooks` | Install or repair Claude/Codex lifecycle hooks |
 | `longleash hooks --remove` | Remove LongLeash hooks from both providers |
 | `longleash where` | Print the checkout used by the installed command |
@@ -251,9 +251,11 @@ The `n`, `r`, and `q` terminal controls apply only to explicit foreground mode.
 longleash update
 ```
 
-Then stop the running daemon with `q` + Enter or Ctrl-C and start `longleash` again. A process that
-was already running keeps the old code in memory. On the phone, tap the offered **Update** or pull
-down to refresh, then rerun `longleash doctor` and require all builds to match.
+Updates stage and verify the npm package before changing the active runtime. A managed background
+service restarts only after activation succeeds; foreground mode must be stopped and started again.
+Release-candidate installations remain on the `rc` channel, while stable installations follow
+`latest`. On the phone, tap the offered **Update** or pull down to refresh, then rerun
+`longleash doctor` and require all builds to match.
 
 The phone loads its app shell from the relay. Updating only the laptop checkout does not publish a
 new phone UI. Maintainers and self-hosters should follow [Deploying the relay](docs/DEPLOY.md); the
