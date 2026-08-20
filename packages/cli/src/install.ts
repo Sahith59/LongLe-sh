@@ -163,7 +163,9 @@ export function prepareManagedInstall(version: string, env: NodeJS.ProcessEnv = 
             previousMarker = readFileSync(marker, 'utf8')
           }
           const activeCli = join(paths.current, 'node_modules', '@longleash', 'cli', 'bin', 'longleash.mjs')
-          writeExecutableAtomically(paths.wrapper, wrapper(activeCli))
+          // Login services do not inherit a shell's PATH. Pin the exact Node executable that
+          // successfully verified and installed this release instead of hoping `node` resolves.
+          writeExecutableAtomically(paths.wrapper, wrapper(activeCli, process.execPath))
           wrapperWritten = true
           writeFileAtomically(marker, `${JSON.stringify({ schema: 1, package: PACKAGE_NAME }, null, 2)}\n`, 0o600)
           markerWritten = true
@@ -229,8 +231,8 @@ export function uninstallManagedRuntime(env: NodeJS.ProcessEnv = process.env): {
   return { removed: true, configPreserved: resolve(env.LONGLEASH_DATA ?? join(homedir(), '.longleash')) }
 }
 
-function wrapper(cli: string): string {
-  return `#!/bin/sh\n${WRAPPER_MARKER}\nexec node ${shellQuote(cli)} "$@"\n`
+function wrapper(cli: string, node: string): string {
+  return `#!/bin/sh\n${WRAPPER_MARKER}\nexec ${shellQuote(node)} ${shellQuote(cli)} "$@"\n`
 }
 
 function shellQuote(value: string): string {

@@ -95,4 +95,28 @@ describe('managed npm installation boundary', () => {
     expect(existsSync(join(paths.home, '.install.lock'))).toBe(false)
     expect(existsSync(release)).toBe(true)
   })
+
+  it('pins the verified Node executable in the managed wrapper for login services', () => {
+    const root = mkdtempSync(join(tmpdir(), 'longleash-node-path-'))
+    const env = {
+      ...process.env,
+      LONGLEASH_INSTALL_HOME: join(root, 'managed'),
+      LONGLEASH_BIN_DIR: join(root, 'bin'),
+    }
+    const paths = installPaths(env)
+    const release = join(paths.releases, '1.2.3')
+    const packageRoot = join(release, 'node_modules', '@longleash', 'cli')
+    mkdirSync(join(packageRoot, 'bin'), { recursive: true })
+    mkdirSync(join(packageRoot, 'runtime', 'daemon', 'bin'), { recursive: true })
+    mkdirSync(join(packageRoot, 'runtime', 'app', 'dist'), { recursive: true })
+    writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: '@longleash/cli', version: '1.2.3' }))
+    writeFileSync(join(packageRoot, 'bin', 'longleash.mjs'), '')
+    writeFileSync(join(packageRoot, 'runtime', 'daemon', 'bin', 'longleashd.mjs'), '')
+    writeFileSync(join(packageRoot, 'runtime', 'app', 'dist', 'index.html'), '')
+
+    prepareManagedInstall('1.2.3', env).activate()
+    const executable = readFileSync(paths.wrapper, 'utf8')
+    expect(executable).toContain(`exec '${process.execPath}'`)
+    expect(executable).not.toContain('exec node ')
+  })
 })

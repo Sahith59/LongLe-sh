@@ -156,7 +156,7 @@ action required for package identity; no npm token should be shared in chat or c
   cloning a mutable branch or running a LongLeash install lifecycle script.
 - Setup stages a versioned release, serializes concurrent installers, verifies package identity,
   restores configuration and managed files on failure, switches the active symlink atomically, and
-  never starts the daemon. Uninstall removes only managed files and preserves user data.
+  makes background operation an explicit reviewed choice. Uninstall removes only managed files and preserves user data.
 - Direct and transitive runtime dependencies are pinned through exact manifest versions plus a
   checked npm shrinkwrap. The package verifier enforces the file allowlist, official-registry
   SHA-512 integrity, expected bundled dependency notices, public package identity, and an 8 MiB
@@ -232,6 +232,24 @@ Foreground mode remains useful for debugging and development.
 - Foreground and service modes cannot run simultaneously against the same data directory.
 - macOS and Linux clean-user tests cover install, start, crash recovery, update, logs, stop, and
   uninstall.
+
+### Implementation evidence and remaining release gates
+
+- The candidate implements a managed macOS LaunchAgent and Linux systemd user unit with absolute
+  executable paths, mode-0600 definitions, explicit environments, non-root ownership, validated
+  writes, bounded restart behavior, and transactional rollback.
+- A data-directory instance lock rejects live duplicate writers, recovers only recognized dead
+  owners, and fails closed on malformed or symlinked locks. CLI signal forwarding prevents an
+  orphan daemon when the service manager stops its parent process.
+- Pairing QRs are requested across the authenticated laptop-local boundary and never created at
+  service boot. Durable logging drops provider frames and fails closed on prompts, code, paths,
+  pairing data, URLs, device names, environment values, and arbitrary exception text.
+- macOS arm64 physical service acceptance passed install, authenticated health, duplicate-writer
+  refusal, forced crash recovery, stop, restart, uninstall, and data preservation against an isolated
+  temporary home and data directory. No maintainer daemon or data was used.
+- Linux lifecycle, rollback, ownership, permissions, restart policy, and login-scope reporting pass
+  deterministic manager tests. A real clean Linux systemd-user run, macOS sleep/wake and login
+  checks, and the complete release-candidate matrix remain required before Gate 2 closes.
 
 ## Workstream D: human-verifiable pairing
 
@@ -354,7 +372,7 @@ plan, applies approved changes, starts or verifies the service, and returns a re
 ### Gate 2: distribution and lifecycle
 
 - [ ] Build scoped npm package and package-content checks.
-- [ ] Build macOS LaunchAgent and Linux systemd user-service lifecycle.
+- [x] Build macOS LaunchAgent and Linux systemd user-service lifecycle.
 - [ ] Complete clean-machine and update/rollback matrices.
 - [ ] Obtain npm scope ownership and configure OIDC trusted publishing.
 - [ ] Publish a release candidate, verify provenance, then change the public install command.
@@ -404,12 +422,14 @@ plan, applies approved changes, starts or verifies the service, and returns a re
 | 17 Aug 2026 | Official platform review | npm trusted publishing supports GitHub OIDC and provenance; macOS recommends per-user LaunchAgents for user processes; MCP stdio is appropriate for a local server launched by the client. |
 | 17 Aug 2026 | Baseline release evidence | Production commit `04e7d4e` passed CI run `32048432762`. The Workstream A candidate passed 826 automated tests, every package typecheck and build, verified VSIX packaging, `git diff --check`, and an accountless Wrangler dry run whose only runtime bindings were `ROOM` and `ASSETS`. LongLeash was not started or stopped. |
 | 17 Aug 2026 | Workstream A implementation | Public titles and metadata use outcome copy; the roadmap has no Phase 1 or Phase 2A product labels; first-party connectivity documentation covers hosted relay, self-hosted relay, and LAN-only; rendered-route tests cover landmarks and the keyboard-reachable comparison table. Physical responsive and browser accessibility acceptance remains part of Gate 5 and is not inferred from source tests. |
+| 20 Aug 2026 | Workstream B release bootstrap | `@longleash/cli@0.1.0-rc.1` was published from the locally verified tarball and its registry SHA-512 integrity matched exactly. This one-time bootstrap has no provenance; trusted-publisher release evidence is still required before `latest`. |
+| 20 Aug 2026 | Workstream C implementation | Per-user launchd and systemd lifecycles, authenticated service health and pairing, duplicate-daemon locking, signal forwarding, fail-closed durable logs, public service documentation, and ownership/rollback tests are implemented. Isolated macOS launchd acceptance passed; clean Linux, login, sleep/wake, and release-candidate matrices remain open. |
 
 ## Next implementation checkpoint
 
-Workstream A is implemented and locally gated, but it is not deployed while the release branch is
-being built one isolated commit at a time. The next implementation checkpoint is Workstream B,
-followed by Workstream C; do not combine their commits. Do not change the website's install command
-to the scoped npm command until a real release candidate has been installed from the registry on
-clean macOS and Linux environments. Physical browser and device acceptance remains mandatory before
-the public release candidate gate closes.
+Workstreams A and B are isolated commits, the bootstrap `rc.1` exists, and Workstream C is the current
+unpublished candidate. The next product workstream is D, human-verifiable pairing, but Workstream C's
+clean Linux, login, sleep/wake, and public-candidate evidence must still close before the lifecycle
+gate is called release-ready. Do not change the website install command to npm `latest` until a
+trusted-publisher release has passed the registry matrix on clean macOS and Linux. Physical browser
+and device acceptance remains mandatory before the public release candidate gate closes.

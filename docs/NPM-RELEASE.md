@@ -7,7 +7,8 @@ Release lockfile generation and validation use npm `11.12.1`. User installations
 with the broader npm range declared by the package; pinning the release tool prevents different npm
 versions from rewriting platform metadata in an otherwise identical dependency graph.
 
-During prerelease testing, use `npx --registry=https://registry.npmjs.org/ @longleash/cli@rc setup`.
+During prerelease testing, use
+`npm exec --yes --registry=https://registry.npmjs.org/ --package=@longleash/cli@rc -- longleash setup`.
 The public website must not use `@latest` until a stable version has passed the complete release
 matrix and the `latest` dist-tag points to it.
 
@@ -67,11 +68,19 @@ git rev-parse origin/main
 pnpm --filter @longleash/cli build
 pnpm --filter @longleash/cli pack:verify
 node packages/cli/scripts/smoke-tarball.mjs packages/cli/dist-pack/*.tgz
-NPM_CONFIG_PROVENANCE=false npm publish packages/cli/dist-pack/longleash-cli-0.1.0-rc.1.tgz --access public --tag rc
+npm publish --provenance=false packages/cli/dist-pack/longleash-cli-0.1.0-rc.1.tgz --access public --tag rc
 ```
 
 Replace the tarball filename with the exact version being bootstrapped. Never publish the package
 directory after verifying a tarball; that would rebuild and publish different bytes.
+
+npm may create `latest` automatically on the package's first publication even when `--tag rc` was
+supplied. Verify the tags immediately and remove that premature stable promise with fresh 2FA:
+
+```sh
+npm view @longleash/cli dist-tags --json
+npm dist-tag rm @longleash/cli latest
+```
 
 Do not paste an OTP into a command argument, chat, issue, environment file, or repository secret.
 Enter it only into npm's interactive prompt.

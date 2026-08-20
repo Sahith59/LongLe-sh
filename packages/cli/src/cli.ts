@@ -17,6 +17,16 @@ import {
   saveConfig,
 } from './config.js'
 import { assertVersion, installPaths, prepareManagedInstall, uninstallManagedRuntime } from './install.js'
+import {
+  installService,
+  restartService,
+  serviceState,
+  showServiceLogs,
+  startService,
+  stopService,
+  uninstallService,
+} from './service.js'
+import { terminalQr } from './terminal-qr.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const packageRoot = resolve(here, '..')
@@ -34,6 +44,7 @@ interface SetupOptions {
   reuse: boolean
   configureOnly: boolean
   skipHooks: boolean
+  service: 'default' | 'install' | 'skip'
 }
 
 async function main(): Promise<number> {
@@ -53,6 +64,8 @@ async function main(): Promise<number> {
     return 0
   }
   if (command === 'setup') return setup(parseSetup(args.slice(1)))
+  if (command === 'service') return serviceCommand(args.slice(1))
+  if (command === 'pair') return pair()
   if (command === 'doctor') return doctor(args.includes('--json'))
   if (command === 'hooks') return runHooks(args.slice(1))
   if (command === 'devices') return runNode(devicesEntry, [])
@@ -73,6 +86,13 @@ function help(): void {
 
 Usage:
   longleash setup                 configure a stable user-local installation
+  longleash service status        show manager and authenticated daemon health
+  longleash service start         start the per-user background service
+  longleash service stop          stop it without removing settings or devices
+  longleash service restart       restart it after a configuration change
+  longleash service logs [-f]     show redacted persistent service logs
+  longleash service uninstall     remove only the background service
+  longleash pair                  print a fresh pairing QR from the running service
   longleash run [folders...]      run in the foreground (terminal stays open)
   longleash [folders...]          shorthand for run
   longleash doctor [--json]       report package, config, and daemon health
@@ -81,13 +101,13 @@ Usage:
   longleash revoke <id|--all>     revoke paired phone access
   longleash update [version]      atomically install latest or an exact version
   longleash uninstall             remove runtime and hooks; preserve user data
-  longleash where                 print the active npm package directory
-
-Setup never starts the daemon. Background service commands arrive in Workstream C.`)
+  longleash where                 print the active npm package directory`)
 }
 
 function parseSetup(args: string[]): SetupOptions {
-  const options: SetupOptions = { roots: [], relay: '', yes: false, reuse: false, configureOnly: false, skipHooks: false }
+  const options: SetupOptions = {
+    roots: [], relay: '', yes: false, reuse: false, configureOnly: false, skipHooks: false, service: 'default',
+  }
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]
     if (arg === '--root') {
@@ -102,6 +122,8 @@ function parseSetup(args: string[]): SetupOptions {
     else if (arg === '--reuse-config') options.reuse = true
     else if (arg === '--configure-only') options.configureOnly = true
     else if (arg === '--skip-hooks') options.skipHooks = true
+    else if (arg === '--service') options.service = 'install'
+    else if (arg === '--no-service') options.service = 'skip'
     else throw new Error(`Unknown setup option: ${arg}`)
   }
   return options
@@ -122,6 +144,9 @@ async function setup(options: SetupOptions): Promise<number> {
     options.yes = true
   }
 
+  let existingService = false
+  try { existingService = serviceState().installed } catch { /* an unavailable manager is handled if installation is requested */ }
+
   if (options.roots.length === 0 && options.yes) {
     throw new Error('Non-interactive setup requires at least one explicit --root, or --reuse-config.')
   }
@@ -139,12 +164,14 @@ async function setup(options: SetupOptions): Promise<number> {
       console.log('\nConnectivity: hosted works away from home; LAN-only has no internet relay.')
       const relayAnswer = await prompt.question('Relay [hosted / lan / wss://your-relay/ws] (hosted): ')
       options.relay = relayAnswer.trim() || 'hosted'
+      const serviceAnswer = await prompt.question('Keep LongLeash available after this terminal closes? [Y/n] ')
+      options.service = /^n(?:o)?$/i.test(serviceAnswer.trim()) ? 'skip' : 'install'
       const roots = normalizeRoots(options.roots)
       const relay = normalizeRelay(options.relay)
       console.log('\nReview before anything changes:')
       for (const root of roots) console.log(`  allowed root  ${root}`)
       console.log(`  connectivity  ${relay ?? 'LAN-only (no relay)'}`)
-      console.log('  service       not installed or started in this workstream')
+      console.log(`  service       ${options.service === 'install' ? 'per-user background service at login' : 'foreground only'}`)
       const accepted = await prompt.question('\nApply this setup? [y/N] ')
       if (!/^y(?:es)?$/i.test(accepted.trim())) {
         console.log('Nothing changed.')
@@ -199,6 +226,22 @@ async function setup(options: SetupOptions): Promise<number> {
       console.log(`  export PATH=${quoteForShell(paths.bin)}:"$PATH"`)
       console.log(`You can use ${paths.wrapper} immediately.`)
     }
+    const manageService = options.service === 'install' || (options.service === 'default' && (options.reuse ? existingService : true))
+    if (manageService) {
+      try {
+        const state = installService()
+        const healthy = await waitForDaemon(15_000)
+        if (!healthy) {
+          throw new Error('The service manager started LongLeash, but its authenticated health check did not become ready. Run `longleash service logs`.')
+        }
+        console.log(`Background service installed and running (${state.platform}).`)
+        console.log('Run `longleash pair` for a fresh QR; pairing secrets are not stored in service logs.')
+      } catch (error) {
+        throw new Error(`The verified runtime is installed, but the background service could not be activated: ${message(error)} You can use \`longleash run\` while diagnosing it.`)
+      }
+    } else {
+      console.log('Background service was not installed. Run `longleash run` for foreground use or `longleash service install` later.')
+    }
     return 0
   }
 
@@ -208,7 +251,72 @@ async function setup(options: SetupOptions): Promise<number> {
   saveConfig(next)
   console.log(`Saved configuration to ${configPath()}`)
 
-  console.log('LongLeash was not started. Run `longleash run` when you are ready.')
+  console.log('Configuration saved. The outer setup transaction decides whether to start the service.')
+  return 0
+}
+
+async function serviceCommand(args: string[]): Promise<number> {
+  const command = args[0] ?? 'status'
+  if (command === 'install') {
+    const state = installService()
+    if (!await waitForDaemon(15_000)) throw new Error('The service was installed but did not become healthy. Run `longleash service logs`.')
+    printServiceState(state, true)
+    return 0
+  }
+  if (command === 'start') {
+    const state = startService()
+    if (!await waitForDaemon(15_000)) throw new Error('The service manager started the job but the daemon did not become healthy. Run `longleash service logs`.')
+    printServiceState(state, true)
+    return 0
+  }
+  if (command === 'stop') {
+    const state = stopService()
+    printServiceState(state, false)
+    return 0
+  }
+  if (command === 'restart') {
+    const state = restartService()
+    if (!await waitForDaemon(15_000)) throw new Error('The service restarted but the daemon did not become healthy. Run `longleash service logs`.')
+    printServiceState(state, true)
+    return 0
+  }
+  if (command === 'uninstall') {
+    uninstallService()
+    console.log(`Removed the per-user background service. Settings, devices, audit data, and runtime remain in ${configPath()}.`)
+    return 0
+  }
+  if (command === 'logs') return showServiceLogs(args.includes('--follow') || args.includes('-f'))
+  if (command === 'status') {
+    const state = serviceState()
+    const healthy = await daemonHealth()
+    if (args.includes('--json')) console.log(JSON.stringify({ ...state, healthy }, null, 2))
+    else printServiceState(state, healthy)
+    return state.installed && healthy ? 0 : 1
+  }
+  throw new Error(`Unknown service command: ${command}`)
+}
+
+function printServiceState(state: ReturnType<typeof serviceState>, healthy: boolean): void {
+  console.log('')
+  console.log(`  service      ${state.installed ? 'installed' : 'not installed'} (${state.platform})`)
+  console.log(`  manager      ${state.loaded ? 'loaded' : 'not loaded'}${state.active ? ' · active' : ''}`)
+  console.log(`  daemon       ${healthy ? 'authenticated health check passed' : 'not reachable'}`)
+  console.log(`  definition   ${state.definition}`)
+  console.log(`  logs         ${state.logs}`)
+  if (state.platform === 'linux' && state.loginOnly) {
+    console.log('  login scope   stops after logout; optional lingering is not enabled by LongLeash')
+  }
+  console.log('')
+}
+
+async function pair(): Promise<number> {
+  const response = await localDaemonRequest('/local/pairing', { method: 'POST' })
+  if (!response.ok) throw new Error(`The running daemon could not create a pairing challenge (${response.status}).`)
+  const body = await response.json() as { url?: unknown }
+  if (typeof body.url !== 'string' || !/^https?:\/\//.test(body.url)) throw new Error('The daemon returned an invalid pairing challenge.')
+  console.log('\nScan this with your phone. The link is single-use and expires:\n')
+  console.log(terminalQr(body.url))
+  console.log(`\n  ${body.url}\n`)
   return 0
 }
 
@@ -218,8 +326,19 @@ async function runDaemon(explicitRoots: string[]): Promise<number> {
   const roots = normalizeRoots(explicitRoots.length > 0 ? explicitRoots : configuredRoots(config))
   const child = spawn(process.execPath, [daemonEntry, ...roots], { stdio: 'inherit', env: process.env })
   return await new Promise<number>((resolveExit, reject) => {
-    child.once('error', reject)
-    child.once('exit', (code, signal) => resolveExit(code ?? (signal ? 1 : 0)))
+    const forward = (signal: NodeJS.Signals) => {
+      if (child.exitCode === null && child.signalCode === null) child.kill(signal)
+    }
+    const interrupt = () => forward('SIGINT')
+    const terminate = () => forward('SIGTERM')
+    const cleanup = () => {
+      process.off('SIGINT', interrupt)
+      process.off('SIGTERM', terminate)
+    }
+    process.on('SIGINT', interrupt)
+    process.on('SIGTERM', terminate)
+    child.once('error', (error) => { cleanup(); reject(error) })
+    child.once('exit', (code, signal) => { cleanup(); resolveExit(code ?? (signal ? 1 : 0)) })
   })
 }
 
@@ -291,12 +410,66 @@ async function update(target: string): Promise<number> {
 }
 
 async function uninstall(): Promise<number> {
+  try {
+    if (serviceState().installed) uninstallService()
+  } catch (error) {
+    throw new Error(`The background service could not be removed safely, so the runtime was preserved: ${message(error)}`)
+  }
   const hooksRemoved = await runHooks(['--remove'])
   if (hooksRemoved !== 0) throw new Error('Provider hooks could not be removed safely. The managed runtime was preserved.')
   const result = uninstallManagedRuntime()
   console.log(result.removed ? 'Removed the managed LongLeash runtime and executable.' : 'No managed LongLeash runtime was installed.')
   console.log(`Preserved settings, paired devices, and audit data in ${result.configPreserved}.`)
   return 0
+}
+
+async function daemonHealth(): Promise<boolean> {
+  try {
+    const response = await localDaemonRequest('/health', { method: 'GET' }, 1_500)
+    if (!response.ok) return false
+    const body = await response.json() as { name?: unknown }
+    return body.name === 'longleash'
+  } catch {
+    return false
+  }
+}
+
+async function waitForDaemon(timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await daemonHealth()) return true
+    await new Promise((resolveWait) => setTimeout(resolveWait, 200))
+  }
+  return false
+}
+
+async function localDaemonRequest(path: string, init: RequestInit, timeoutMs = 5_000): Promise<Response> {
+  const endpointPath = join(process.env.LONGLEASH_DATA ?? join(homedir(), '.longleash'), 'hook-endpoint.json')
+  let endpoint: { url?: unknown; secret?: unknown }
+  try {
+    endpoint = JSON.parse(readFileSync(endpointPath, 'utf8')) as typeof endpoint
+  } catch {
+    throw new Error('LongLeash is not reachable. Start it with `longleash service start` or `longleash run`.')
+  }
+  if (typeof endpoint.url !== 'string' || typeof endpoint.secret !== 'string' || endpoint.secret === '') {
+    throw new Error(`Invalid local daemon endpoint: ${endpointPath}`)
+  }
+  const url = new URL(endpoint.url)
+  if (url.protocol !== 'http:' || url.pathname !== '/hook' || !localAddress(url.hostname)) {
+    throw new Error(`Refusing a non-local daemon endpoint in ${endpointPath}`)
+  }
+  return fetch(`${url.origin}${path}`, {
+    ...init,
+    headers: { ...init.headers, 'x-longleash-hook': endpoint.secret },
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+}
+
+function localAddress(hostname: string): boolean {
+  if (hostname === 'localhost' || hostname === '::1') return true
+  if (/^127\./.test(hostname) || /^10\./.test(hostname) || /^192\.168\./.test(hostname)) return true
+  const match = hostname.match(/^172\.(\d+)\./)
+  return match !== null && Number(match[1]) >= 16 && Number(match[1]) <= 31
 }
 
 function commandAvailable(command: string): boolean {

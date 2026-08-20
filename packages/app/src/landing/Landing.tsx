@@ -237,8 +237,8 @@ export function Landing() {
           </div>
           <p className="inspect-note">
             Prefer to inspect before running?{' '}
-            <a href={`${REPOSITORY}/blob/main/scripts/install.sh`}>Read the installer source</a>,
-            then run the same command when you are comfortable.
+            <a href={`${REPOSITORY}/tree/main/packages/cli`}>Read the CLI package source</a> and{' '}
+            <a href={`${REPOSITORY}/blob/main/docs/NPM-RELEASE.md`}>release controls</a> first.
           </p>
 
           <ol className="steps">
@@ -247,19 +247,18 @@ export function Landing() {
               <div>
                 <h3>Install LongLeash</h3>
                 <p>
-                  The installer never uses <code>sudo</code>. It checks Node, Git, and your agent
-                  CLIs; installs into your home directory; builds the PWA; and wires supported
-                  lifecycle hooks.
+                  Setup never uses <code>sudo</code>. It verifies the pinned npm package, installs
+                  under your home directory, reviews roots and connectivity, and wires supported hooks.
                 </p>
               </div>
             </li>
             <li>
               <span className="n">02</span>
               <div>
-                <h3>Start the laptop daemon</h3>
+                <h3>Keep the laptop ready</h3>
                 <p>
-                  Run <code>longleash</code>, or name only the roots agents may use. For example,{' '}
-                  <code>longleash ~/code</code>. Keep that terminal open.
+                  Accept the recommended per-user background service, or deliberately choose{' '}
+                  <code>longleash run ~/code</code> and keep that foreground terminal open.
                 </p>
               </div>
             </li>
@@ -355,12 +354,18 @@ export function Landing() {
             </article>
             <article>
               <span className="roadmap-card-icon"><SquareTerminal size={19} aria-hidden="true" /></span>
-              <span className="road-state building">Building</span>
-              <h3>Reliable install, service, and pairing</h3>
+              <span className="road-state shipped">Available now</span>
+              <h3>Reliable install and background service</h3>
               <p>
-                Verified npm distribution, a per-user background service, a phone-to-terminal
-                matching code, and a local operations dashboard.
+                Verified npm distribution, a per-user background service, authenticated health,
+                redacted logs, clean removal, and safe foreground fallback.
               </p>
+            </article>
+            <article>
+              <span className="roadmap-card-icon"><ShieldCheck size={19} aria-hidden="true" /></span>
+              <span className="road-state building">Building</span>
+              <h3>Verified pairing and local operations</h3>
+              <p>A phone-to-terminal matching code and a local service, device, session, and update dashboard.</p>
             </article>
             <article>
               <span className="roadmap-card-icon"><FileCode2 size={19} aria-hidden="true" /></span>

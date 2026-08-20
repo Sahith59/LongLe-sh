@@ -241,3 +241,29 @@ describe('revoking says what happened rather than guessing', () => {
     ws.close()
   })
 })
+
+describe('requesting a fresh pairing link from the local CLI', () => {
+  it('requires the laptop-local hook secret and returns only the transient URL', async () => {
+    const h = await harness()
+    h.server.attachLocalPairing(() => 'https://relay.example/?c=challenge&s=single-use-secret')
+
+    expect((await api(h, '/local/pairing', { method: 'POST', body: '{}' }, 'wrong-secret')).status).toBe(401)
+    const response = await api(h, '/local/pairing', { method: 'POST', body: '{}' })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ url: 'https://relay.example/?c=challenge&s=single-use-secret' })
+  })
+
+  it('fails explicitly when pairing is unavailable and never accepts GET', async () => {
+    const h = await harness()
+    expect((await api(h, '/local/pairing', { method: 'POST', body: '{}' })).status).toBe(503)
+    expect((await fetch(`http://${HOST}:${h.port}/local/pairing`)).status).toBe(404)
+  })
+
+  it('does not expose pairing callback failures', async () => {
+    const h = await harness()
+    h.server.attachLocalPairing(() => { throw new Error('secret internal detail') })
+    const response = await api(h, '/local/pairing', { method: 'POST', body: '{}' })
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ reason: 'pairing-failed' })
+  })
+})

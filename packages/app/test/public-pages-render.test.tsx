@@ -6,6 +6,7 @@ const routes = [
   '/docs',
   '/docs/getting-started',
   '/docs/connectivity',
+  '/docs/background-service',
   '/docs/daily-use',
   '/docs/troubleshooting',
   '/docs/security',
@@ -46,5 +47,14 @@ describe('rendered public pages', () => {
     expect(html).toContain('Building')
     expect(html).toContain('Exploring')
     expect(html).not.toMatch(/Phase 1|Phase 2A/)
+  })
+
+  it('documents service ownership, health, foreground exclusion, and preserved data', () => {
+    const html = renderToStaticMarkup(<PublicPageRouter path="/docs/background-service" />)
+    expect(html).toContain('per-user LaunchAgent')
+    expect(html).toContain('systemd user unit')
+    expect(html).toContain('longleash service status')
+    expect(html).toContain('cannot become competing database writers')
+    expect(html).toContain('preserve settings, paired devices, audit history')
   })
 })

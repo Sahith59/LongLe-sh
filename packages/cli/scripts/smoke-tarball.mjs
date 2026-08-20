@@ -43,7 +43,7 @@ run(direct, ['--help'])
 const doctor = JSON.parse(run(direct, ['doctor', '--json']))
 if (doctor.package.version !== version || doctor.daemon.reachable !== false) throw new Error('Doctor smoke report is inconsistent.')
 
-run(direct, ['setup', '--yes', '--root', project, '--relay', 'off', '--skip-hooks'])
+run(direct, ['setup', '--yes', '--root', project, '--relay', 'off', '--skip-hooks', '--no-service'])
 const managed = join(binDir, 'longleash')
 if (!existsSync(managed)) throw new Error('Managed longleash wrapper was not installed.')
 if ((statSync(managed).mode & 0o111) === 0) throw new Error('Managed wrapper is not executable.')
@@ -57,7 +57,7 @@ if (process.env.LONGLEASH_SMOKE_DAEMON === '1') {
 }
 
 // Idempotence: a second setup reuses the verified release and leaves the same config valid.
-run(managed, ['setup', '--yes', '--root', project, '--relay', 'off', '--skip-hooks'])
+run(managed, ['setup', '--yes', '--root', project, '--relay', 'off', '--skip-hooks', '--no-service'])
 
 // Failure atomicity: an unsafe activation target must restore config and keep the old wrapper usable.
 const current = join(installHome, 'current')
@@ -66,7 +66,7 @@ const configBeforeFailure = readFileSync(join(data, 'config.json'), 'utf8')
 const wrapperBeforeFailure = readFileSync(managed, 'utf8')
 rmSync(current)
 mkdirSync(current)
-run(direct, ['setup', '--yes', '--root', project, '--relay', 'hosted', '--skip-hooks'], 1)
+run(direct, ['setup', '--yes', '--root', project, '--relay', 'hosted', '--skip-hooks', '--no-service'], 1)
 if (readFileSync(join(data, 'config.json'), 'utf8') !== configBeforeFailure) throw new Error('Failed activation did not restore configuration.')
 if (readFileSync(managed, 'utf8') !== wrapperBeforeFailure) throw new Error('Failed activation did not restore the managed wrapper.')
 rmSync(current, { recursive: true })

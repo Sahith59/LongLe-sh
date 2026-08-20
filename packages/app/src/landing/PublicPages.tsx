@@ -45,6 +45,12 @@ const guides: PageMeta[] = [
     icon: Radio,
   },
   {
+    path: '/docs/background-service',
+    label: 'Background service',
+    description: 'Keep the laptop reachable after closing Terminal; inspect, stop, or remove it safely.',
+    icon: Laptop,
+  },
+  {
     path: '/docs/daily-use',
     label: 'Daily use',
     description: 'Sessions, approvals, tuning, handoffs, updates, and stopping.',
@@ -80,6 +86,7 @@ const titles: Record<string, string> = {
   '/docs': 'Documentation',
   '/docs/getting-started': 'Getting started',
   '/docs/connectivity': 'Connectivity choices',
+  '/docs/background-service': 'Background service',
   '/docs/daily-use': 'Daily use',
   '/docs/troubleshooting': 'Troubleshooting',
   '/docs/security': 'Security model',
@@ -132,6 +139,9 @@ export function PublicPageRouter({ path }: { path: string }) {
       break
     case '/docs/connectivity':
       page = <Connectivity />
+      break
+    case '/docs/background-service':
+      page = <BackgroundService />
       break
     case '/docs/daily-use':
       page = <DailyUse />
@@ -253,7 +263,7 @@ function DocsHome() {
       </div>
       <h2>When something feels wrong</h2>
       <p>Do not repeatedly restart, pair, or kill processes. Preserve the first useful evidence:</p>
-      <CodeBlock command={'longleash doctor\ntail -n 150 ~/.longleash/daemon.log'} />
+      <CodeBlock command={'longleash doctor\nlongleash service logs'} />
       <p>
         Then follow the <a href={siteHref('/docs/troubleshooting')}>symptom-first recovery guide</a>.
         Pairing URLs are secrets. Remove them before sharing a screenshot.
@@ -273,25 +283,25 @@ function GettingStarted() {
       <ul className="check-list">
         <li>macOS or Linux with Node.js 22 or newer and Git.</li>
         <li>Claude Code, Codex, or both already installed and signed in.</li>
-        <li>A terminal you can leave open while LongLeash is running.</li>
+        <li>A normal signed-in user session; LongLeash does not install a root daemon.</li>
       </ul>
       <p>LongLeash does not include an AI subscription and never asks for a provider API key.</p>
 
       <h2 id="install">1. Install</h2>
       <CodeBlock command={INSTALL_COMMAND} />
       <p>
-        The installer checks prerequisites, installs under your home directory, builds the phone
-        app, and configures supported lifecycle hooks. It does not use <code>sudo</code>. You can
-        inspect the <a href={`${REPOSITORY}/blob/main/scripts/install.sh`}>installer source</a>{' '}
-        before running it.
+        Setup verifies the pinned npm package, installs under your home directory, reviews roots and
+        connectivity, and configures supported lifecycle hooks. It does not use <code>sudo</code>. You can
+        inspect the <a href={`${REPOSITORY}/tree/main/packages/cli`}>CLI package source</a> and{' '}
+        <a href={`${REPOSITORY}/blob/main/docs/NPM-RELEASE.md`}>release controls</a> before running it.
       </p>
 
-      <h2 id="start">2. Start the daemon</h2>
-      <CodeBlock command="longleash" />
+      <h2 id="start">2. Configure the laptop service</h2>
+      <CodeBlock command="longleash setup" />
       <p>
-        Keep this terminal open. To limit folder discovery, name the roots agents may use, such as{' '}
-        <code>longleash ~/code ~/work</code>. LongLeash binds locally and connects outward to the
-        relay; it does not ask you to expose a router port.
+        Review the allowed folders, connectivity choice, and login-start behavior before accepting.
+        The recommended per-user service keeps the laptop reachable after this terminal closes.
+        Use <code>longleash run</code> only when you deliberately want foreground diagnosis.
       </p>
 
       <h2 id="pair">3. Install, sign in, then pair the phone app</h2>
@@ -314,7 +324,7 @@ function GettingStarted() {
         <Lock size={19} aria-hidden="true" />
         <p>
           <b>A pairing link is a single-use secret.</b> If it was completed, exposed, or failed in
-          another browser, press <code>n</code> then Enter in the daemon terminal for a fresh one.
+          another browser, run <code>longleash pair</code> for a fresh one.
         </p>
       </div>
 
@@ -441,10 +451,46 @@ function Connectivity() {
       <h2 id="daemon">What must remain running</h2>
       <p>
         The laptop must be awake, online, and running the LongLeash daemon because the actual agents
-        live there. npm can distribute the software and MCP can configure it, but neither is a
-        background runtime. Today the daemon is a foreground command. A per-user macOS LaunchAgent
-        and Linux systemd service are in development so closing a terminal will no longer end the
-        connection.
+        live there. npm can distribute the software and MCP can configure it, but neither carries
+        phone traffic. The recommended setup installs a per-user macOS LaunchAgent or Linux systemd
+        user service, so closing Terminal does not end the connection. Foreground mode remains available for diagnosis.
+      </p>
+    </DocsLayout>
+  )
+}
+
+function BackgroundService() {
+  return (
+    <DocsLayout
+      path="/docs/background-service"
+      title="Close Terminal. Keep control."
+      summary="LongLeash runs in your signed-in user session, reports authenticated health, and removes cleanly without deleting your data."
+    >
+      <h2>What it changes</h2>
+      <p>
+        macOS installs a per-user LaunchAgent. Linux installs a systemd user unit. Neither path uses
+        <code> sudo</code>, opens a public port, or moves agents, repositories, credentials, or transcripts off the laptop.
+      </p>
+      <CodeBlock command={'longleash service status\nlongleash service logs'} />
+
+      <h2>Control the lifecycle</h2>
+      <CodeBlock command={'longleash service start\nlongleash service stop\nlongleash service restart\nlongleash service uninstall'} />
+      <p>
+        Stop and uninstall preserve settings, paired devices, audit history, repositories, and the
+        managed runtime. Use <code>longleash pair</code> to print a fresh QR without storing its complete link in service logs.
+      </p>
+
+      <h2>Foreground mode remains available</h2>
+      <CodeBlock command="longleash run ~/code" />
+      <p>
+        Keep that terminal open. LongLeash refuses to start a second daemon against the same data
+        directory, so service and foreground processes cannot become competing database writers.
+      </p>
+
+      <h2>Linux logout behavior</h2>
+      <p>
+        A systemd user service may stop after a full logout unless lingering is enabled by the
+        operating-system administrator. LongLeash reports this honestly and never enables lingering or requests root silently.
       </p>
     </DocsLayout>
   )
@@ -505,7 +551,7 @@ function Troubleshooting() {
       summary="Start with the symptom you can see, preserve the log, and use the smallest recovery action that proves what changed."
     >
       <h2 id="first-minute">The first minute</h2>
-      <CodeBlock command={'longleash doctor\ntail -n 150 ~/.longleash/daemon.log'} />
+      <CodeBlock command={'longleash doctor\nlongleash service logs'} />
       <p>
         Record the local time, provider, origin label, session title, project path, and the exact
         action that failed. Redact source code and pairing URLs before posting evidence.
@@ -740,12 +786,12 @@ function Roadmap() {
           <li>Run safe parallel work in isolated Git worktrees without creating two writers.</li>
           <li>Review and edit an agent-to-agent briefing before starting an attributed child session.</li>
           <li>Choose the hosted relay, your own relay, or LAN-only operation.</li>
+          <li>Keep the laptop reachable with a per-user background service and authenticated health checks.</li>
         </ul>
       </RoadmapStage>
       <RoadmapStage icon={SquareTerminal} state="Building" tone="building" title="Install once and keep the laptop ready">
         <ul className="roadmap-list">
           <li>A provenance-backed npm package with no maintainer-specific install URL.</li>
-          <li>A per-user macOS and Linux background service with status, logs, updates, and clean removal.</li>
           <li>A matching code on phone and terminal before a durable device is trusted.</li>
           <li>A local dashboard for service health, devices, sessions, approvals, roots, and updates.</li>
         </ul>

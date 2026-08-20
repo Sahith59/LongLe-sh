@@ -18,6 +18,11 @@ describe('first-party public site', () => {
     expect(landing).not.toMatch(/href: `\$\{REPOSITORY\}\/blob\/main\/docs/)
   })
 
+  it('uses the scoped npm release channel without a maintainer-specific installer URL', () => {
+    expect(chrome).toContain('npm exec --yes --package=@longleash/cli@rc -- longleash setup')
+    expect(chrome).not.toContain('raw.githubusercontent.com')
+  })
+
   it('ships guides, legal pages, a roadmap, and an honest internal 404', () => {
     for (const path of [
       '/docs',

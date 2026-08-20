@@ -3,7 +3,7 @@ import { ExternalLink } from 'lucide-react'
 
 export const REPOSITORY = 'https://github.com/Sahith59/LongLe-sh'
 export const INSTALL_COMMAND =
-  'curl -fsSL https://raw.githubusercontent.com/Sahith59/LongLe-sh/main/scripts/install.sh | bash'
+  'npm exec --yes --package=@longleash/cli@rc -- longleash setup'
 
 function splitHash(path: string): { pathname: string; hash: string } {
   const index = path.indexOf('#')

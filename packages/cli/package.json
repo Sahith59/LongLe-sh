@@ -1,6 +1,6 @@
 {
   "name": "@longleash/cli",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "description": "Securely control Claude Code and Codex sessions on your laptop from your phone.",
   "license": "MIT",
   "type": "module",
@@ -70,6 +70,7 @@
     "@longleash/daemon": "workspace:*",
     "@longleash/protocol": "workspace:*",
     "@types/node": "22.20.1",
+    "@types/qrcode-terminal": "0.12.2",
     "esbuild": "0.25.12",
     "typescript": "5.9.3",
     "vitest": "3.2.7"

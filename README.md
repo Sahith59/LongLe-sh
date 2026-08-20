@@ -79,26 +79,27 @@ existing provider login and plan.
 ### 1. Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Sahith59/LongLe-sh/main/scripts/install.sh | bash
+npm exec --yes --package=@longleash/cli@rc -- longleash setup
 ```
 
-The installer does not use `sudo`. By default it writes the checkout to `~/.longleash-app`, the
-command to `~/.local/bin/longleash`, and local state to `~/.longleash`. It backs up provider config
-before installing lifecycle hooks.
+The release-candidate installer does not use `sudo` or clone a maintainer branch. It stages a pinned
+npm package under `~/.local/share/longleash`, installs the command at `~/.local/bin/longleash`, and
+keeps local state in `~/.longleash`. It backs up provider configuration before adding lifecycle hooks.
 
-### 2. Start the laptop daemon
+### 2. Keep the laptop daemon available
 
 ```sh
-longleash
+longleash setup
 ```
 
-To limit remote starts to specific folders, name them explicitly:
+Setup recommends a per-user background service, so the setup terminal can close. It shows the roots,
+relay mode, and login behavior before applying them. Foreground mode remains available for diagnosis:
 
 ```sh
-longleash ~/code ~/work/client-project
+longleash run ~/code ~/work/client-project
 ```
 
-Keep that terminal open. Press `q`, then Enter, for a clean shutdown.
+Keep the terminal open only in foreground mode. See the [background-service guide](docs/BACKGROUND-SERVICE.md).
 
 ### 3. Pair the phone
 
@@ -109,8 +110,8 @@ Keep that terminal open. Press `q`, then Enter, for a clean shutdown.
    belong to that app rather than a separate browser tab. Pasting the complete link also works.
 4. Confirm the header says `linked · relay` or `linked · direct`.
 
-Pairing links are single-use and expire. Press `n`, then Enter, in the daemon terminal whenever you
-need a fresh one. Do not reuse a QR from a screenshot or share it—it contains a temporary secret.
+Pairing links are single-use and expire. Run `longleash pair` for a fresh one from a background
+service, or press `n` then Enter in a foreground daemon. Do not reuse or share a QR—it contains a temporary secret.
 Current links keep that secret after `#`, so the browser does not send it to the relay as part of
 the HTTP request. Older query-style links remain readable only for single-use compatibility.
 If the installed app's camera stays soft, fit the full white border in the finder, tap **Refocus**,
@@ -225,7 +226,13 @@ and obtains concurrency through separate Git worktrees. Non-Git folders remain s
 
 | Command | Purpose |
 | --- | --- |
-| `longleash [folders…]` | Start the daemon and allowlist the named roots |
+| `longleash setup` | Configure and install the verified runtime; recommend a per-user service |
+| `longleash run [folders…]` | Start explicitly in the foreground and allowlist named roots |
+| `longleash service status` | Show manager state plus authenticated daemon health |
+| `longleash service start/stop/restart` | Control the per-user background job |
+| `longleash service logs [--follow]` | Read redacted persistent logs |
+| `longleash service uninstall` | Remove only the service while preserving data and runtime |
+| `longleash pair` | Print a fresh single-use pairing QR from the running daemon |
 | `longleash doctor` | Diagnose daemon reachability, build identity, relay, and hooks |
 | `longleash devices` | List phones paired with this laptop |
 | `longleash revoke <id>` | Immediately revoke one paired device |
@@ -236,8 +243,7 @@ and obtains concurrency through separate Git worktrees. Non-Git folders remain s
 | `longleash where` | Print the checkout used by the installed command |
 | `longleash release` | Maintainer command: test, build, stamp, and deploy the phone app/relay |
 
-While the daemon is running: `n` + Enter prints a new pairing QR, `r` + Enter revokes all devices,
-and `q` + Enter exits cleanly.
+The `n`, `r`, and `q` terminal controls apply only to explicit foreground mode.
 
 ## Updating
 
@@ -259,12 +265,12 @@ Before restarting anything, preserve the evidence:
 
 ```sh
 longleash doctor
-tail -n 150 ~/.longleash/daemon.log
+longleash service logs
 ```
 
 | Symptom | First action |
 | --- | --- |
-| Pairing says the laptop did not answer | Keep the daemon running and press `n` + Enter for a new single-use QR |
+| Pairing says the laptop did not answer | Confirm `longleash service status`, then run `longleash pair` for a new single-use QR |
 | `LongLeash is already running` | Use the existing daemon; do not start a second copy |
 | Phone shows an old UI or build mismatch | `longleash update`, restart the daemon, then update/refresh the phone app |
 | Terminal/VS Code session is missing | Run `longleash doctor`, repair hooks, then start a fresh provider session |
