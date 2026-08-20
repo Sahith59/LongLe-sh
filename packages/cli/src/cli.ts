@@ -17,6 +17,7 @@ import {
   saveConfig,
 } from './config.js'
 import { installPaths, prepareManagedInstall, uninstallManagedRuntime, updatePackageSpec } from './install.js'
+import { resolveAllowedRootAnswer } from './setup-input.js'
 import {
   installService,
   restartService,
@@ -159,8 +160,13 @@ async function setup(options: SetupOptions): Promise<number> {
     try {
       console.log('\nLongLeash setup\n')
       console.log('Agents remain on this laptop. Choose only folders where they may work.')
-      const rootAnswer = await prompt.question(`Allowed project folder [${process.cwd()}]: `)
-      options.roots = [rootAnswer.trim() || process.cwd()]
+      const defaultRoot = process.cwd()
+      while (options.roots.length === 0) {
+        const rootAnswer = await prompt.question(`Allowed project folder (press Enter for ${defaultRoot}): `)
+        const resolved = resolveAllowedRootAnswer(rootAnswer, defaultRoot)
+        if (resolved.ok) options.roots = [resolved.root]
+        else console.log(`\n${resolved.message}\n`)
+      }
       console.log('\nConnectivity: hosted works away from home; LAN-only has no internet relay.')
       const relayAnswer = await prompt.question('Relay [hosted / lan / wss://your-relay/ws] (hosted): ')
       options.relay = relayAnswer.trim() || 'hosted'
