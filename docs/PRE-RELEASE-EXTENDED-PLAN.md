@@ -235,7 +235,7 @@ Foreground mode remains useful for debugging and development.
 
 ### Implementation evidence and remaining release gates
 
-- The candidate implements a managed macOS LaunchAgent and Linux systemd user unit with absolute
+- The release candidate implements a managed macOS LaunchAgent and Linux systemd user unit with absolute
   executable paths, mode-0600 definitions, explicit environments, non-root ownership, validated
   writes, bounded restart behavior, and transactional rollback.
 - A data-directory instance lock rejects live duplicate writers, recovers only recognized dead
@@ -250,6 +250,13 @@ Foreground mode remains useful for debugging and development.
 - Linux lifecycle, rollback, ownership, permissions, restart policy, and login-scope reporting pass
   deterministic manager tests. A real clean Linux systemd-user run, macOS sleep/wake and login
   checks, and the complete release-candidate matrix remain required before Gate 2 closes.
+- `@longleash/cli@0.1.0-rc.4` was built and exercised from the same tarball on clean GitHub-hosted
+  Linux Node 22 and macOS Node 24 jobs, then published through npm trusted publishing. The public
+  registry artifact exposes an npm signature and SLSA provenance; a fresh independent install
+  reported 218 verified registry signatures and 21 verified attestations.
+- The `rc` channel resolves to `0.1.0-rc.4`. Prerelease installations now remain on `rc` when users
+  run `longleash update`, while stable installations follow `latest`; exact-version rollback remains
+  available. This prevents the npm bootstrap's unavoidable `latest` tag from downgrading an RC user.
 
 ## Workstream D: human-verifiable pairing
 
@@ -362,20 +369,20 @@ plan, applies approved changes, starts or verifies the service, and returns a re
 
 ### Gate 1: public truth
 
-- [ ] Ship browser title and metadata copy.
-- [ ] Ship outcome-based roadmap.
-- [ ] Ship connectivity comparison and setup documentation.
+- [x] Ship browser title and metadata copy.
+- [x] Ship outcome-based roadmap.
+- [x] Ship connectivity comparison and setup documentation.
 - [x] Separate the accountless self-hosted Worker configuration from branded production and pass a Wrangler dry run.
 - [ ] Mark npm, service, pairing confirmation, MCP, dashboard, and VS Code companion accurately until
   their own gates pass.
 
 ### Gate 2: distribution and lifecycle
 
-- [ ] Build scoped npm package and package-content checks.
+- [x] Build scoped npm package and package-content checks.
 - [x] Build macOS LaunchAgent and Linux systemd user-service lifecycle.
 - [ ] Complete clean-machine and update/rollback matrices.
-- [ ] Obtain npm scope ownership and configure OIDC trusted publishing.
-- [ ] Publish a release candidate, verify provenance, then change the public install command.
+- [x] Obtain npm scope ownership and configure OIDC trusted publishing.
+- [x] Publish a release candidate, verify provenance, then change the public install command.
 
 ### Gate 3: verified pairing
 
@@ -424,12 +431,13 @@ plan, applies approved changes, starts or verifies the service, and returns a re
 | 17 Aug 2026 | Workstream A implementation | Public titles and metadata use outcome copy; the roadmap has no Phase 1 or Phase 2A product labels; first-party connectivity documentation covers hosted relay, self-hosted relay, and LAN-only; rendered-route tests cover landmarks and the keyboard-reachable comparison table. Physical responsive and browser accessibility acceptance remains part of Gate 5 and is not inferred from source tests. |
 | 20 Aug 2026 | Workstream B release bootstrap | `@longleash/cli@0.1.0-rc.1` was published from the locally verified tarball and its registry SHA-512 integrity matched exactly. This one-time bootstrap has no provenance; trusted-publisher release evidence is still required before `latest`. |
 | 20 Aug 2026 | Workstream C implementation | Per-user launchd and systemd lifecycles, authenticated service health and pairing, duplicate-daemon locking, signal forwarding, fail-closed durable logs, public service documentation, and ownership/rollback tests are implemented. Isolated macOS launchd acceptance passed; clean Linux, login, sleep/wake, and release-candidate matrices remain open. |
+| 20 Aug 2026 | Workstream C public candidate | Protected PR #8 merged as `9ad3409`; CI, production deployment, and the independent branded-route/security/auth matrix passed on that exact commit. `@longleash/cli@0.1.0-rc.4` passed clean Linux and macOS tarball jobs and was published through npm trusted publishing with an npm signature and SLSA provenance. The public `rc` channel, fresh install, CLI entry point, registry signatures, attestations, and prerelease update-channel behavior were verified. Physical iPhone, macOS login and sleep/wake, and real systemd-user acceptance remain open. |
 
 ## Next implementation checkpoint
 
-Workstreams A and B are isolated commits, the bootstrap `rc.1` exists, and Workstream C is the current
-unpublished candidate. The next product workstream is D, human-verifiable pairing, but Workstream C's
-clean Linux, login, sleep/wake, and public-candidate evidence must still close before the lifecycle
-gate is called release-ready. Do not change the website install command to npm `latest` until a
-trusted-publisher release has passed the registry matrix on clean macOS and Linux. Physical browser
-and device acceptance remains mandatory before the public release candidate gate closes.
+Workstreams A and B are isolated commits, and Workstream C is published as the `rc.4` public
+candidate. The next product workstream is D, human-verifiable pairing, but Workstream C's physical
+macOS login and sleep/wake checks plus a real Linux systemd-user run must still close before the
+lifecycle gate is called release-ready. Keep the website on npm `rc` until every applicable public
+release gate passes and a stable version is intentionally promoted to `latest`. Physical browser and
+device acceptance remains mandatory before the public release candidate gate closes.
