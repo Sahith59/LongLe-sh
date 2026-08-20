@@ -3,6 +3,10 @@
 The public CLI package is `@longleash/cli`. The unscoped `longleash` name belongs to a different
 maintainer and must never appear in a LongLeash install command.
 
+Release lockfile generation and validation use npm `11.12.1`. User installations remain compatible
+with the broader npm range declared by the package; pinning the release tool prevents different npm
+versions from rewriting platform metadata in an otherwise identical dependency graph.
+
 During prerelease testing, use `npx --registry=https://registry.npmjs.org/ @longleash/cli@rc setup`.
 The public website must not use `@latest` until a stable version has passed the complete release
 matrix and the `latest` dist-tag points to it.

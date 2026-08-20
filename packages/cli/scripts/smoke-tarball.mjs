@@ -85,7 +85,9 @@ async function exercisePackagedDaemon(executable, root, baseEnv) {
     env: {
       ...baseEnv,
       PORT: '0',
-      LONGLEASH_RELAY_URL: 'ws://127.0.0.1:9/ws',
+      // A deliberately unreachable TLS relay exercises startup without allowing a real external
+      // connection. Push notification VAPID subjects correctly reject insecure HTTP origins.
+      LONGLEASH_RELAY_URL: 'wss://127.0.0.1:9/ws',
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   })

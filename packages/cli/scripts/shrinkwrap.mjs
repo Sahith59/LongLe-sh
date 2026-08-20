@@ -19,6 +19,13 @@ for (const name of Object.keys(npmEnv)) {
 const stage = mkdtempSync(join(tmpdir(), 'longleash-shrinkwrap-'))
 try {
   writeFileSync(join(stage, 'package.json'), `${JSON.stringify(releaseManifest, null, 2)}\n`)
+  if (process.argv.includes('--check')) {
+    // Validate the committed graph instead of resolving a new graph from today's registry.
+    // Re-resolving here makes a release candidate non-reproducible whenever a transitive range
+    // gains a newer version. npm still checks that this lock satisfies the release manifest and
+    // rewrites it if the manifest and shrinkwrap have drifted.
+    copyFileSync(destination, join(stage, 'package-lock.json'))
+  }
   execFileSync('npm', [
     'install', '--package-lock-only', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund',
     '--registry=https://registry.npmjs.org/',
