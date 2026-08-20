@@ -44,16 +44,26 @@ real configuration.
 ## Bootstrap the first package once
 
 npm cannot attach a trusted publisher until the package exists. For the first release candidate
-only, the organization owner must publish interactively from a clean tagged checkout and complete
-the npm 2FA prompt:
+only, the organization owner must publish interactively from a clean, already-pushed commit and
+complete the npm 2FA prompt. Do **not** create or push a `cli-v*` tag for this bootstrap version:
+that tag is reserved for the trusted workflow, which cannot authenticate until the package exists.
+
+The package manifest intentionally requires provenance for normal releases. A local terminal is not
+a supported provenance provider, so the one bootstrap publish explicitly disables provenance. The
+next release candidate must come from the trusted GitHub workflow and is the first release allowed
+to claim provenance.
 
 ```sh
-git status --short
-git tag --points-at HEAD
+git status --short --untracked-files=no
+git diff --quiet
+git diff --cached --quiet
+git branch --show-current
+git rev-parse HEAD
+git rev-parse origin/main
 pnpm --filter @longleash/cli build
 pnpm --filter @longleash/cli pack:verify
 node packages/cli/scripts/smoke-tarball.mjs packages/cli/dist-pack/*.tgz
-npm publish packages/cli/dist-pack/longleash-cli-0.1.0-rc.1.tgz --access public --tag rc
+NPM_CONFIG_PROVENANCE=false npm publish packages/cli/dist-pack/longleash-cli-0.1.0-rc.1.tgz --access public --tag rc
 ```
 
 Replace the tarball filename with the exact version being bootstrapped. Never publish the package
@@ -62,20 +72,22 @@ directory after verifying a tarball; that would rebuild and publish different by
 Do not paste an OTP into a command argument, chat, issue, environment file, or repository secret.
 Enter it only into npm's interactive prompt.
 
-Immediately after the first package exists:
+The two commit hashes printed above must match. Immediately after the first package exists:
 
 1. Open `@longleash/cli` on npm and configure a GitHub Actions trusted publisher.
 2. Set organization/repository to `Sahith59/LongLe-sh` and workflow filename to
    `publish-cli.yml`.
-3. In package publishing access, require 2FA and disallow traditional tokens.
-4. Confirm no npm token exists in the repository, organization, or `npm-production` environment.
-5. Protect the GitHub `npm-production` environment and `cli-v*` tags according to repository policy.
+3. Confirm no npm token exists in the repository, organization, or `npm-production` environment.
+4. Protect the GitHub `npm-production` environment and `cli-v*` tags according to repository policy.
+5. Publish a new version through the trusted workflow and verify its provenance on npm.
+6. Only after that proof succeeds, require 2FA and disallow traditional tokens in package publishing
+   access. This avoids locking the maintainer out because of a mistyped publisher configuration.
 
 Every later release is tag-driven and tokenless. The publish job downloads the exact tarball from
 the completed clean-machine job; it does not rebuild different bytes after verification:
 
 ```sh
-git tag cli-v0.1.0-rc.2
+git tag --annotate cli-v0.1.0-rc.2 --message "Release @longleash/cli 0.1.0-rc.2"
 git push origin cli-v0.1.0-rc.2
 ```
 

@@ -174,8 +174,10 @@ action required for package identity; no npm token should be shared in chat or c
 
 Before changing the public website to npm, the maintainer must push this commit, let the clean
 Linux/macOS workflow pass, bootstrap the first `rc` package with npm 2FA, bind the trusted publisher,
-verify `npm view` ownership/integrity/provenance, and repeat the real tarball matrix from the public
-registry. Until then, `@latest` is not a valid public promise.
+publish a second `rc` through that tokenless workflow, verify its ownership, integrity, and
+provenance, and repeat the real tarball matrix from the public registry. The one-time bootstrap
+release cannot carry provenance because npm cannot bind a trusted publisher before the package
+exists. Until the complete sequence passes, `@latest` is not a valid public promise.
 
 ## Workstream C: resilient background service
 
