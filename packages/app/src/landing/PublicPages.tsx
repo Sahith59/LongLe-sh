@@ -5,12 +5,15 @@ import {
   BookOpen,
   Check,
   Clipboard,
+  Container,
   FileCode2,
   GitBranch,
   HelpCircle,
   Laptop,
   Lock,
   Radio,
+  RefreshCw,
+  Server,
   ShieldCheck,
   Smartphone,
   SquareTerminal,
@@ -43,6 +46,12 @@ const guides: PageMeta[] = [
     label: 'Connectivity choices',
     description: 'Compare the hosted relay, your own relay, and LAN-only operation.',
     icon: Radio,
+  },
+  {
+    path: '/docs/self-hosting',
+    label: 'Self-hosting operations',
+    description: 'Run Cloudflare or Docker safely, with TLS, monitoring, updates, and recovery.',
+    icon: Server,
   },
   {
     path: '/docs/background-service',
@@ -86,6 +95,7 @@ const titles: Record<string, string> = {
   '/docs': 'Documentation',
   '/docs/getting-started': 'Getting started',
   '/docs/connectivity': 'Connectivity choices',
+  '/docs/self-hosting': 'Self-hosting operations',
   '/docs/background-service': 'Background service',
   '/docs/daily-use': 'Daily use',
   '/docs/troubleshooting': 'Troubleshooting',
@@ -139,6 +149,9 @@ export function PublicPageRouter({ path }: { path: string }) {
       break
     case '/docs/connectivity':
       page = <Connectivity />
+      break
+    case '/docs/self-hosting':
+      page = <SelfHosting />
       break
     case '/docs/background-service':
       page = <BackgroundService />
@@ -432,9 +445,10 @@ function Connectivity() {
         </p>
       </div>
       <p>
-        Docker/VPS setup, custom-domain TLS, updates, logs, and failure recovery are documented in{' '}
-        <a href={`${REPOSITORY}/blob/main/docs/DEPLOY.md`}>the advanced operator guide</a>. The
-        copyable default above deliberately uses the separate accountless Worker configuration.
+        Continue with the website-native <a href={siteHref('/docs/self-hosting')}>self-hosting
+        operations guide</a> for Docker or VPS setup, custom-domain TLS, monitoring, controlled
+        updates, rollback, and failure recovery. The copyable default above deliberately uses the
+        separate accountless Worker configuration.
       </p>
       <AgentSetupNote mode="self-hosted relay" />
 
@@ -457,6 +471,177 @@ function Connectivity() {
         phone traffic. The recommended setup installs a per-user macOS LaunchAgent or Linux systemd
         user service, so closing Terminal does not end the connection. Foreground mode remains available for diagnosis.
       </p>
+    </DocsLayout>
+  )
+}
+
+function SelfHosting() {
+  return (
+    <DocsLayout
+      path="/docs/self-hosting"
+      eyebrow="Operator guide"
+      title="Own the route without guessing."
+      summary="Two maintained deployment paths, explicit security boundaries, and a recovery order you can follow while the service is under pressure."
+    >
+      <div className="mode-summary" aria-label="Self-hosting deployment paths">
+        <section>
+          <span className="doc-icon"><Radio size={19} aria-hidden="true" /></span>
+          <div><b>Cloudflare Worker</b><small>Lowest operations burden and the recommended reference path.</small></div>
+        </section>
+        <section>
+          <span className="doc-icon"><Container size={19} aria-hidden="true" /></span>
+          <div><b>Docker on a VPS</b><small>Your server, Caddy-managed TLS, and your uptime responsibility.</small></div>
+        </section>
+        <section>
+          <span className="doc-icon"><RefreshCw size={19} aria-hidden="true" /></span>
+          <div><b>Operate deliberately</b><small>Verify health, inspect logs, update, and retain a rollback path.</small></div>
+        </section>
+      </div>
+
+      <div className="doc-callout warn">
+        <ShieldCheck size={19} aria-hidden="true" />
+        <p>
+          <b>Self-hosted means operator-owned.</b> LongLeash cannot monitor, patch, recover, or
+          govern infrastructure in your account. Repository data, provider credentials, sessions,
+          and transcripts still remain on the laptop; your relay handles sealed frames and ordinary
+          network metadata.
+        </p>
+      </div>
+
+      <h2 id="choose">Choose the operating model</h2>
+      <div className="comparison-scroll" role="region" aria-label="Self-hosting platform comparison" tabIndex={0}>
+        <table className="mode-table">
+          <thead>
+            <tr><th scope="col">Responsibility</th><th scope="col">Cloudflare Worker</th><th scope="col">Docker or VPS</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">TLS certificates</th><td>Cloudflare issues and renews them</td><td>Caddy issues and renews them when DNS and ports are correct</td></tr>
+            <tr><th scope="row">WebSocket routing</th><td>Worker and Durable Object</td><td>Caddy to the private relay container</td></tr>
+            <tr><th scope="row">Host patching</th><td>Managed platform</td><td>You patch the OS and container runtime</td></tr>
+            <tr><th scope="row">Logs</th><td>Workers Observability</td><td>Docker Compose and host logs</td></tr>
+            <tr><th scope="row">Best fit</th><td>Most individual operators</td><td>Teams already operating a hardened server</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="cloudflare">Cloudflare Worker runbook</h2>
+      <h3>1. Validate the isolated configuration</h3>
+      <CodeBlock command={'pnpm install\npnpm --filter @longleash/relay check:selfhost'} />
+      <p>
+        Stop if the dry run contains LongLeash production domains, Clerk bindings, hosted ticket
+        secrets, or production rate-limit namespaces. A self-hosted dry run should list the
+        <code> ROOM</code> Durable Object and <code>ASSETS</code> binding only.
+      </p>
+      <h3>2. Deploy and prove the public edge</h3>
+      <CodeBlock command={'pnpm --filter @longleash/relay deploy:selfhost\ncurl -fsS https://your-worker.workers.dev/health'} />
+      <p>
+        The health response must report <code>"ok":true</code> and <code>"role":"relay"</code>.
+        A successful deployment is not acceptance evidence until the public HTTPS URL answers.
+      </p>
+      <h3>3. Add a custom domain without hand-managing certificates</h3>
+      <ol>
+        <li>Add the domain to an active Cloudflare zone.</li>
+        <li>Open Workers &amp; Pages, select the relay Worker, then choose Settings, Domains &amp; Routes, Add, Custom Domain.</li>
+        <li>Enter one exact hostname such as <code>relay.example.com</code>. Do not reuse a hostname with an existing CNAME.</li>
+        <li>Wait for the DNS record and certificate to become active, then verify <code>https://relay.example.com/health</code>.</li>
+        <li>Set the laptop endpoint to <code>wss://relay.example.com/ws</code> and run <code>longleash doctor</code>.</li>
+      </ol>
+      <p>
+        Cloudflare Custom Domains make the Worker the origin and create the DNS record and edge
+        certificate. Root and <code>www</code> hostnames are separate; configure both or redirect one explicitly.
+      </p>
+
+      <h2 id="docker">Docker or VPS runbook</h2>
+      <p>
+        Use a dedicated Ubuntu host with a hostname already pointing to its public address. Open TCP
+        ports 80 and 443 in both the cloud firewall and the host firewall before requesting TLS.
+        Keep SSH restricted to trusted addresses and apply operating-system security updates.
+      </p>
+      <CodeBlock command={'ssh ubuntu@your-server\ncurl -fsSL https://raw.githubusercontent.com/Sahith59/LongLe-sh/main/scripts/relay-setup.sh | bash -s -- relay.example.com'} />
+      <p>
+        The setup script installs Docker when needed, starts the relay behind Caddy, and waits for a
+        public health response. The relay container is not published directly to the host; Caddy is
+        the only public entry point and passes WebSocket upgrades through to it.
+      </p>
+      <h3>TLS acceptance</h3>
+      <CodeBlock command={'curl -I http://relay.example.com\ncurl -fsS https://relay.example.com/health'} />
+      <ul>
+        <li>DNS must resolve to the VPS.</li>
+        <li>Ports 80 and 443 must be reachable from the public internet.</li>
+        <li>The HTTPS health check must succeed without bypassing certificate verification.</li>
+        <li>Never use an insecure TLS skip option to make a failed certificate appear healthy.</li>
+      </ul>
+
+      <h2 id="monitor">Monitoring and logs</h2>
+      <h3>Cloudflare</h3>
+      <p>
+        The reference self-hosted configuration enables Workers Observability. In the Cloudflare
+        dashboard, open the Worker and select Observability to inspect invocation logs, exceptions,
+        and WebSocket events. For a quick live investigation, use Wrangler tail from the relay package.
+      </p>
+      <CodeBlock command="pnpm --filter @longleash/relay exec wrangler tail --config wrangler.selfhost.jsonc" />
+      <h3>Docker or VPS</h3>
+      <CodeBlock command={'cd ~/longleash/deploy\ndocker compose ps\ndocker compose logs --tail=200 relay caddy'} />
+      <p>
+        Monitor the external HTTPS health endpoint from outside the VPS. Alert on repeated failures,
+        certificate expiry warnings, restart loops, disk pressure, and host patch failures. Do not log
+        pairing links, URL fragments, device credentials, or decrypted application content.
+      </p>
+
+      <h2 id="update">Controlled updates and rollback</h2>
+      <ol>
+        <li>Record the currently healthy Git commit and confirm the public health endpoint.</li>
+        <li>Read the release notes and run the repository checks before deploying.</li>
+        <li>Deploy during a window where you can test one laptop and one phone immediately.</li>
+        <li>Verify HTTPS health, WebSocket reconnection, pairing, and a harmless reply.</li>
+        <li>If acceptance fails, restore the recorded revision and verify health again.</li>
+      </ol>
+      <h3>Cloudflare update</h3>
+      <CodeBlock command="pnpm --filter @longleash/relay deploy:selfhost" />
+      <p>
+        Cloudflare keeps Worker versions and deployments. Use the dashboard deployment history or
+        Wrangler version controls to return traffic to a previously verified version. A code rollback
+        is incomplete until the public health and phone reconnection checks pass.
+      </p>
+      <h3>Docker or VPS update</h3>
+      <CodeBlock command={'cd ~/longleash\ngit rev-parse HEAD\ngit pull --ff-only\ncd deploy && docker compose up -d --build'} />
+      <p>
+        To roll back, check out the recorded healthy commit and rebuild the same Compose project.
+        Preserve the named Caddy volumes so certificate state survives container replacement.
+      </p>
+
+      <h2 id="recover">Failure recovery order</h2>
+      <ol>
+        <li><b>Prove DNS.</b> Confirm the hostname resolves to the expected edge or VPS.</li>
+        <li><b>Prove HTTPS.</b> Request <code>/health</code> from a network outside the server.</li>
+        <li><b>Inspect the edge.</b> Check Worker exceptions or Caddy certificate and proxy logs.</li>
+        <li><b>Inspect the relay.</b> Look for crash loops, unhealthy containers, or deployment errors.</li>
+        <li><b>Prove the laptop.</b> Run <code>longleash doctor</code> and verify the configured WebSocket URL.</li>
+        <li><b>Prove the phone.</b> Reopen the installed app, wait for linked status, then use a fresh pairing QR only if the device was revoked.</li>
+      </ol>
+      <div className="doc-callout safe">
+        <Check size={19} aria-hidden="true" />
+        <p>
+          <b>Recovery should preserve evidence.</b> Capture the failing health response and relevant
+          logs before rebuilding. Do not revoke every device, delete volumes, rotate secrets, or wipe
+          local state as a first troubleshooting step.
+        </p>
+      </div>
+
+      <h2 id="operator-checklist">Operator acceptance checklist</h2>
+      <ul>
+        <li>Public HTTPS health returns the relay role with a valid certificate.</li>
+        <li>The laptop connects only to the intended <code>wss://</code> endpoint.</li>
+        <li>A newly paired phone links from both Wi-Fi and cellular data.</li>
+        <li>Closing Terminal does not stop a configured background service.</li>
+        <li>Logs contain operational metadata but no pairing secrets or plaintext transcript content.</li>
+        <li>An update and a documented rollback both preserve a working health check.</li>
+      </ul>
+      <p>
+        The repository remains the source of deployable code and scripts, but this page is the
+        complete operator path. Use <a href={REPOSITORY}>source on GitHub</a> only when you need to audit or modify that implementation.
+      </p>
+      <AgentSetupNote mode="self-hosted relay operations" />
     </DocsLayout>
   )
 }
