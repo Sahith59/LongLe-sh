@@ -106,8 +106,8 @@ mode with no relay at all.
 
 ## Workstream B: verified npm distribution
 
-**Implementation checkpoint (17 August 2026):** complete in the local Workstream B commit. Public
-availability is deliberately not claimed yet because the package has not been pushed or published.
+**Implementation checkpoint (21 August 2026):** the release-candidate channel is public and
+provenance-backed. Stable `latest` remains deliberately gated on the remaining prerelease work.
 
 ### Package shape
 
@@ -172,12 +172,10 @@ action required for package identity; no npm token should be shared in chat or c
   instead of the user's prompt. The Codex live contract is currently blocked by the local Codex
   account's provider usage limit; it is not recorded as a product pass or failure.
 
-Before changing the public website to npm, the maintainer must push this commit, let the clean
-Linux/macOS workflow pass, bootstrap the first `rc` package with npm 2FA, bind the trusted publisher,
-publish a second `rc` through that tokenless workflow, verify its ownership, integrity, and
-provenance, and repeat the real tarball matrix from the public registry. The one-time bootstrap
-release cannot carry provenance because npm cannot bind a trusted publisher before the package
-exists. Until the complete sequence passes, `@latest` is not a valid public promise.
+`@longleash/cli@0.1.0-rc.7` passed the clean Linux Node 22 and macOS Node 24 tarball matrix and was
+published through npm trusted publishing from tag `cli-v0.1.0-rc.7`. The registry exposes its
+SHA-512 integrity, npm signature, and SLSA provenance. The website may recommend the explicit `rc`
+channel during prerelease; `@latest` is still not a valid stable-release promise.
 
 ## Workstream C: resilient background service
 
@@ -248,15 +246,21 @@ Foreground mode remains useful for debugging and development.
   refusal, forced crash recovery, stop, restart, uninstall, and data preservation against an isolated
   temporary home and data directory. No maintainer daemon or data was used.
 - Linux lifecycle, rollback, ownership, permissions, restart policy, and login-scope reporting pass
-  deterministic manager tests. A real clean Linux systemd-user run, macOS sleep/wake and login
-  checks, and the complete release-candidate matrix remain required before Gate 2 closes.
-- `@longleash/cli@0.1.0-rc.4` was built and exercised from the same tarball on clean GitHub-hosted
+  deterministic manager tests. A real systemd user manager now gates publication by exercising
+  install, authenticated health, forced full-cgroup crash, bounded automatic recovery, verified
+  update restart, logs, stop/start, uninstall, and data preservation.
+- `@longleash/cli@0.1.0-rc.7` was built and exercised from the same tarball on clean GitHub-hosted
   Linux Node 22 and macOS Node 24 jobs, then published through npm trusted publishing. The public
-  registry artifact exposes an npm signature and SLSA provenance; a fresh independent install
-  reported 218 verified registry signatures and 21 verified attestations.
-- The `rc` channel resolves to `0.1.0-rc.4`. Prerelease installations now remain on `rc` when users
+  registry artifact exposes an npm signature and SLSA provenance. Repository gates pass 880 tests,
+  all typechecks and production builds, the production dependency audit, relay dry-run, Docker
+  health, CLI tarball smoke, and VSIX packaging.
+- The `rc` channel resolves to `0.1.0-rc.7`. Prerelease installations remain on `rc` when users
   run `longleash update`, while stable installations follow `latest`; exact-version rollback remains
   available. This prevents the npm bootstrap's unavoidable `latest` tag from downgrading an RC user.
+- Production build `3f15e73` passed branded routing, TLS, security headers, authentication readiness,
+  unauthenticated API boundaries, legacy-relay compatibility, and the website-native advanced
+  self-hosting route. Gate 2 still requires the maintainer's physical post-release confirmation for
+  macOS sleep/wake, Wi-Fi reconnection, login-start, and the phone's coherent reconnect rendering.
 
 ## Workstream D: human-verifiable pairing
 

@@ -71,7 +71,17 @@ async function waitForBuild(expected) {
 }
 
 async function main() {
-  for (const path of ['/', '/docs', '/docs/security', '/docs/troubleshooting', '/privacy', '/terms']) {
+  for (const path of [
+    '/',
+    '/docs',
+    '/docs/security',
+    '/docs/troubleshooting',
+    '/docs/background-service',
+    '/docs/self-hosting',
+    '/connectivity',
+    '/privacy',
+    '/terms',
+  ]) {
     await expectStatus(`${apex}${path}`, 200)
   }
 
