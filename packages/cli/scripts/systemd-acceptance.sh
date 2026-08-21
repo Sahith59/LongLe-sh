@@ -47,6 +47,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
+diagnose_failure() {
+  status=$?
+  echo "systemd acceptance failed; collecting service evidence" >&2
+  systemctl --user status longleash.service --no-pager >&2 || true
+  journalctl --user-unit longleash.service -n 200 --no-pager >&2 || true
+  if [[ -f "$environment" ]]; then
+    echo "managed environment file (values redacted):" >&2
+    sed -E 's/=.*/=<redacted>/' "$environment" >&2 || true
+  fi
+  if [[ -f "$data/config.json" ]]; then
+    echo "isolated configuration:" >&2
+    sed -E 's/(secret|token|key)"[[:space:]]*:[[:space:]]*"[^"]*"/\1":"<redacted>"/Ig' "$data/config.json" >&2 || true
+  fi
+  return "$status"
+}
+trap diagnose_failure ERR
+
 if systemctl --user is-active --quiet longleash.service || [[ -e "$unit" ]]; then
   echo "Refusing to replace a pre-existing LongLeash user service." >&2
   exit 2
