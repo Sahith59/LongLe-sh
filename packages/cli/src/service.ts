@@ -222,7 +222,7 @@ export function startService(context: ServiceContext = {}): ServiceState {
   assertServiceInstallation(resolved)
   if (resolved.platform === 'darwin') {
     if (launchdLoaded(resolved)) requireSuccess(resolved, '/bin/launchctl', ['kickstart', '-k', serviceTarget(resolved)])
-    else requireSuccess(resolved, '/bin/launchctl', ['bootstrap', launchDomain(resolved), resolved.paths.definition])
+    else bootstrapLaunchAgent(resolved)
   } else {
     requireSuccess(resolved, 'systemctl', ['--user', 'start', SYSTEMD_UNIT])
   }
@@ -249,7 +249,7 @@ export function restartService(context: ServiceContext = {}): ServiceState {
   assertServiceInstallation(resolved)
   if (resolved.platform === 'darwin') {
     if (launchdLoaded(resolved)) requireSuccess(resolved, '/bin/launchctl', ['kickstart', '-k', serviceTarget(resolved)])
-    else requireSuccess(resolved, '/bin/launchctl', ['bootstrap', launchDomain(resolved), resolved.paths.definition])
+    else bootstrapLaunchAgent(resolved)
   } else {
     requireSuccess(resolved, 'systemctl', ['--user', 'restart', SYSTEMD_UNIT])
   }
@@ -308,12 +308,36 @@ function installLaunchAgent(context: ResolvedContext): void {
     writeManagedAtomically(context.paths.definition, content, 0o600, (temporary) => {
       requireSuccess(context, '/usr/bin/plutil', ['-lint', temporary])
     })
-    requireSuccess(context, '/bin/launchctl', ['bootstrap', launchDomain(context), context.paths.definition])
+    bootstrapLaunchAgent(context)
   } catch (error) {
     restore(context.paths.definition, previous)
     if (previous !== null && wasLoaded) run(context, '/bin/launchctl', ['bootstrap', launchDomain(context), context.paths.definition])
     throw error
   }
+}
+
+/**
+ * launchd occasionally returns EIO while replacing a per-user job even though the plist is
+ * valid. That failure can mean either that bootstrap succeeded but its acknowledgement raced,
+ * or that launchd retained a stale registration after bootout. Check the real job state first,
+ * then clear and retry only LongLeash's already-verified managed label. The retry is deliberately
+ * bounded so a genuinely broken definition still reaches the installer's rollback path.
+ */
+function bootstrapLaunchAgent(context: ResolvedContext): void {
+  const args = ['bootstrap', launchDomain(context), context.paths.definition]
+  const first = run(context, '/bin/launchctl', args)
+  if (first.status === 0 || launchdLoaded(context)) return
+
+  run(context, '/bin/launchctl', ['bootout', serviceTarget(context)])
+  const retry = run(context, '/bin/launchctl', args)
+  if (retry.status === 0 || launchdLoaded(context)) return
+
+  const failure = commandError('/bin/launchctl', args, retry)
+  const firstDetail = (first.stderr || first.stdout).trim().replace(/\s+/g, ' ').slice(0, 240)
+  throw new Error(
+    `${failure.message} launchd still rejected the managed job after one stale-state recovery attempt` +
+    `${firstDetail ? ` (first response: ${firstDetail})` : ''}. Run \`longleash service logs\` for daemon output.`,
+  )
 }
 
 function installSystemdService(context: ResolvedContext): void {

@@ -117,6 +117,58 @@ describe('macOS per-user service lifecycle', () => {
     expect(() => installService({ ...f.context, runner: failing })).toThrow('bootstrap')
     expect(existsSync(f.paths.definition)).toBe(false)
   })
+
+  it('recovers once from a stale launchd registration without touching another label', () => {
+    const f = fixture('darwin')
+    let bootstrapAttempts = 0
+    let loaded = false
+    const calls: string[] = []
+    const recovering: CommandRunner = (file, args) => {
+      calls.push(`${file} ${args.join(' ')}`)
+      if (file === '/usr/bin/plutil') return { status: 0, stdout: '', stderr: '' }
+      if (file === '/bin/launchctl' && args[0] === 'print') {
+        return { status: loaded ? 0 : 113, stdout: '', stderr: '' }
+      }
+      if (file === '/bin/launchctl' && args[0] === 'bootstrap') {
+        bootstrapAttempts += 1
+        if (bootstrapAttempts === 1) return { status: 5, stdout: '', stderr: 'Bootstrap failed: 5: Input/output error' }
+        loaded = true
+        return { status: 0, stdout: '', stderr: '' }
+      }
+      if (file === '/bin/launchctl' && args[0] === 'bootout') {
+        expect(args).toEqual(['bootout', 'gui/501/dev.longleash.daemon'])
+        return { status: 3, stdout: '', stderr: 'No such process' }
+      }
+      return { status: 127, stdout: '', stderr: 'unexpected command' }
+    }
+
+    expect(installService({ ...f.context, runner: recovering })).toMatchObject({ loaded: true, active: true })
+    expect(bootstrapAttempts).toBe(2)
+    expect(calls.filter((call) => call.includes(' bootout '))).toEqual([
+      '/bin/launchctl bootout gui/501/dev.longleash.daemon',
+    ])
+  })
+
+  it('accepts a bootstrap acknowledgement race when launchd reports the managed job loaded', () => {
+    const f = fixture('darwin')
+    let loaded = false
+    let bootstrapAttempts = 0
+    const racing: CommandRunner = (file, args) => {
+      if (file === '/usr/bin/plutil') return { status: 0, stdout: '', stderr: '' }
+      if (file === '/bin/launchctl' && args[0] === 'print') {
+        return { status: loaded ? 0 : 113, stdout: '', stderr: '' }
+      }
+      if (file === '/bin/launchctl' && args[0] === 'bootstrap') {
+        bootstrapAttempts += 1
+        loaded = true
+        return { status: 5, stdout: '', stderr: 'Bootstrap failed: 5: Input/output error' }
+      }
+      return { status: 0, stdout: '', stderr: '' }
+    }
+
+    expect(installService({ ...f.context, runner: racing })).toMatchObject({ loaded: true, active: true })
+    expect(bootstrapAttempts).toBe(1)
+  })
 })
 
 describe('Linux systemd user-service lifecycle', () => {
