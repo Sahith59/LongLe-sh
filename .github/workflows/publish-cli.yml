@@ -63,9 +63,38 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  systemd-user:
+    name: Real systemd user lifecycle (Linux)
+    needs: clean-tarball
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: longleash-cli-${{ github.sha }}
+          path: release
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.14.0
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.12.1
+      - name: Start the real per-user systemd manager
+        shell: bash
+        run: |
+          sudo systemctl start "user@$(id -u).service"
+          test -S "/run/user/$(id -u)/bus"
+      - name: Exercise install, crash, update, logs, stop, start, and uninstall
+        shell: bash
+        run: |
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          bash packages/cli/scripts/systemd-acceptance.sh release/*.tgz
+
   publish:
     name: Publish with npm trusted publishing
-    needs: clean-tarball
+    needs: [clean-tarball, systemd-user]
     if: startsWith(github.ref, 'refs/tags/cli-v')
     runs-on: ubuntu-latest
     timeout-minutes: 20

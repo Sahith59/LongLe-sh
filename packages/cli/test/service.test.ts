@@ -163,6 +163,39 @@ describe('Linux systemd user-service lifecycle', () => {
     }
     expect(() => stopService({ ...f.context, runner: activeRunner })).toThrow('not installed')
   })
+
+  it('restarts an active unit when setup installs a verified update', () => {
+    const f = fixture('linux')
+    installService(f.context)
+    const callsBeforeUpdate = f.calls.length
+
+    installService(f.context)
+    const updateCalls = f.calls.slice(callsBeforeUpdate)
+    expect(updateCalls).toContain('systemctl --user restart longleash.service')
+    expect(updateCalls).not.toContain('systemctl --user enable --now longleash.service')
+  })
+
+  it('restores the prior enabled-but-stopped state when an update fails', () => {
+    const f = fixture('linux')
+    installService(f.context)
+    stopService(f.context)
+    const calls: string[] = []
+    const failing: CommandRunner = (file, args) => {
+      const call = `${file} ${args.join(' ')}`
+      calls.push(call)
+      if (file === 'systemctl' && args.includes('is-enabled')) return { status: 0, stdout: '', stderr: '' }
+      if (file === 'systemctl' && args.includes('is-active')) return { status: 3, stdout: '', stderr: '' }
+      if (file === 'systemctl' && args.includes('enable') && args.includes('--now')) {
+        return { status: 1, stdout: '', stderr: 'activation failed' }
+      }
+      return { status: 0, stdout: '', stderr: '' }
+    }
+
+    expect(() => installService({ ...f.context, runner: failing })).toThrow('activation failed')
+    expect(calls).toContain('systemctl --user enable longleash.service')
+    expect(calls).toContain('systemctl --user stop longleash.service')
+    expect(calls).not.toContain('systemctl --user restart longleash.service')
+  })
 })
 
 describe('service definition escaping and input boundaries', () => {
