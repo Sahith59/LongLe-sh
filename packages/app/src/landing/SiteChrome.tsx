@@ -89,6 +89,7 @@ export function SiteHeader() {
         <a href={siteHref('/#start')}>Setup</a>
         <a href={siteHref('/docs')}>Docs</a>
         <a href={siteHref('/docs/connectivity')}>Connectivity</a>
+        <a href={siteHref('/docs/self-hosting')}>Self-hosting</a>
         <a href={siteHref('/roadmap')}>Roadmap</a>
       </nav>
       <div className="land-actions">

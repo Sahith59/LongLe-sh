@@ -155,8 +155,8 @@ StartLimitBurst=5
 [Service]
 Type=simple
 ExecStart=${systemdQuote(paths.wrapper)} run
-EnvironmentFile=${systemdQuote(paths.environment)}
-WorkingDirectory=${systemdQuote(home)}
+EnvironmentFile=${systemdPath(paths.environment)}
+WorkingDirectory=${systemdPath(home)}
 UMask=0077
 Restart=on-failure
 RestartSec=5s
@@ -320,16 +320,30 @@ function installSystemdService(context: ResolvedContext): void {
   if (!context.paths.environment) throw new Error('The Linux service environment path is missing.')
   const previousUnit = snapshot(context.paths.definition)
   const previousEnvironment = snapshot(context.paths.environment)
+  const wasEnabled = run(context, 'systemctl', ['--user', 'is-enabled', '--quiet', SYSTEMD_UNIT]).status === 0
+  const wasActive = run(context, 'systemctl', ['--user', 'is-active', '--quiet', SYSTEMD_UNIT]).status === 0
   try {
     writeManagedAtomically(context.paths.environment, renderSystemdEnvironment(context.paths, context.env), 0o600)
     writeManagedAtomically(context.paths.definition, renderSystemdUnit(context.paths, context.home), 0o600)
     requireSuccess(context, 'systemctl', ['--user', 'daemon-reload'])
-    requireSuccess(context, 'systemctl', ['--user', 'enable', '--now', SYSTEMD_UNIT])
+    if (wasActive) {
+      // enable --now does not restart an already-running unit. Without this explicit restart an
+      // update can report healthy while the old daemon binary remains in memory.
+      if (!wasEnabled) requireSuccess(context, 'systemctl', ['--user', 'enable', SYSTEMD_UNIT])
+      requireSuccess(context, 'systemctl', ['--user', 'restart', SYSTEMD_UNIT])
+    } else {
+      requireSuccess(context, 'systemctl', ['--user', 'enable', '--now', SYSTEMD_UNIT])
+    }
   } catch (error) {
     restore(context.paths.environment, previousEnvironment)
     restore(context.paths.definition, previousUnit)
     run(context, 'systemctl', ['--user', 'daemon-reload'])
-    if (previousUnit !== null) run(context, 'systemctl', ['--user', 'enable', '--now', SYSTEMD_UNIT])
+    if (previousUnit !== null) {
+      if (wasEnabled) run(context, 'systemctl', ['--user', 'enable', SYSTEMD_UNIT])
+      else run(context, 'systemctl', ['--user', 'disable', SYSTEMD_UNIT])
+      if (wasActive) run(context, 'systemctl', ['--user', 'restart', SYSTEMD_UNIT])
+      else run(context, 'systemctl', ['--user', 'stop', SYSTEMD_UNIT])
+    }
     throw error
   }
 }
@@ -472,6 +486,24 @@ function xml(value: string): string {
 function systemdQuote(value: string): string {
   if (/[\0\r\n]/.test(value)) throw new Error('Service paths may not contain control characters.')
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`
+}
+
+/**
+ * Scalar path directives do not use ExecStart's command-line tokenizer. A quote after the `=`
+ * is therefore part of the path on systemd, which turns `"/home/user"` into a relative path.
+ * Keep the path unquoted and use unit-file escapes for characters that carry syntax.
+ */
+function systemdPath(value: string): string {
+  if (/[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/.test(value)) {
+    throw new Error('Service paths may not contain control characters.')
+  }
+  return value
+    .replace(/%/g, '%%')
+    .replace(/\\/g, '\\x5c')
+    .replace(/ /g, '\\x20')
+    .replace(/\t/g, '\\x09')
+    .replace(/"/g, '\\x22')
+    .replace(/'/g, '\\x27')
 }
 
 function environmentQuote(value: string): string {

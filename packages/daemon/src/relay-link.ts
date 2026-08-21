@@ -51,6 +51,9 @@ export class RelayLink {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null
   private readonly keepaliveMs: number
+  /** WebCrypto promises may resolve out of order; preserve the server's event order explicitly. */
+  private outbound = Promise.resolve()
+  private inbound = Promise.resolve()
 
   constructor(opts: RelayLinkOptions) {
     this.opts = opts
@@ -93,11 +96,15 @@ export class RelayLink {
     const socket = this.socket
     const identity = this.identity
     if (this.currentStatus !== 'connected' || !socket || !identity) return
-    void seal(identity, plaintext).then((payload) => {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ v: 1, type: 'frame', payload }))
-      }
-    })
+    this.outbound = this.outbound
+      .then(async () => {
+        const payload = await seal(identity, plaintext)
+        // Never let work queued for an old room leak into a replacement connection.
+        if (this.socket === socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ v: 1, type: 'frame', payload }))
+        }
+      })
+      .catch(() => {})
   }
 
   private async connect(): Promise<void> {
@@ -143,10 +150,14 @@ export class RelayLink {
         return
       }
       if (message.type === 'frame' && typeof message.payload === 'string') {
-        void open(identity, message.payload).then((plaintext) => {
-          if (plaintext !== null) this.opts.onMessage(plaintext)
-          else this.log('dropped a relay frame that failed to open')
-        })
+        const payload = message.payload
+        this.inbound = this.inbound
+          .then(async () => {
+            const plaintext = await open(identity, payload)
+            if (plaintext !== null) this.opts.onMessage(plaintext)
+            else this.log('dropped a relay frame that failed to open')
+          })
+          .catch(() => {})
         return
       }
       if (

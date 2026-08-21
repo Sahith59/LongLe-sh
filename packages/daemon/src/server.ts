@@ -620,7 +620,8 @@ export class LongLeashServer {
       roots: this.sessions?.listAllowedRoots() ?? [],
       // Everything the daemon knows about, so a reloaded phone rebuilds instead of showing
       // nothing — including sessions the human started in a terminal.
-      sessions: [...(this.sessions?.listSessions() ?? []), ...(this.external?.listSessions() ?? [])],
+      sessions: [...(this.sessions?.listSessions() ?? []), ...(this.external?.listSessions() ?? [])]
+        .sort((left, right) => left.startedAt - right.startedAt || left.sessionId.localeCompare(right.sessionId)),
       capabilities: {
         startSession: this.sessions !== null,
         stopSession: this.sessions !== null,
@@ -703,6 +704,17 @@ export class LongLeashServer {
         return
       }
       for (const event of replay.events) this.sendTo(connection, event)
+      // A replay is a transaction from the phone's point of view. Echoing its opaque id lets a
+      // reconnecting UI apply every historical event without painting each intermediate state.
+      if (message.syncId !== undefined) {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'sync.complete',
+          sessionId: message.sessionId,
+          syncId: message.syncId,
+          cursor: this.eventLog.latestSeq(message.sessionId),
+        })
+      }
       return
     }
 

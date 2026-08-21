@@ -28,6 +28,7 @@ describe('first-party public site', () => {
       '/docs',
       '/docs/getting-started',
       '/docs/connectivity',
+      '/docs/self-hosting',
       '/docs/daily-use',
       '/docs/troubleshooting',
       '/docs/security',
@@ -45,6 +46,9 @@ describe('first-party public site', () => {
     expect(pages).toContain('Hosted relay')
     expect(pages).toContain('Self-hosted relay')
     expect(pages).toContain('LAN-only')
+    expect(pages).toContain('Docker or VPS runbook')
+    expect(pages).toContain('Failure recovery order')
+    expect(pages).not.toContain('the advanced operator guide')
     expect(pages).toContain('Let your agent wire it')
   })
 

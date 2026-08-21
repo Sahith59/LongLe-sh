@@ -6,6 +6,7 @@ const routes = [
   '/docs',
   '/docs/getting-started',
   '/docs/connectivity',
+  '/docs/self-hosting',
   '/docs/background-service',
   '/docs/daily-use',
   '/docs/troubleshooting',
@@ -47,6 +48,18 @@ describe('rendered public pages', () => {
     expect(html).toContain('Building')
     expect(html).toContain('Exploring')
     expect(html).not.toMatch(/Phase 1|Phase 2A/)
+  })
+
+  it('keeps the complete self-hosted operator runbook on the website', () => {
+    const html = renderToStaticMarkup(<PublicPageRouter path="/docs/self-hosting" />)
+
+    expect(html).toContain('Cloudflare Worker runbook')
+    expect(html).toContain('Docker or VPS runbook')
+    expect(html).toContain('Custom Domains')
+    expect(html).toContain('Monitoring and logs')
+    expect(html).toContain('Controlled updates and rollback')
+    expect(html).toContain('Failure recovery order')
+    expect(html).toContain('Operator acceptance checklist')
   })
 
   it('documents service ownership, health, foreground exclusion, and preserved data', () => {

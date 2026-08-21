@@ -572,6 +572,34 @@ describe('subscribe: replay then live tail', () => {
     ws.close()
   })
 
+  it('places an opt-in replay barrier after every historical event', async () => {
+    h.server.publish('ses_1', delta('one'))
+    h.server.publish('ses_1', delta('two'))
+
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    const messages = nextMessages(ws, 3)
+    ws.send(JSON.stringify({
+      v: 1,
+      type: 'subscribe',
+      sessionId: 'ses_1',
+      fromCursor: 0,
+      syncId: 'hydrate-1',
+    }))
+    const received = await messages
+    expect(received.map((message) => message.type)).toEqual([
+      'stream.delta',
+      'stream.delta',
+      'sync.complete',
+    ])
+    expect(received[2]).toMatchObject({
+      sessionId: 'ses_1',
+      syncId: 'hydrate-1',
+      cursor: 2,
+    })
+    ws.close()
+  })
+
   it('sends an explicit gap signal when the cursor is ahead of the log', async () => {
     h.server.publish('ses_1', delta('one'))
     const ws = connect(h.port, h.token)
