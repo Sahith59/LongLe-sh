@@ -133,6 +133,8 @@ describe('Linux systemd user-service lifecycle', () => {
     expect(unit).toContain('Restart=on-failure')
     expect(unit).toContain('StartLimitBurst=5')
     expect(unit).toContain(`ExecStart="${f.paths.wrapper}" run`)
+    expect(unit).toContain(`EnvironmentFile=${f.paths.environment}`)
+    expect(unit).toContain(`WorkingDirectory=${f.home}`)
     expect(unit).not.toMatch(/sudo|root/i)
     expect(readFileSync(f.paths.environment!, 'utf8')).not.toMatch(/TOKEN|SECRET|KEY=/)
 
@@ -142,6 +144,19 @@ describe('Linux systemd user-service lifecycle', () => {
     expect(restartService(f.context)).toMatchObject({ active: true, loginOnly: false })
     expect(uninstallService(f.context)).toMatchObject({ installed: false, loaded: false, active: false })
     expect(existsSync(sentinel)).toBe(true)
+  })
+
+  it('escapes scalar systemd paths without turning quotes into literal path characters', () => {
+    const f = fixture('linux')
+    const spacedHome = join(f.root, 'home with spaces')
+    const env = { ...f.env, HOME: spacedHome }
+    const paths = servicePaths({ platform: 'linux', home: spacedHome, env })
+    const unit = renderSystemdUnit(paths, spacedHome)
+
+    expect(unit).toContain('EnvironmentFile=')
+    expect(unit).toContain('\\x20')
+    expect(unit).not.toContain('EnvironmentFile="')
+    expect(unit).not.toContain('WorkingDirectory="')
   })
 
   it('refuses to start when the managed environment boundary is missing', () => {

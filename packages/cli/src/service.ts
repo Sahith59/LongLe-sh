@@ -155,8 +155,8 @@ StartLimitBurst=5
 [Service]
 Type=simple
 ExecStart=${systemdQuote(paths.wrapper)} run
-EnvironmentFile=${systemdQuote(paths.environment)}
-WorkingDirectory=${systemdQuote(home)}
+EnvironmentFile=${systemdPath(paths.environment)}
+WorkingDirectory=${systemdPath(home)}
 UMask=0077
 Restart=on-failure
 RestartSec=5s
@@ -486,6 +486,24 @@ function xml(value: string): string {
 function systemdQuote(value: string): string {
   if (/[\0\r\n]/.test(value)) throw new Error('Service paths may not contain control characters.')
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`
+}
+
+/**
+ * Scalar path directives do not use ExecStart's command-line tokenizer. A quote after the `=`
+ * is therefore part of the path on systemd, which turns `"/home/user"` into a relative path.
+ * Keep the path unquoted and use unit-file escapes for characters that carry syntax.
+ */
+function systemdPath(value: string): string {
+  if (/[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/.test(value)) {
+    throw new Error('Service paths may not contain control characters.')
+  }
+  return value
+    .replace(/%/g, '%%')
+    .replace(/\\/g, '\\x5c')
+    .replace(/ /g, '\\x20')
+    .replace(/\t/g, '\\x09')
+    .replace(/"/g, '\\x22')
+    .replace(/'/g, '\\x27')
 }
 
 function environmentQuote(value: string): string {
