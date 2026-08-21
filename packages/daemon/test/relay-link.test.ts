@@ -41,10 +41,13 @@ async function phone(): Promise<{ ws: WebSocket; frames: string[] }> {
   const identity = await deriveRelayIdentity(SECRET)
   const ws = new WebSocket(`ws://${HOST}:${port}/ws`)
   const frames: string[] = []
+  let incoming = Promise.resolve()
   ws.on('message', (raw: WebSocket.RawData) => {
     const message = JSON.parse(String(raw)) as { type?: string; payload?: string }
     if (message.type === 'frame' && message.payload) {
-      void open(identity, message.payload).then((text) => {
+      const payload = message.payload
+      incoming = incoming.then(async () => {
+        const text = await open(identity, payload)
         if (text !== null) frames.push(text)
       })
     }
@@ -96,6 +99,30 @@ describe('the daemon side of the relay', () => {
     link.send('{"type":"hello","roots":[]}')
     await until(() => guest.frames.length === 1)
     expect(guest.frames[0]).toBe('{"type":"hello","roots":[]}')
+    guest.ws.close()
+  })
+
+  it('preserves replay order through asynchronous sealing in both directions', async () => {
+    const received: string[] = []
+    const link = makeLink({ onMessage: (text) => received.push(text) })
+    link.start()
+    await until(() => link.status === 'connected')
+    const guest = await phone()
+
+    for (let index = 0; index < 40; index += 1) link.send(`out-${index}`)
+    await until(() => guest.frames.length === 40)
+    expect(guest.frames).toEqual(Array.from({ length: 40 }, (_, index) => `out-${index}`))
+
+    const identity = await deriveRelayIdentity(SECRET)
+    for (let index = 0; index < 40; index += 1) {
+      guest.ws.send(JSON.stringify({
+        v: 1,
+        type: 'frame',
+        payload: await seal(identity, `in-${index}`),
+      }))
+    }
+    await until(() => received.length === 40)
+    expect(received).toEqual(Array.from({ length: 40 }, (_, index) => `in-${index}`))
     guest.ws.close()
   })
 

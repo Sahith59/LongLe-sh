@@ -340,6 +340,8 @@ export interface FolderHit {
 
 export interface ClientCallbacks {
   onState: (state: ConnectionState) => void
+  /** True while durable replay is being folded into one calm, coherent UI snapshot. */
+  onHydration?: (hydrating: boolean) => void
   /** The daemon tells us which directories are usable — never make the user type a path. */
   onHello: (hello: Hello) => void
   /** Errors must reach the person. Swallowing them makes the app look broken. */
@@ -417,6 +419,8 @@ async function relayWire(url: string, identity: RelayIdentity, events: WireEvent
   // Durable Object before the upgrade completes, and the Node relay simply ignores it.
   const socket = await guestSocket(url, identity.roomTag)
   let ready = false
+  let incoming = Promise.resolve()
+  let outgoing = Promise.resolve()
   let keepalive: ReturnType<typeof setInterval> | null = null
   const stopKeepalive = () => {
     if (keepalive !== null) clearInterval(keepalive)
@@ -469,10 +473,14 @@ async function relayWire(url: string, identity: RelayIdentity, events: WireEvent
       return
     }
     if (message.type === 'frame' && typeof message.payload === 'string') {
-      void openEnvelope(identity, message.payload).then((text) => {
-        // A frame that fails authentication never existed, as far as the app is concerned.
-        if (text !== null) events.onText(text)
-      })
+      const payload = message.payload
+      incoming = incoming
+        .then(async () => {
+          const text = await openEnvelope(identity, payload)
+          // A frame that fails authentication never existed, as far as the app is concerned.
+          if (text !== null) events.onText(text)
+        })
+        .catch(() => {})
     }
   }
   socket.onclose = () => {
@@ -484,11 +492,14 @@ async function relayWire(url: string, identity: RelayIdentity, events: WireEvent
   return {
     send: (text) => {
       if (!ready || socket.readyState !== WebSocket.OPEN) return false
-      void seal(identity, text).then((payload) => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ v: 1, type: 'frame', payload }))
-        }
-      })
+      outgoing = outgoing
+        .then(async () => {
+          const payload = await seal(identity, text)
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ v: 1, type: 'frame', payload }))
+          }
+        })
+        .catch(() => {})
       return true
     },
     close: () => {
@@ -514,6 +525,9 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
   let path: LinkPath = 'lan'
   let relayOrigin = false
   const subscribed = new Set<string>()
+  const pendingSync = new Map<string, string>()
+  let syncGeneration = 0
+  let hydrationTimer: ReturnType<typeof setTimeout> | null = null
   let identity: RelayIdentity | null = null
   let homeProbe: ReturnType<typeof setInterval> | null = null
 
@@ -553,21 +567,52 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
 
   const send = (message: unknown): boolean => wire?.send(JSON.stringify(message)) ?? false
 
-  const subscribe = (sessionId: string): void => {
+  const finishHydration = (generation: number): void => {
+    if (generation !== syncGeneration) return
+    if (hydrationTimer !== null) clearTimeout(hydrationTimer)
+    hydrationTimer = null
+    pendingSync.clear()
+    store.endHydration()
+    // Keep layout motion disabled for the coherent paint that endHydration just requested.
+    const completedGeneration = generation
+    setTimeout(() => {
+      if (completedGeneration === syncGeneration) callbacks.onHydration?.(false)
+    }, 0)
+  }
+
+  const subscribe = (sessionId: string, syncId?: string): void => {
     subscribed.add(sessionId)
     send({
       v: PROTOCOL_VERSION,
       type: 'subscribe',
       sessionId,
       fromCursor: store.cursors()[sessionId] ?? 0,
+      ...(syncId === undefined ? {} : { syncId }),
     })
+  }
+
+  const subscribeForHydration = (sessionId: string): void => {
+    const syncId = `sync-${syncGeneration}-${sessionId}-${Math.random().toString(36).slice(2, 8)}`
+    pendingSync.set(sessionId, syncId)
+    subscribe(sessionId, syncId)
   }
 
   const handleText = (raw: string): void => {
     const message = JSON.parse(raw) as Record<string, unknown>
     if (message.type === 'gap') {
       store.applyGap(String(message.sessionId))
-      subscribe(String(message.sessionId))
+      if (pendingSync.has(String(message.sessionId))) subscribeForHydration(String(message.sessionId))
+      else subscribe(String(message.sessionId))
+      return
+    }
+    if (
+      message.type === 'sync.complete' &&
+      typeof message.sessionId === 'string' &&
+      typeof message.syncId === 'string' &&
+      pendingSync.get(message.sessionId) === message.syncId
+    ) {
+      pendingSync.delete(message.sessionId)
+      if (pendingSync.size === 0) finishHydration(syncGeneration)
       return
     }
     if (message.type === 'ack' && message.of === 'startSession' && typeof message.sessionId === 'string') {
@@ -607,9 +652,22 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       const hello = message as unknown as Hello
       // Learn where the daemon lives beyond the LAN, so leaving home is survivable.
       if (hello.relay?.url) writeCredential(RELAY_URL_KEY, hello.relay.url)
-      // Rebuild the list, then resume each stream from wherever this client left off.
+      // Fold hello plus every historical stream into one render. Painting the individual replay
+      // states made cards jump between Active and Earlier while layout animation chased them.
+      syncGeneration += 1
+      const generation = syncGeneration
+      pendingSync.clear()
+      store.beginHydration()
+      callbacks.onHydration?.(true)
       store.seedSessions(hello.sessions ?? [])
-      for (const session of hello.sessions ?? []) subscribe(session.sessionId)
+      for (const session of hello.sessions ?? []) subscribeForHydration(session.sessionId)
+      if ((hello.sessions ?? []).length === 0) finishHydration(generation)
+      else {
+        // Compatibility with an older daemon that does not emit sync.complete. Correctness still
+        // comes from cursor de-duplication; only the calm single-paint optimization times out.
+        if (hydrationTimer !== null) clearTimeout(hydrationTimer)
+        hydrationTimer = setTimeout(() => finishHydration(generation), 1_500)
+      }
       callbacks.onHello(hello)
       return
     }
@@ -678,6 +736,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     onText: handleText,
     onDown: (reason) => {
       if (closed) return
+      finishHydration(syncGeneration)
       stopHomeProbe()
       wire = null
       if (reason === 'auth') {
@@ -899,6 +958,8 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       closed = true
       stopHomeProbe()
       if (retryTimer !== null) clearTimeout(retryTimer)
+      if (hydrationTimer !== null) clearTimeout(hydrationTimer)
+      store.endHydration()
       window.removeEventListener('online', onOnline)
       document.removeEventListener('visibilitychange', onVisible)
       wire?.close()

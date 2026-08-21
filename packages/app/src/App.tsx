@@ -25,6 +25,7 @@ import type { DelegationPreview, DelegationReturnPreview, DelegationSummary } fr
 import {
   approvalsFor,
   createStore,
+  sortSessionsNewestFirst,
   type PendingApproval,
   type SessionView,
 } from './lib/store.js'
@@ -85,6 +86,7 @@ export default function App() {
   const store = useMemo(() => createStore(), [])
   const [, forceRender] = useState(0)
   const [state, setState] = useState<ConnectionState>('connecting')
+  const [hydrating, setHydrating] = useState(false)
   const [linkPath, setLinkPath] = useState<LinkPath>('lan')
   const [token, setToken] = useState<string | null>(() => storedToken())
   const [pairError, setPairError] = useState<string | null>(null)
@@ -209,6 +211,7 @@ export default function App() {
     }
     const client = connect(token, store, {
       onState: setState,
+      onHydration: setHydrating,
       onHello: (hello: Hello) => {
         setRoots(hello.roots)
         setSettingsCatalog(hello.capabilities.sessionSettings)
@@ -436,7 +439,7 @@ export default function App() {
   }
 
   const snapshot = store.getState()
-  const allSessions = Object.values(snapshot.sessions).reverse()
+  const allSessions = sortSessionsNewestFirst(Object.values(snapshot.sessions))
   // History persists across daemon restarts, so finished work must not look like running agents.
   /**
    * What is happening NOW, as opposed to what can be picked back up.
@@ -538,6 +541,7 @@ export default function App() {
               alerts={alerts}
               onEnableAlerts={enableAlerts}
               onTestAlert={testAlert}
+              settling={hydrating}
             />
           )}
         </AnimatePresence>
@@ -959,6 +963,7 @@ export function ConsoleScreen({
   alerts,
   onEnableAlerts,
   onTestAlert,
+  settling = false,
 }: {
   approvals: PendingApproval[]
   active: SessionView[]
@@ -976,13 +981,14 @@ export function ConsoleScreen({
   alerts?: AlertsState | null
   onEnableAlerts?: () => void
   onTestAlert?: () => boolean
+  settling?: boolean
 }) {
   const still = useReducedMotion()
   const firstRun = approvals.length === 0 && active.length === 0 && past.length === 0
 
   return (
     <Screen depth={-1} still={still}>
-      <main className="shell hasdock">
+      <main className="shell hasdock" aria-busy={settling}>
         <Banners diagnostic={diagnostic} error={error} onClearError={onClearError} />
 
         {approvals.length > 0 ? (
@@ -1035,6 +1041,7 @@ export function ConsoleScreen({
                   pending={approvalsFor(snapshot, session.sessionId).length}
                   children={delegationCounts(delegations, session.sessionId)}
                   onOpen={() => onOpen(session.sessionId)}
+                  settling={settling}
                 />
               ))}
             </div>
@@ -1053,6 +1060,7 @@ export function ConsoleScreen({
                   pending={0}
                   children={delegationCounts(delegations, session.sessionId)}
                   onOpen={() => onOpen(session.sessionId)}
+                  settling={settling}
                 />
               ))}
             </div>

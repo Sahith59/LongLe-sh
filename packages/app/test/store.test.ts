@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { SessionEvent } from '@longleash/protocol'
-import { createStore, type StoreState } from '../src/lib/store.js'
+import { createStore, sortSessionsNewestFirst, type StoreState } from '../src/lib/store.js'
 
 /** Events are hand-built here; the daemon validates for real, so cast at the boundary. */
 const ev = (raw: Record<string, unknown>): SessionEvent => raw as unknown as SessionEvent
@@ -271,6 +271,35 @@ describe('session list', () => {
 })
 
 describe('cursors and reconnect', () => {
+  it('publishes one coherent snapshot after a replay transaction', () => {
+    const store = createStore()
+    let paints = 0
+    store.subscribe(() => { paints += 1 })
+
+    store.beginHydration()
+    store.seedSessions([
+      { sessionId: 'ses_1', startedAt: 10, agent: 'claude', cwd: '/x', title: 'one', origin: 'phone', status: 'running' },
+    ])
+    store.apply(started('ses_1', 1))
+    store.apply(delta('ses_1', 2, 'ready'))
+    expect(paints).toBe(0)
+
+    store.endHydration()
+    expect(paints).toBe(1)
+    expect(stateOf(store).sessions.ses_1?.output).toBe('ready')
+  })
+
+  it('sorts mixed provider seeds deterministically by creation time', () => {
+    const store = createStore()
+    store.seedSessions([
+      { sessionId: 'ext_old', startedAt: 10, agent: 'claude', cwd: '/x', title: 'old', origin: 'terminal', status: 'running' },
+      { sessionId: 'ses_new', startedAt: 30, agent: 'codex', cwd: '/x', title: 'new', origin: 'phone', status: 'waiting' },
+      { sessionId: 'ses_middle', startedAt: 20, agent: 'claude', cwd: '/x', title: 'middle', origin: 'vscode', status: 'running' },
+    ])
+    expect(sortSessionsNewestFirst(Object.values(stateOf(store).sessions)).map((session) => session.sessionId))
+      .toEqual(['ses_new', 'ses_middle', 'ext_old'])
+  })
+
   it('advances the cursor per session so a reconnect resumes exactly where it stopped', () => {
     const store = createStore()
     store.apply(started('ses_1', 1))

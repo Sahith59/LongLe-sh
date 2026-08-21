@@ -28,6 +28,8 @@ export interface SessionView {
   /** A real agent process is behind this right now (as opposed to a dormant, reopenable one). */
   live: boolean
   sessionId: string
+  /** Stable creation time used for deterministic ordering across reconnects and providers. */
+  startedAt?: number
   agent: string
   cwd: string
   title: string
@@ -88,6 +90,8 @@ export function approvalsFor(state: StoreState, sessionId: string): PendingAppro
 
 export interface SessionSeed {
   sessionId: string
+  /** Absent only when talking to a daemon released before deterministic list ordering. */
+  startedAt?: number
   agent: string
   cwd: string
   title: string
@@ -133,8 +137,14 @@ export function createStore(options: StoreOptions = {}) {
   const settled = new Set<string>()
   const cursors: Record<string, number> = {}
   const listeners = new Set<() => void>()
+  let hydrating = false
+  let hydrationDirty = false
 
   const notify = () => {
+    if (hydrating) {
+      hydrationDirty = true
+      return
+    }
     for (const listener of listeners) listener()
   }
 
@@ -152,6 +162,7 @@ export function createStore(options: StoreOptions = {}) {
     if (existing) return existing
     const created: SessionView = {
       sessionId,
+      startedAt: 0,
       agent: 'claude',
       // A session we learned about from a live event is, by definition, live.
       live: true,
@@ -190,6 +201,7 @@ export function createStore(options: StoreOptions = {}) {
           workspace?: SessionWorkspace
         }
         session.agent = payload.agent
+        if ((session.startedAt ?? 0) === 0) session.startedAt = event.ts
         session.live = true
         session.cwd = payload.cwd
         session.title = payload.title ?? ''
@@ -320,6 +332,7 @@ export function createStore(options: StoreOptions = {}) {
     for (const seed of seeds) {
       const session = ensure(seed.sessionId)
       session.agent = seed.agent
+      if (typeof seed.startedAt === 'number') session.startedAt = seed.startedAt
       session.cwd = seed.cwd
       session.title = seed.title
       session.origin = seed.origin
@@ -412,6 +425,20 @@ export function createStore(options: StoreOptions = {}) {
     notify()
   }
 
+  /** Suppress transient replay states until the server confirms every requested stream caught up. */
+  function beginHydration(): void {
+    hydrating = true
+  }
+
+  /** Publish exactly one coherent snapshot after a reconnect replay transaction. */
+  function endHydration(): void {
+    if (!hydrating) return
+    hydrating = false
+    const changed = hydrationDirty
+    hydrationDirty = false
+    if (changed) notify()
+  }
+
   return {
     apply,
     seedSessions,
@@ -419,6 +446,8 @@ export function createStore(options: StoreOptions = {}) {
     markDeciding,
     rollbackDecision,
     settleSession,
+    beginHydration,
+    endHydration,
     cursors: () => ({ ...cursors }),
     getState: (): StoreState => ({ sessions, approvals: [...approvals.values()] }),
     subscribe: (listener: () => void): (() => void) => {
@@ -428,6 +457,13 @@ export function createStore(options: StoreOptions = {}) {
       }
     },
   }
+}
+
+/** Newest first, with a deterministic tie-breaker that cannot change between renders. */
+export function sortSessionsNewestFirst(sessions: SessionView[]): SessionView[] {
+  return [...sessions].sort(
+    (left, right) => (right.startedAt ?? 0) - (left.startedAt ?? 0) || right.sessionId.localeCompare(left.sessionId),
+  )
 }
 
 export type Store = ReturnType<typeof createStore>

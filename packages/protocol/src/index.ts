@@ -301,6 +301,8 @@ const subscribeMessage = z
     type: z.literal('subscribe'),
     sessionId: z.string().min(1),
     fromCursor: z.number().int().nonnegative(),
+    /** Optional replay barrier. New clients use the echoed id to paint catch-up only once. */
+    syncId: z.string().min(1).max(120).optional(),
   })
   .passthrough()
 

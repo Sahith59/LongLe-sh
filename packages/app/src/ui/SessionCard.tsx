@@ -18,11 +18,14 @@ export function SessionCard({
   pending,
   children,
   onOpen,
+  settling = false,
 }: {
   session: SessionView
   pending: number
   children?: { total: number; active: number; ready: number }
   onOpen: () => void
+  /** Reconnect replay is one state replacement, not a sequence the user should watch animate. */
+  settling?: boolean
 }) {
   const preview = session.output.trim().slice(-180)
   const past = session.status === 'ended' || session.status === 'errored' || !session.live
@@ -33,7 +36,7 @@ export function SessionCard({
 
   return (
     <motion.article
-      layout="position"
+      layout={settling ? false : 'position'}
       transition={SPRING}
       className={`session${pending > 0 ? ' needs' : ''}${past ? ' past' : ''}`}
     >

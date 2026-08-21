@@ -162,8 +162,10 @@ describe('client messages', () => {
       type: 'subscribe',
       sessionId: 'ses_abc123',
       fromCursor: 0,
+      syncId: 'sync-1',
     })
     expect(msg.type).toBe('subscribe')
+    expect(msg.syncId).toBe('sync-1')
   })
 
   it('parses an approval decision with an optional steering reply', () => {
