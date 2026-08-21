@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
+const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 
 describe('delegation mobile layout contract', () => {
   it('has an explicit 320-class layout and never relies on horizontal form overflow', () => {
@@ -41,5 +42,16 @@ describe('delegation mobile layout contract', () => {
     expect(css).toMatch(/\.workspaceoption\s*{[\s\S]*?min-width: 0;[\s\S]*?min-height: 82px;/)
     expect(css).toMatch(/\.settingsgrid select,[\s\S]*?min-width: 0;[\s\S]*?min-height: 44px;/)
     expect(css).toMatch(/@media \(max-width: 390px\)[\s\S]*?\.handoff-actions,[\s\S]*?\.transfer-actions\s*{\s*grid-template-columns: 1fr;/)
+  })
+
+  it('mounts account controls at the viewport and keeps sign-out reachable on iPhone', () => {
+    expect(app).toContain("import { createPortal } from 'react-dom'")
+    expect(app).toMatch(/function AccountSheet[\s\S]*?return createPortal\([\s\S]*?document\.body/)
+    expect(app).toMatch(/function AccountSheet[\s\S]*?useVisualViewportHeight\(true\)/)
+    expect(app).toMatch(/function AccountSheet[\s\S]*?body\.style\.overflow = 'hidden'/)
+    expect(app.indexOf('> Sign out')).toBeLessThan(app.indexOf('id="account-sheet-boundary"'))
+    expect(css).toMatch(/\.account-sheet-scrim\s*{[\s\S]*?position: fixed;[\s\S]*?overflow: hidden;/)
+    expect(css).toMatch(/\.account-sheet\s*{[\s\S]*?overflow-y: auto;[\s\S]*?overscroll-behavior: contain;/)
+    expect(css).toMatch(/\.account-sheet-actions \.key\s*{[\s\S]*?min-height: 50px;/)
   })
 })
