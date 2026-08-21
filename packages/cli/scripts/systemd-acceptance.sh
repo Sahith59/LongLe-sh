@@ -88,16 +88,21 @@ test "$first_pid" -gt 1
 
 # A full-cgroup crash proves bounded restart behavior without leaving the daemon child behind.
 systemctl --user kill --kill-whom=all --signal=SIGKILL longleash.service
-for _ in $(seq 1 100); do
+recovered=false
+for _ in $(seq 1 150); do
   next_pid="$(systemctl --user show longleash.service --property MainPID --value)"
   if systemctl --user is-active --quiet longleash.service && [[ "$next_pid" -gt 1 && "$next_pid" != "$first_pid" ]]; then
-    break
+    if status_json="$($wrapper service status --json 2>/dev/null)" && node -e '
+      const state = JSON.parse(process.argv[1]);
+      if (!state.healthy) process.exit(1);
+    ' "$status_json"; then
+      recovered=true
+      break
+    fi
   fi
   sleep 0.2
 done
-test "${next_pid:-0}" -gt 1
-test "$next_pid" != "$first_pid"
-$wrapper service status --json >/dev/null
+test "$recovered" = true
 
 # Re-applying a verified release must restart the active unit, not report health from old memory.
 before_update="$next_pid"
