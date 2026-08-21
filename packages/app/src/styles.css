@@ -2992,10 +2992,12 @@ body {
   position: fixed;
   inset: 0;
   z-index: 90;
+  min-width: 0;
+  overflow: hidden;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding: 12px 12px env(safe-area-inset-bottom);
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
   background: rgba(4, 5, 6, 0.74);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -3003,9 +3005,15 @@ body {
 .account-sheet {
   position: relative;
   width: min(100%, 600px);
+  min-width: 0;
+  min-height: 0;
   max-height: min(88dvh, 720px);
-  overflow: auto;
-  padding: 25px 20px calc(20px + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding: 72px 0 calc(24px + env(safe-area-inset-bottom));
+  padding: 25px 20px calc(24px + env(safe-area-inset-bottom));
   border: 1px solid var(--hair);
   border-radius: 24px 24px 10px 10px;
   background: var(--grad-panel);
@@ -3025,6 +3033,7 @@ body {
   font-size: 12px;
 }
 .account-data-boundary {
+  margin-top: 16px;
   padding: 14px;
   border-radius: 13px;
   background: var(--recess);
@@ -3037,9 +3046,13 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 12px;
 }
-.account-sheet-actions .key { min-height: 48px; }
+.account-sheet-actions .key {
+  min-width: 0;
+  min-height: 50px;
+  white-space: normal;
+}
 .account-delete-link {
   min-height: 44px;
   margin-top: 15px;
@@ -3085,6 +3098,11 @@ body {
   .rail-in:has(.account-pill) .route-detail { display: none; }
   .account-sheet-actions,
   .account-delete-actions { grid-template-columns: 1fr; }
+  .account-sheet-scrim { padding-inline: 8px; }
+  .account-sheet {
+    padding-inline: 16px;
+    border-radius: 22px 22px 8px 8px;
+  }
 }
 
 @media (max-width: 360px) {

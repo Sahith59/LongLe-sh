@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   ArrowUp,
@@ -66,6 +67,7 @@ import {
   SectionLabel,
   SPRING,
   useKeyboardInset,
+  useVisualViewportHeight,
 } from './ui/primitives.js'
 import { AGENT_LABEL, MODE_LABEL, ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
 import { PathChip } from './ui/PathChip.js'
@@ -704,6 +706,7 @@ export function Rail({
 }) {
   const account = useAccount()
   const [accountOpen, setAccountOpen] = useState(false)
+  const closeAccount = useCallback(() => setAccountOpen(false), [])
   return (
     <div className={`rail${onUpdate ? ' has-update' : ''}`}>
       <div className="rail-in">
@@ -759,7 +762,7 @@ export function Rail({
             : 'Reconnecting to your laptop'}
         </span>
       </div>
-      {accountOpen ? <AccountSheet account={account} onClose={() => setAccountOpen(false)} /> : null}
+      {accountOpen ? <AccountSheet account={account} onClose={closeAccount} /> : null}
     </div>
   )
 }
@@ -769,6 +772,53 @@ function AccountSheet({ account, onClose }: { account: ReturnType<typeof useAcco
   const [confirmation, setConfirmation] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLElement | null>(null)
+  const keyboard = useKeyboardInset(true)
+  const viewportHeight = useVisualViewportHeight(true)
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const body = document.body
+    const root = document.documentElement
+    const previousBodyOverflow = body.style.overflow
+    const previousRootOverflow = root.style.overflow
+    body.style.overflow = 'hidden'
+    root.style.overflow = 'hidden'
+
+    const focusable = () => Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    ).filter((node) => node.getAttribute('aria-hidden') !== 'true')
+    const frame = window.requestAnimationFrame(() => focusable()[0]?.focus())
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const items = focusable()
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (!first || !last) return
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('keydown', onKey)
+      body.style.overflow = previousBodyOverflow
+      root.style.overflow = previousRootOverflow
+      previouslyFocused?.focus()
+    }
+  }, [onClose])
 
   const remove = async () => {
     if (confirmation !== 'DELETE' || !account.deleteAccount || deleting) return
@@ -782,28 +832,41 @@ function AccountSheet({ account, onClose }: { account: ReturnType<typeof useAcco
     }
   }
 
-  return (
-    <div className="account-sheet-scrim" role="presentation" onPointerDown={(event) => {
+  return createPortal(
+    <div
+      className="account-sheet-scrim"
+      role="presentation"
+      style={keyboard > 0 ? { bottom: keyboard } : undefined}
+      onPointerDown={(event) => {
       if (event.target === event.currentTarget) onClose()
-    }}>
-      <section className="account-sheet" role="dialog" aria-modal="true" aria-labelledby="account-sheet-title">
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="account-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="account-sheet-title"
+        aria-describedby="account-sheet-boundary"
+        style={viewportHeight === null ? undefined : { maxHeight: `${Math.max(240, viewportHeight - 24)}px` }}
+      >
         <button className="sheetclose" type="button" onClick={onClose} aria-label="Close account settings">
           <X size={20} aria-hidden="true" />
         </button>
         <p className="account-kicker">Hosted identity</p>
         <h2 id="account-sheet-title">Your LongLeash account</h2>
         <p className="account-sheet-label mono">{account.label ?? 'Signed in'}</p>
-        <div className="account-data-boundary">
-          This account identifies you to the hosted app. Laptop code, transcripts, provider
-          credentials, and pairing secrets are outside the account database.
-        </div>
         <div className="account-sheet-actions">
-          <Key className="wide" {...(account.exportAccount ? { onClick: account.exportAccount } : {})} disabled={!account.exportAccount}>
-            <Download size={16} aria-hidden="true" /> Download account data
-          </Key>
           <Key className="wide" {...(account.signOut ? { onClick: account.signOut } : {})} disabled={!account.signOut}>
             <LogOut size={16} aria-hidden="true" /> Sign out
           </Key>
+          <Key className="wide" {...(account.exportAccount ? { onClick: account.exportAccount } : {})} disabled={!account.exportAccount}>
+            <Download size={16} aria-hidden="true" /> Download account data
+          </Key>
+        </div>
+        <div className="account-data-boundary" id="account-sheet-boundary">
+          This account identifies you to the hosted app. Laptop code, transcripts, provider
+          credentials, and pairing secrets are outside the account database.
         </div>
         {!confirming ? (
           <button className="account-delete-link" type="button" onClick={() => setConfirming(true)}>
@@ -835,7 +898,8 @@ function AccountSheet({ account, onClose }: { account: ReturnType<typeof useAcco
           </div>
         )}
       </section>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
