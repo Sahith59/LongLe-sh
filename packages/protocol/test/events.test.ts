@@ -227,6 +227,7 @@ describe('client messages', () => {
       prompt: 'review it',
       workspaceMode: 'isolated',
       settings: {
+        mode: 'plan',
         model: 'opus',
         effort: 'high',
         thinking: { mode: 'fixed', budgetTokens: 16_384 },
@@ -234,7 +235,19 @@ describe('client messages', () => {
     })
     if (message.type !== 'startSession') expect.unreachable('wrong type')
     expect(message.workspaceMode).toBe('isolated')
+    expect(message.settings?.mode).toBe('plan')
     expect(message.settings?.thinking).toEqual({ mode: 'fixed', budgetTokens: 16_384 })
+  })
+
+  it('rejects an invented working mode instead of silently weakening safety', () => {
+    expect(() => parseClientMessage({
+      v: PROTOCOL_VERSION,
+      type: 'startSession',
+      agent: 'codex',
+      root: '/Users/x/proj',
+      prompt: 'work on it',
+      settings: { mode: 'unrestricted' },
+    })).toThrowError()
   })
 
   it('rejects fixed thinking without a bounded token budget', () => {

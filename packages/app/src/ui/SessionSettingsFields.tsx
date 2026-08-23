@@ -1,9 +1,10 @@
-import type { SessionSettings } from '@longleash/protocol'
+import type { SessionMode, SessionSettings } from '@longleash/protocol'
 import type { AgentSettingsCatalog } from '../lib/client.js'
 
 export type ConfigurableAgent = 'claude' | 'codex'
 
 export interface SessionSettingsDraft {
+  mode: SessionMode
   model: string
   customModel: string
   effort: string
@@ -15,6 +16,7 @@ export function settingsDraft(settings: SessionSettings = {}, catalogs?: AgentSe
   const model = settings.model ?? ''
   const known = catalogs?.[agent].models ?? defaultModels(agent)
   return {
+    mode: settings.mode ?? 'manual',
     model: model === '' || known.includes(model) ? model : '__custom__',
     customModel: model !== '' && !known.includes(model) ? model : '',
     effort: settings.effort ?? '',
@@ -42,6 +44,7 @@ export function settingsFromDraft(
   }
   return {
     settings: {
+      mode: draft.mode,
       ...(model === '' ? {} : { model }),
       ...(draft.effort === '' ? {} : { effort: draft.effort as SessionSettings['effort'] }),
       ...(agent !== 'claude' || draft.thinking === ''
@@ -61,18 +64,21 @@ export function SessionSettingsFields({
   onChange,
   catalog,
   disabled = false,
+  showMode = true,
 }: {
   agent: ConfigurableAgent
   value: SessionSettingsDraft
   onChange: (next: SessionSettingsDraft) => void
   catalog?: AgentSettingsCatalog
   disabled?: boolean
+  showMode?: boolean
 }) {
   const patch = (next: Partial<SessionSettingsDraft>) => onChange({ ...value, ...next })
   const models = catalog?.[agent].models ?? defaultModels(agent)
   const efforts = catalog?.[agent].efforts ?? ['low', 'medium', 'high', 'xhigh', 'max']
   return (
     <div className="settingsgrid">
+      {showMode ? <SessionModePicker agent={agent} value={value.mode} onChange={(mode) => patch({ mode })} disabled={disabled} compact /> : null}
       <label>
         <span>Model</span>
         <select
@@ -142,6 +148,65 @@ export function SessionSettingsFields({
         </label>
       ) : null}
     </div>
+  )
+}
+
+const MODE_COPY = {
+  manual: {
+    name: 'Manual',
+    detail: 'Ask before commands and edits.',
+  },
+  auto: {
+    name: 'Auto',
+  },
+  plan: {
+    name: 'Plan',
+    detail: 'Read and reason only; make no workspace changes.',
+  },
+} as const
+
+function modeDetail(mode: SessionMode, agent: ConfigurableAgent): string {
+  if (mode === 'auto') {
+    return agent === 'claude'
+      ? 'Claude reviews routine permissions; unrestricted access stays off.'
+      : 'Work inside the workspace sandbox; ask before leaving it.'
+  }
+  return mode === 'manual' ? MODE_COPY.manual.detail : MODE_COPY.plan.detail
+}
+
+export function SessionModePicker({
+  agent,
+  value,
+  onChange,
+  disabled = false,
+  compact = false,
+}: {
+  agent: ConfigurableAgent
+  value: SessionMode
+  onChange: (mode: SessionMode) => void
+  disabled?: boolean
+  compact?: boolean
+}) {
+  return (
+    <fieldset className={`modepick${compact ? ' compact' : ''}`}>
+      <legend>{compact ? 'Working mode' : `How ${agent === 'claude' ? 'Claude' : 'Codex'} should work`}</legend>
+      <div className="modeoptions">
+        {(['manual', 'auto', 'plan'] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            className={`modeoption${value === mode ? ' picked' : ''}`}
+            aria-pressed={value === mode}
+            disabled={disabled}
+            onClick={() => onChange(mode)}
+          >
+            <strong>{MODE_COPY[mode].name}</strong>
+            <small>{modeDetail(mode, agent)}</small>
+          </button>
+        ))}
+      </div>
+      <small className="mode-safety">Auto keeps provider safety controls on. It never enables unrestricted access.</small>
+    </fieldset>
   )
 }
 

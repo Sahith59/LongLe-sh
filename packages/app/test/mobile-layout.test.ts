@@ -54,4 +54,20 @@ describe('delegation mobile layout contract', () => {
     expect(css).toMatch(/\.account-sheet\s*{[\s\S]*?overflow-y: auto;[\s\S]*?overscroll-behavior: contain;/)
     expect(css).toMatch(/\.account-sheet-actions \.key\s*{[\s\S]*?min-height: 50px;/)
   })
+
+  it('keeps the three working modes and Help navigation usable at 320-class widths', () => {
+    expect(css).toMatch(/\.modeoptions\s*{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/)
+    expect(css).toMatch(/@media \(max-width: 390px\)[\s\S]*?\.modeoptions\s*{\s*grid-template-columns: 1fr;/)
+    expect(css).toMatch(/\.modeoption\s*{[\s\S]*?min-width: 0;[\s\S]*?min-height: 82px;/)
+    expect(css).toMatch(/\.rail-icon\s*{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/)
+    expect(css).toMatch(/\.help-sheet[\s\S]*?\.help-topic/)
+  })
+
+  it('keeps the Help sheet modal, keyboard-contained, and focus-restoring', () => {
+    expect(app).toMatch(/function HelpSheet[\s\S]*?role="dialog"[\s\S]*?aria-modal="true"/)
+    expect(app).toMatch(/function HelpSheet[\s\S]*?event\.key === 'Escape'[\s\S]*?onClose\(\)/)
+    expect(app).toMatch(/function HelpSheet[\s\S]*?event\.key !== 'Tab'[\s\S]*?last\.focus\(\)[\s\S]*?first\.focus\(\)/)
+    expect(app).toMatch(/function HelpSheet[\s\S]*?previouslyFocused\?\.focus\(\)/)
+    expect(app).toContain('href="/docs/getting-started"')
+  })
 })

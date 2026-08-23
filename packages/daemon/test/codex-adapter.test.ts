@@ -151,6 +151,32 @@ describe('the Codex adapter — the handshake Codex actually requires', () => {
     })
   })
 
+  it('keeps Auto inside the workspace sandbox while reducing routine prompts', async () => {
+    const h = start(undefined, { settings: { mode: 'auto' } })
+    await handshake(h)
+    expect(h.server.sentMethod('thread/start')?.params).toMatchObject({
+      approvalPolicy: 'on-request',
+      sandbox: 'workspace-write',
+    })
+    expect(h.server.sentMethod('turn/start')?.params).toMatchObject({
+      approvalPolicy: 'on-request',
+      sandboxPolicy: { type: 'workspaceWrite', networkAccess: false, writableRoots: ['/tmp/project'] },
+    })
+  })
+
+  it('enforces Plan as read-only and gives Codex an explicit planning contract', async () => {
+    const h = start(undefined, { settings: { mode: 'plan' }, prompt: 'implement the feature' })
+    await handshake(h)
+    expect(h.server.sentMethod('thread/start')?.params).toMatchObject({
+      approvalPolicy: 'untrusted',
+      sandbox: 'read-only',
+    })
+    const turn = h.server.sentMethod('turn/start')?.params as { input: { text: string }[]; sandboxPolicy: unknown }
+    expect(turn.sandboxPolicy).toEqual({ type: 'readOnly', networkAccess: false })
+    expect(turn.input[0]?.text).toContain('Plan only')
+    expect(turn.input[0]?.text).toContain('implement the feature')
+  })
+
   it('captures the thread id so the conversation can be reopened later', async () => {
     const h = start()
     await handshake(h, 'thr-remember-me')
@@ -367,6 +393,24 @@ describe('the Codex adapter — what reaches the phone', () => {
       input: [{ type: 'text', text: 'continue with deeper reasoning' }],
     })
     expect(h.server.sent.filter((message) => message.method === 'thread/start')).toHaveLength(1)
+  })
+
+  it('changes working mode on the next turn without replacing the thread', async () => {
+    const h = start(undefined, { settings: { mode: 'manual' } })
+    await handshake(h, 'thr-mode')
+    await h.handle.updateSettings?.({ mode: 'plan' })
+    h.handle.sendMessage('design the migration')
+    await settle()
+
+    const turns = h.server.sent.filter((message) => message.method === 'turn/start')
+    expect(turns[1]?.params).toMatchObject({
+      threadId: 'thr-mode',
+      approvalPolicy: 'untrusted',
+      sandboxPolicy: { type: 'readOnly', networkAccess: false },
+    })
+    const input = (turns[1]?.params as { input: { text: string }[] }).input[0]?.text
+    expect(input).toContain('Plan only')
+    expect(input).toContain('design the migration')
   })
 
   it('clears per-turn overrides when the person returns to provider defaults', async () => {

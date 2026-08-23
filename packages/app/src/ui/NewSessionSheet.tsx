@@ -7,6 +7,7 @@ import { fileName, parentPath } from './format.js'
 import type { SessionSettings, WorkspaceMode } from '@longleash/protocol'
 import {
   SessionSettingsFields,
+  SessionModePicker,
   settingsDraft,
   settingsFromDraft,
 } from './SessionSettingsFields.js'
@@ -277,7 +278,14 @@ function SheetBody({
           }}
         />
 
-        <StepLabel number={4}>Workspace</StepLabel>
+        <StepLabel number={4}>Working mode</StepLabel>
+        <SessionModePicker
+          agent={agent}
+          value={settings.mode}
+          onChange={(mode) => setSettings({ ...settings, mode })}
+        />
+
+        <StepLabel number={5}>Workspace</StepLabel>
         <div className="workspacepick" role="group" aria-label="Parallel workspace behavior">
           <button
             type="button"
@@ -306,9 +314,10 @@ function SheetBody({
             agent={agent}
             value={settings}
             onChange={setSettings}
+            showMode={false}
             {...(settingsCatalog === undefined ? {} : { catalog: settingsCatalog })}
           />
-          <small className="settingsnote">Approval and sandbox safety remain managed by LongLeash.</small>
+          <small className="settingsnote">Mode, approvals, and sandbox safety remain visible and reversible.</small>
         </details>
 
         <Key

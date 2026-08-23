@@ -249,18 +249,52 @@ Foreground mode remains useful for debugging and development.
   deterministic manager tests. A real systemd user manager now gates publication by exercising
   install, authenticated health, forced full-cgroup crash, bounded automatic recovery, verified
   update restart, logs, stop/start, uninstall, and data preservation.
-- `@longleash/cli@0.1.0-rc.7` was built and exercised from the same tarball on clean GitHub-hosted
+- `@longleash/cli@0.1.0-rc.8` was built and exercised from the same tarball on clean GitHub-hosted
   Linux Node 22 and macOS Node 24 jobs, then published through npm trusted publishing. The public
   registry artifact exposes an npm signature and SLSA provenance. Repository gates pass 880 tests,
   all typechecks and production builds, the production dependency audit, relay dry-run, Docker
   health, CLI tarball smoke, and VSIX packaging.
-- The `rc` channel resolves to `0.1.0-rc.7`. Prerelease installations remain on `rc` when users
+- The `rc` channel resolves to `0.1.0-rc.8`. Prerelease installations remain on `rc` when users
   run `longleash update`, while stable installations follow `latest`; exact-version rollback remains
   available. This prevents the npm bootstrap's unavoidable `latest` tag from downgrading an RC user.
-- Production build `3f15e73` passed branded routing, TLS, security headers, authentication readiness,
+- Production build `13c8c4e` passed branded routing, TLS, security headers, authentication readiness,
   unauthenticated API boundaries, legacy-relay compatibility, and the website-native advanced
-  self-hosting route. Gate 2 still requires the maintainer's physical post-release confirmation for
-  macOS sleep/wake, Wi-Fi reconnection, login-start, and the phone's coherent reconnect rendering.
+  self-hosting route. On 22 August 2026 the maintainer confirmed the physical macOS sleep/wake,
+  Wi-Fi reconnection, login-start, service lifecycle, and coherent phone reconnect matrix. This
+  closes Workstream C; later product changes still require their own release-candidate acceptance.
+
+## Pre-D checkpoint: working modes and in-product guidance
+
+This is release polish on the session-control foundation, not a substitute for the verified-pairing
+work in Workstream D.
+
+### User contract
+
+- A session started from the phone offers **Manual**, **Auto**, and **Plan** before launch.
+- Manual routes commands and edits through normal approval handling.
+- Auto uses the provider's own bounded automation. Claude uses its native permission classifier;
+  Codex remains inside the workspace sandbox and asks before leaving it. Neither provider receives
+  unrestricted or danger-full-access mode.
+- Plan uses Claude's native no-execution plan mode. Codex receives an explicit planning instruction,
+  a read-only thread, and a read-only per-turn policy.
+- The mode is durable alongside model, effort, and thinking controls. It survives daemon restarts,
+  conversation wake/reopen, and can be changed through Tune for the next turn without reinterpreting
+  work already in progress.
+- Session cards and detail screens use graphical, accessible provider and origin marks for Claude,
+  Codex, Terminal, VS Code, Phone, and laptop-managed sessions. The in-product legend is the visible
+  definition; color is only a scanning aid.
+- A persistent Help control opens a mobile-reachable field guide covering first use, modes, icon
+  meaning, surface handoff, connection recovery, and the complete website guide.
+
+### Release gate
+
+- Protocol rejects unknown modes and transports the selected mode without a second source of truth.
+- Claude and Codex adapter tests prove start mapping, next-turn changes, Plan read-only behavior, and
+  the absence of unrestricted access.
+- Session persistence, remote start, store rendering, help accessibility, focus containment, 320 px
+  layout, typechecks, production builds, package verification, and ordinary regression suites pass.
+- A physical phone check confirms the three launch modes, Tune behavior, session marks, Help sheet,
+  and no horizontal overflow before this checkpoint is advertised as available.
 
 ## Workstream D: human-verifiable pairing
 

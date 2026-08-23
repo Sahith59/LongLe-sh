@@ -2,8 +2,9 @@ import { motion, useReducedMotion } from 'motion/react'
 import { ChevronRight, Radio } from 'lucide-react'
 import type { SessionView } from '../lib/store.js'
 import { Led, SPRING } from './primitives.js'
-import { AGENT_LABEL, ORIGIN_LABEL, STATUS_LABEL } from './format.js'
+import { STATUS_LABEL } from './format.js'
 import { PathChip } from './PathChip.js'
+import { ProviderMark, SurfaceMark } from './SessionMarks.js'
 
 /**
  * A machined key the width of the screen. The card itself is a div so the
@@ -56,9 +57,7 @@ export function SessionCard({
       </button>
 
       <p className="meta">
-        <span className="sessiontag agenttag" data-agent={session.agent}>
-          {AGENT_LABEL[session.agent] ?? session.agent}
-        </span>
+        <ProviderMark agent={session.agent} />
         <span className="dot" aria-hidden="true">·</span>
         <span className={`state ${session.status}`}>
           {status}
@@ -66,9 +65,13 @@ export function SessionCard({
         <span className="dot" aria-hidden="true">·</span>
         <PathChip text={session.cwd} kind="folder" max={26} expandable />
         <span className="dot" aria-hidden="true">·</span>
-        <span className="sessiontag origintag" data-origin={session.origin}>
-          {ORIGIN_LABEL[session.origin] ?? session.origin}
-        </span>
+        <SurfaceMark origin={session.origin} />
+        {session.settings?.mode ? (
+          <>
+            <span className="dot" aria-hidden="true">·</span>
+            <span className="sessiontag modetag">{session.settings.mode}</span>
+          </>
+        ) : null}
         {session.relationship ? (
           <>
             <span className="dot" aria-hidden="true">·</span>

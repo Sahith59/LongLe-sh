@@ -814,12 +814,16 @@ describe('typed operations: decisions and remote start', () => {
     const messages = nextMessages(ws, 3)
     ws.send(JSON.stringify({
       v: 1, type: 'startSession', requestId: 'start-1', agent: 'claude', root, prompt: 'build it',
+      settings: { mode: 'plan' },
     }))
     const arrived = await messages
     const ack = arrived.find((m) => m.type === 'ack')
     expect(ack).toMatchObject({ type: 'ack', outcome: 'started', requestId: 'start-1' })
     expect(String(ack?.sessionId)).toMatch(/^ses_/)
     expect(arrived.some((m) => m.type === 'session.started')).toBe(true)
+    expect(arrived.find((m) => m.type === 'session.started')?.payload).toMatchObject({
+      settings: { mode: 'plan' },
+    })
     expect(arrived.some((m) => m.type === 'stream.delta')).toBe(true)
     ws.close()
   })
