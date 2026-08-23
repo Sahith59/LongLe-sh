@@ -22,8 +22,19 @@ export type AgentEffort = z.infer<typeof AgentEffort>
 export const ThinkingMode = z.enum(['adaptive', 'disabled', 'fixed'])
 export type ThinkingMode = z.infer<typeof ThinkingMode>
 
+/**
+ * A provider-neutral working style for sessions LongLeash controls.
+ *
+ * `auto` never means unrestricted access: each adapter keeps its provider safety boundary in place.
+ * `plan` is read-only by contract, even for providers that do not expose a native plan mode.
+ */
+export const SessionMode = z.enum(['manual', 'auto', 'plan'])
+export type SessionMode = z.infer<typeof SessionMode>
+
 export const SessionSettings = z
   .object({
+    /** Omitted means LongLeash's conservative manual mode. */
+    mode: SessionMode.optional(),
     /** Omitted means the provider's current default; model ids never enter a shell command. */
     model: z.string().trim().min(1).max(120).optional(),
     effort: AgentEffort.optional(),

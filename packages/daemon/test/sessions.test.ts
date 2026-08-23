@@ -1111,12 +1111,13 @@ describe('replying to a dormant conversation wakes it', () => {
     expect(revived.listSessions().find((s) => s.sessionId === sessionId)?.status).toBe('running')
   })
 
-  it('pins model, effort, and thinking when a conversation wakes after restart', async () => {
+  it('pins working mode, model, effort, and thinking when a conversation wakes after restart', async () => {
     const { sessionId } = await h.manager.startSession({
       agent: 'claude',
       cwd: h.root,
       prompt: 'reason carefully',
       settings: {
+        mode: 'plan',
         model: 'opus',
         effort: 'high',
         thinking: { mode: 'adaptive' },
@@ -1126,6 +1127,7 @@ describe('replying to a dormant conversation wakes it', () => {
     const revived = revive(fresh)
     expect(revived.sendMessage(sessionId, 'continue', 'dev_phone')).toBe(true)
     expect(fresh.settings).toEqual({
+      mode: 'plan',
       model: 'opus',
       effort: 'high',
       thinking: { mode: 'adaptive' },
@@ -1139,15 +1141,15 @@ describe('replying to a dormant conversation wakes it', () => {
       agent: 'claude', cwd: h.root, prompt: 'review it', settings: { model: 'sonnet' },
     })
     const result = await h.manager.updateSessionSettings(sessionId, {
-      model: 'opus', effort: 'high', thinking: { mode: 'adaptive' },
+      mode: 'auto', model: 'opus', effort: 'high', thinking: { mode: 'adaptive' },
     }, 'dev_phone')
 
     expect(result).toEqual({
       live: true,
-      settings: { model: 'opus', effort: 'high', thinking: { mode: 'adaptive' } },
+      settings: { mode: 'auto', model: 'opus', effort: 'high', thinking: { mode: 'adaptive' } },
     })
     expect(h.agent.settingsUpdates).toEqual([
-      { model: 'opus', effort: 'high', thinking: { mode: 'adaptive' } },
+      { mode: 'auto', model: 'opus', effort: 'high', thinking: { mode: 'adaptive' } },
     ])
     expect(h.manager.listSessions().find((session) => session.sessionId === sessionId)?.settings)
       .toEqual(result.settings)

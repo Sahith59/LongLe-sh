@@ -117,6 +117,39 @@ class CodexRun {
   /** Per-turn overrides; updating this affects the next turn without replacing the thread. */
   private settings: SessionSettings
 
+  private approvalPolicy(): 'untrusted' | 'on-request' | 'never' {
+    if (this.settings.mode === 'auto') return 'on-request'
+    if (this.settings.mode === 'manual' || this.settings.mode === 'plan') return 'untrusted'
+    return this.opts.approvalPolicy ?? 'untrusted'
+  }
+
+  private sandbox(): 'read-only' | 'workspace-write' | 'danger-full-access' {
+    if (this.settings.mode === 'plan') return 'read-only'
+    if (this.settings.mode === 'manual' || this.settings.mode === 'auto') return 'workspace-write'
+    return this.opts.sandbox ?? 'workspace-write'
+  }
+
+  private sandboxPolicy():
+    | { type: 'readOnly'; networkAccess: false }
+    | { type: 'workspaceWrite'; networkAccess: false; writableRoots: string[] }
+    | { type: 'dangerFullAccess' } {
+    const sandbox = this.sandbox()
+    if (sandbox === 'read-only') return { type: 'readOnly', networkAccess: false }
+    if (sandbox === 'danger-full-access') return { type: 'dangerFullAccess' }
+    return { type: 'workspaceWrite', networkAccess: false, writableRoots: [this.request.cwd] }
+  }
+
+  private providerText(text: string): string {
+    if (this.settings.mode !== 'plan') return text
+    return [
+      '<longleash-plan-mode>',
+      'Plan only. Investigate and explain a concrete implementation approach, but do not modify files or run commands that change the workspace. Ask for clarification when a decision is required.',
+      '</longleash-plan-mode>',
+      '',
+      text,
+    ].join('\n')
+  }
+
   constructor(
     private readonly request: AgentRunRequest,
     private readonly opts: CodexAdapterOptions,
@@ -202,16 +235,16 @@ class CodexRun {
           ? {
             cwd: this.request.cwd,
             ...(this.settings.model === undefined ? {} : { model: this.settings.model }),
-            approvalPolicy: this.opts.approvalPolicy ?? 'untrusted',
-            sandbox: this.opts.sandbox ?? 'workspace-write',
+            approvalPolicy: this.approvalPolicy(),
+            sandbox: this.sandbox(),
             config: MANAGED_THREAD_CONFIG,
           }
           : {
               threadId: this.request.resume,
               cwd: this.request.cwd,
               ...(this.settings.model === undefined ? {} : { model: this.settings.model }),
-              approvalPolicy: this.opts.approvalPolicy ?? 'untrusted',
-              sandbox: this.opts.sandbox ?? 'workspace-write',
+              approvalPolicy: this.approvalPolicy(),
+              sandbox: this.sandbox(),
               config: MANAGED_THREAD_CONFIG,
             },
       )) as { thread?: { id?: string } }
@@ -239,9 +272,11 @@ class CodexRun {
     try {
       await this.call('turn/start', {
         threadId: this.threadId,
-        input: [{ type: 'text', text }],
+        input: [{ type: 'text', text: this.providerText(text) }],
         ...(this.settings.model === undefined ? {} : { model: this.settings.model }),
         ...(this.settings.effort === undefined ? {} : { effort: this.settings.effort }),
+        approvalPolicy: this.approvalPolicy(),
+        sandboxPolicy: this.sandboxPolicy(),
       })
     } catch (error) {
       if (fatal) throw error

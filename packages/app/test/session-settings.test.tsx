@@ -30,6 +30,7 @@ describe('session settings editor', () => {
     expect(draft.model).toBe('__custom__')
     expect(settingsFromDraft(draft, 'claude')).toEqual({
       settings: {
+        mode: 'manual',
         model: 'claude-future-model',
         effort: 'high',
         thinking: { mode: 'fixed', budgetTokens: 16_384 },
@@ -39,7 +40,7 @@ describe('session settings editor', () => {
 
   it('blocks an invalid fixed budget before anything reaches the laptop', () => {
     const result = settingsFromDraft({
-      model: '', customModel: '', effort: '', thinking: 'fixed', thinkingBudget: '500',
+      mode: 'manual', model: '', customModel: '', effort: '', thinking: 'fixed', thinkingBudget: '500',
     }, 'claude')
     expect(result.error).toContain('1,024')
     expect(result.settings).toEqual({})
@@ -57,6 +58,7 @@ describe('session settings editor', () => {
       />,
     )
     expect(html).toContain('Tune Claude without losing this conversation')
+    expect(html).toContain('Working mode')
     expect(html).toContain('still controlled by VS Code')
     expect(html).toContain('Move control to LongLeash')
     expect(html).toContain('preserve conversation native')

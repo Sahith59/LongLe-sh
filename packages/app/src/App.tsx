@@ -21,6 +21,7 @@ import {
   LogOut,
   Trash2,
   X,
+  CircleHelp,
 } from 'lucide-react'
 import type { DelegationPreview, DelegationReturnPreview, DelegationSummary } from '@longleash/protocol'
 import {
@@ -69,7 +70,7 @@ import {
   useKeyboardInset,
   useVisualViewportHeight,
 } from './ui/primitives.js'
-import { AGENT_LABEL, MODE_LABEL, ORIGIN_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
+import { AGENT_LABEL, MODE_LABEL, STATUS_LABEL, shortPath } from './ui/format.js'
 import { PathChip } from './ui/PathChip.js'
 import { enablePush, pushPermission, syncPush } from './lib/push.js'
 import { QrScanner } from './ui/QrScanner.js'
@@ -83,6 +84,7 @@ import {
   type UpdateSessionSettingsInput,
 } from './ui/SessionSettingsSheet.js'
 import { useAccount } from './lib/account-context.js'
+import { IdentityLegend, ProviderMark, SurfaceMark } from './ui/SessionMarks.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
@@ -706,19 +708,21 @@ export function Rail({
 }) {
   const account = useAccount()
   const [accountOpen, setAccountOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const closeAccount = useCallback(() => setAccountOpen(false), [])
+  const closeHelp = useCallback(() => setHelpOpen(false), [])
   return (
     <div className={`rail${onUpdate ? ' has-update' : ''}`}>
       <div className="rail-in">
         {onBack ? (
           <button type="button" className="tap" onClick={onBack} aria-label="Back to all sessions">
             <ChevronLeft size={18} strokeWidth={2.4} aria-hidden="true" />
-            Sessions
+            <span className="back-label">Sessions</span>
           </button>
         ) : (
           <h1 className="wordmark">
             <img src="/icon-192.png" alt="" width={26} height={26} />
-            LongLeash
+            <span>LongLeash</span>
           </h1>
         )}
         <span className="spacer" />
@@ -730,9 +734,19 @@ export function Rail({
             label={`Update LongLeash to build ${updateBuild ?? 'latest'}`}
           >
             <Download size={14} strokeWidth={2.4} aria-hidden="true" />
-            {updating ? 'Updating…' : 'Update'}
+            <span className="railupdate-label">{updating ? 'Updating…' : 'Update'}</span>
           </Key>
         ) : null}
+        <button
+          type="button"
+          className="rail-icon"
+          onClick={() => setHelpOpen(true)}
+          title="How to use LongLeash"
+          aria-label="How to use LongLeash"
+          aria-expanded={helpOpen}
+        >
+          <CircleHelp size={18} strokeWidth={2.1} aria-hidden="true" />
+        </button>
         {account.hosted && account.signOut ? (
           <button
             type="button"
@@ -762,8 +776,123 @@ export function Rail({
             : 'Reconnecting to your laptop'}
         </span>
       </div>
+      {helpOpen ? <HelpSheet connected={connected} {...(via === undefined ? {} : { via })} onClose={closeHelp} /> : null}
       {accountOpen ? <AccountSheet account={account} onClose={closeAccount} /> : null}
     </div>
+  )
+}
+
+function HelpSheet({ connected, via, onClose }: { connected: boolean; via?: LinkPath; onClose: () => void }) {
+  const dialogRef = useRef<HTMLElement | null>(null)
+  const viewportHeight = useVisualViewportHeight(true)
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const previousBodyOverflow = document.body.style.overflow
+    const previousRootOverflow = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    const focusable = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), summary, a[href], [tabindex]:not([tabindex="-1"])',
+    ) ?? [])
+    const frame = window.requestAnimationFrame(() => focusable()[0]?.focus())
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const items = focusable()
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (!first || !last) return
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previousBodyOverflow
+      document.documentElement.style.overflow = previousRootOverflow
+      previouslyFocused?.focus()
+    }
+  }, [onClose])
+
+  return createPortal(
+    <div className="account-sheet-scrim" role="presentation" onPointerDown={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <section
+        ref={dialogRef}
+        className="account-sheet help-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="help-sheet-title"
+        style={viewportHeight === null ? undefined : { maxHeight: `${Math.max(240, viewportHeight - 24)}px` }}
+      >
+        <button className="sheetclose" type="button" onClick={onClose} aria-label="Close help">
+          <X size={20} aria-hidden="true" />
+        </button>
+        <p className="account-kicker">Pocket field guide</p>
+        <h2 id="help-sheet-title">Operate LongLeash</h2>
+        <div className={`help-connection${connected ? ' connected' : ''}`}>
+          <Led status={connected ? 'running' : 'ended'} />
+          <span>{connected ? `Laptop linked ${via === 'relay' ? 'through relay' : 'directly'}` : 'Laptop reconnecting'}</span>
+        </div>
+
+        <section className="help-quick" aria-labelledby="help-quick-title">
+          <h3 id="help-quick-title">Start in four moves</h3>
+          <ol>
+            <li>Keep the laptop on and awake; the background service keeps working after Terminal closes.</li>
+            <li>Tap <strong>New session</strong>, choose Claude or Codex, then select the project.</li>
+            <li>Choose Manual, Auto, or Plan and describe one concrete task.</li>
+            <li>Review approvals, reply, tune the next turn, or stop from the session screen.</li>
+          </ol>
+        </section>
+
+        <details className="help-topic" open>
+          <summary>Modes and safety</summary>
+          <dl>
+            <div><dt>Manual</dt><dd>Routes commands and edits through approval.</dd></div>
+            <div><dt>Auto</dt><dd>Uses provider automation. Claude classifies permission prompts; Codex stays in its workspace sandbox. Unrestricted access remains off.</dd></div>
+            <div><dt>Plan</dt><dd>Inspects and designs a solution with workspace writes disabled.</dd></div>
+          </dl>
+          <p>Changing mode or model affects the next turn. Work already in progress is never reinterpreted.</p>
+        </details>
+
+        <details className="help-topic">
+          <summary>What the session marks mean</summary>
+          <IdentityLegend />
+          <p>The first mark is the provider. The second is where the conversation originally started.</p>
+        </details>
+
+        <details className="help-topic">
+          <summary>Terminal and VS Code handoff</summary>
+          <p>A running native session stays under its native surface until you explicitly move control. LongLeash preserves its conversation ID, then continues the same transcript.</p>
+        </details>
+
+        <details className="help-topic">
+          <summary>If the laptop will not link</summary>
+          <div className="help-commands">
+            <code>longleash service status</code>
+            <code>longleash doctor</code>
+            <code>longleash service restart</code>
+            <code>longleash pair</code>
+          </div>
+          <p>Run them in order. Pairing links are single-use; print a fresh one after any failed or exposed attempt.</p>
+        </details>
+
+        <a className="help-docs" href="/docs/getting-started">Open the complete guide</a>
+      </section>
+    </div>,
+    document.body,
   )
 }
 
@@ -1298,13 +1427,15 @@ export function DetailScreen({
                 : (STATUS_LABEL[session.status] ?? session.status)}
             </span>
             <span className="dot" aria-hidden="true">·</span>
-            <span className="sessiontag agenttag" data-agent={session.agent}>
-              {AGENT_LABEL[session.agent] ?? session.agent}
-            </span>
+            <ProviderMark agent={session.agent} />
             <span className="dot" aria-hidden="true">·</span>
-            <span className="sessiontag origintag" data-origin={session.origin}>
-              {ORIGIN_LABEL[session.origin] ?? session.origin}
-            </span>
+            <SurfaceMark origin={session.origin} />
+            {session.settings?.mode ? (
+              <>
+                <span className="dot" aria-hidden="true">·</span>
+                <span className="sessiontag modetag">{session.settings.mode}</span>
+              </>
+            ) : null}
             {session.permissionMode ? (
               <>
                 <span className="dot" aria-hidden="true">·</span>

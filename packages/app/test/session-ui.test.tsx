@@ -6,6 +6,7 @@ import { DetailScreen, Rail } from '../src/App.js'
 import { Transcript } from '../src/ui/Transcript.js'
 import { DelegateSheet } from '../src/ui/DelegateSheet.js'
 import { ReturnSheet } from '../src/ui/ReturnSheet.js'
+import { SessionModePicker } from '../src/ui/SessionSettingsFields.js'
 
 describe('session controls visible on a phone-sized flow', () => {
   it('shows the Claude/Codex choice before a folder has been selected', () => {
@@ -50,11 +51,22 @@ describe('session controls visible on a phone-sized flow', () => {
         onOpen={() => {}}
       />,
     )
-    expect(html).toContain('sessiontag')
+    expect(html).toContain('identitymark')
     expect(html).toContain('data-agent="codex"')
     expect(html).toContain('data-origin="vscode"')
     expect(html).toContain('Codex')
     expect(html).toContain('in VS Code')
+  })
+
+  it('makes Manual, Auto, and Plan visible with a truthful sandbox boundary', () => {
+    const html = renderToStaticMarkup(
+      <SessionModePicker agent="codex" value="manual" onChange={() => {}} />,
+    )
+    expect(html).toContain('Manual')
+    expect(html).toContain('Auto')
+    expect(html).toContain('Plan')
+    expect(html).toContain('Auto keeps provider safety controls on')
+    expect(html).toContain('aria-pressed="true"')
   })
 
   it('removes Codex IDE metadata from historical user messages', () => {
@@ -243,6 +255,7 @@ describe('session controls visible on a phone-sized flow', () => {
     expect(html).toContain('Update')
     expect(html).toContain('Update LongLeash to build abc1234')
     expect(html).toContain('railupdate')
+    expect(html).toContain('How to use LongLeash')
   })
 
   it('offers delegation from a durable transcript event, not a display index', () => {

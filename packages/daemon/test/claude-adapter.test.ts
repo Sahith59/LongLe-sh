@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createClaudeAgentFactory } from '../src/adapters/claude.js'
 
 const sdk = vi.hoisted(() => ({
+  setPermissionMode: vi.fn(async () => {}),
   setModel: vi.fn(async () => {}),
   setMaxThinkingTokens: vi.fn(async () => {}),
   applyFlagSettings: vi.fn(async () => {}),
@@ -18,13 +19,14 @@ beforeEach(() => {
   sdk.query.mockReturnValue({
     async *[Symbol.asyncIterator]() {},
     setModel: sdk.setModel,
+    setPermissionMode: sdk.setPermissionMode,
     setMaxThinkingTokens: sdk.setMaxThinkingTokens,
     applyFlagSettings: sdk.applyFlagSettings,
     interrupt: sdk.interrupt,
   })
 })
 
-function handle() {
+function handle(settings?: { mode?: 'manual' | 'auto' | 'plan' }) {
   return createClaudeAgentFactory()({
     sessionId: 'ses_claude',
     cwd: '/tmp/project',
@@ -32,10 +34,26 @@ function handle() {
     canUseTool: async () => ({ behavior: 'allow' }),
     onAutoApprovedTool: () => {},
     onAgentSession: () => {},
+    ...(settings === undefined ? {} : { settings }),
   })
 }
 
 describe('Claude live session controls', () => {
+  it.each([
+    ['manual', 'default'],
+    ['auto', 'auto'],
+    ['plan', 'plan'],
+  ] as const)('maps LongLeash %s mode to Claude %s mode', async (mode, nativeMode) => {
+    handle({ mode })
+    expect(sdk.query.mock.calls[0]?.[0]?.options?.permissionMode).toBe(nativeMode)
+  })
+
+  it('changes the native mode on the next turn without replacing the conversation', async () => {
+    const run = handle({ mode: 'manual' })
+    await run.updateSettings?.({ mode: 'plan' })
+    expect(sdk.setPermissionMode).toHaveBeenCalledWith('plan')
+  })
+
   it('changes model, effort, and adaptive thinking through the streaming SDK', async () => {
     const run = handle()
     await run.updateSettings?.({
@@ -44,6 +62,7 @@ describe('Claude live session controls', () => {
       thinking: { mode: 'adaptive' },
     })
     expect(sdk.setModel).toHaveBeenCalledWith('opus')
+    expect(sdk.setPermissionMode).toHaveBeenCalledWith('default')
     expect(sdk.applyFlagSettings).toHaveBeenNthCalledWith(1, { effortLevel: 'high' })
     expect(sdk.applyFlagSettings).toHaveBeenNthCalledWith(2, { alwaysThinkingEnabled: true })
     expect(sdk.setMaxThinkingTokens).toHaveBeenCalledWith(null)

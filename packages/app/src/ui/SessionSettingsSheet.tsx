@@ -99,7 +99,7 @@ export function SessionSettingsSheet({
             }}
             role="dialog"
             aria-modal="true"
-            aria-label="Model and reasoning settings"
+            aria-label="Session controls"
             initial={still ? false : { y: '100%' }}
             animate={{ y: 0 }}
             {...(still ? {} : { exit: { y: '100%', transition: EXIT } })}
@@ -115,7 +115,7 @@ export function SessionSettingsSheet({
               <div className="settings-title">
                 <span className="delegate-mark" aria-hidden="true"><SlidersHorizontal size={18} strokeWidth={2.2} /></span>
                 <div>
-                  <h2>Model &amp; reasoning</h2>
+                  <h2>Session controls</h2>
                   <p className="sub">Tune {AGENT_LABEL[agent]} without losing this conversation.</p>
                 </div>
               </div>
@@ -182,7 +182,7 @@ export function SessionSettingsSheet({
                     ? update.outcome === 'next-response'
                       ? `Saved. The next response will request these controls from ${AGENT_LABEL[agent]}.`
                       : `Saved. The next continuation will request these controls from ${AGENT_LABEL[agent]}.`
-                    : 'Approval and workspace safety are unchanged.'}
+                    : 'Mode changes apply on the next turn; workspace isolation is unchanged.'}
               </p>
             </div>
           </motion.div>

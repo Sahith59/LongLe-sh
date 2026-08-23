@@ -1,5 +1,12 @@
-import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query, type PermissionMode, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { SessionMode } from '@longleash/protocol'
 import type { AgentFactory, AgentRunRequest, AgentStreamMessage } from '../agent.js'
+
+function permissionMode(mode: SessionMode | undefined): PermissionMode {
+  if (mode === 'auto') return 'auto'
+  if (mode === 'plan') return 'plan'
+  return 'default'
+}
 
 /**
  * Drives real Claude Code through the official Agent SDK.
@@ -99,6 +106,7 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
             : request.settings.thinking.mode === 'adaptive'
               ? { thinking: { type: 'adaptive' as const } }
               : { thinking: { type: 'disabled' as const } }),
+        permissionMode: permissionMode(request.settings?.mode),
         ...(options.allowedTools === undefined ? {} : { allowedTools: options.allowedTools }),
         ...(options.isolateFromUserSettings ? { settingSources: [] } : {}),
         // Reopening a closed conversation: Claude replays its own transcript, so the agent
@@ -147,6 +155,7 @@ export function createClaudeAgentFactory(options: ClaudeAdapterOptions = {}): Ag
 
     let activeSettings = { ...(request.settings ?? {}) }
     const applySettings = async (settings: typeof activeSettings) => {
+      await run.setPermissionMode(permissionMode(settings.mode))
       await run.setModel(settings.model)
       await run.applyFlagSettings({ effortLevel: settings.effort ?? null })
       if (settings.thinking === undefined) {
