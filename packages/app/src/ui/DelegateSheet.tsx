@@ -3,12 +3,10 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   Check,
   Clipboard,
-  Code2,
   FlaskConical,
   GitBranchPlus,
   SearchCheck,
   ShieldCheck,
-  Sparkles,
   Wrench,
   X,
 } from 'lucide-react'
@@ -33,13 +31,13 @@ import {
   settingsDraft,
   settingsFromDraft,
 } from './SessionSettingsFields.js'
+import { ProviderMark } from './SessionMarks.js'
 
 const AGENT_NAME: Record<DelegationTargetAgent, string> = { claude: 'Claude', codex: 'Codex' }
 const AGENT_DETAIL: Record<DelegationTargetAgent, string> = {
   claude: 'Anthropic agent',
   codex: 'OpenAI agent',
 }
-const AGENT_ICON = { claude: Sparkles, codex: Code2 } as const
 
 const ROLES: Array<{
   value: DelegationRole
@@ -379,7 +377,6 @@ function DelegateBody({
         <legend><span className="step-number" aria-hidden="true">1</span> Agent</legend>
         <div className="agentpick" role="group" aria-label="Target agent">
           {(['claude', 'codex'] as const).map((option) => {
-            const Icon = AGENT_ICON[option]
             const picked = targetAgent === option
             return (
               <Key
@@ -393,7 +390,7 @@ function DelegateBody({
                   setChildSettings(settingsDraft({}, settingsCatalog, option))
                 }}
               >
-                <span className="agenticon" data-agent={option} aria-hidden="true"><Icon size={18} strokeWidth={2.1} /></span>
+                <ProviderMark agent={option} decorative />
                 <span className="agentcopy"><strong>{AGENT_NAME[option]}</strong><small>{availableTargets[option] ? AGENT_DETAIL[option] : 'Not available on laptop'}</small></span>
                 <Check className="agentcheck" size={17} strokeWidth={2.7} aria-hidden="true" />
               </Key>

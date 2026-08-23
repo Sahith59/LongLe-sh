@@ -613,8 +613,9 @@ body {
 .session .meta .dot {
   opacity: 0.45;
 }
-/* Machined identity plates. One shared graphite body keeps these inside the material system;
-   the muted stamped ink is the only agent/origin colour. */
+/* Identity tiles are small pieces of native product hardware held in one shared
+   graphite bezel. Their silhouette and colour make a session scannable before
+   its text is read; the adjacent state/path still carry all operational meaning. */
 .sessiontag {
   display: inline-flex;
   align-items: center;
@@ -633,28 +634,29 @@ body {
   text-transform: uppercase;
 }
 .identitymark {
-  width: 29px;
-  height: 25px;
+  width: 31px;
+  height: 31px;
   flex: none;
   display: inline-grid;
   place-items: center;
-  border-radius: 7px;
-  color: var(--ink-2);
-  background: linear-gradient(172deg, #26282d 0%, #1b1d21 58%, #17181c 100%);
+  padding: 2px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 9px;
+  background: linear-gradient(168deg, #303238 0%, #1b1d21 52%, #111215 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.34),
-    0 1px 2px rgba(0, 0, 0, 0.48),
-    0 3px 6px rgba(0, 0, 0, 0.2);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 1px 2px rgba(0, 0, 0, 0.58),
+    0 4px 8px rgba(0, 0, 0, 0.24);
 }
-.identitymark[data-agent='claude'] { color: var(--agent-claude); }
-.identitymark[data-agent='codex'] { color: var(--agent-codex); }
-.identitymark[data-origin='terminal'] { color: var(--origin-terminal); }
-.identitymark[data-origin='vscode'] { color: var(--origin-vscode); }
-.identitymark[data-origin='phone'] { color: var(--origin-phone); }
-.identitymark[data-origin='daemon'],
-.identitymark[data-origin='external'] { color: var(--origin-laptop); }
-.session.past .identitymark { filter: saturate(0.7) brightness(0.88); }
+.identityglyph {
+  display: block;
+  width: 25px;
+  height: 25px;
+  border-radius: 6.5px;
+}
+.session.past .identitymark { filter: saturate(0.64) brightness(0.78); }
 .session.past .sessiontag {
   filter: saturate(0.7) brightness(0.88);
   box-shadow:
@@ -2851,8 +2853,8 @@ body {
   }
 }
 
-/* Which agent a new session runs. Both options stay visible, with a proper selected state,
-   vendor subtitle, accent glyph and checkmark rather than two ambiguous grey rectangles. */
+/* Which agent a new session runs. Both options stay visible with their provider tile,
+   vendor subtitle and a proper selected state rather than ambiguous grey rectangles. */
 .agentpick {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2867,22 +2869,6 @@ body {
   padding: 10px 12px;
   color: var(--ink-2);
   text-align: left;
-}
-.agenticon {
-  width: 34px;
-  height: 34px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: rgba(0, 0, 0, 0.28);
-  box-shadow: var(--engrave);
-}
-.agenticon[data-agent='claude'] {
-  color: var(--agent-claude);
-}
-.agenticon[data-agent='codex'] {
-  color: var(--agent-codex);
 }
 .agentcopy {
   min-width: 0;
@@ -2916,10 +2902,10 @@ body {
   opacity: 1;
   transform: scale(1);
 }
-.agentpick .key.agentoption.picked:has(.agenticon[data-agent='claude']) .agentcheck {
+.agentpick .key.agentoption.picked:has(.providermark[data-agent='claude']) .agentcheck {
   color: var(--agent-claude);
 }
-.agentpick .key.agentoption.picked:has(.agenticon[data-agent='codex']) .agentcheck {
+.agentpick .key.agentoption.picked:has(.providermark[data-agent='codex']) .agentcheck {
   color: var(--agent-codex);
 }
 
