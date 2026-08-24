@@ -604,18 +604,33 @@ body {
 .session .meta {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 7px 0 0;
+  gap: 8px 12px;
+  margin: 9px 0 0;
   font: 400 11.5px/1.4 'Geist Mono', ui-monospace, monospace;
   color: var(--ink-3);
   flex-wrap: wrap;
 }
-.session .meta .dot {
-  opacity: 0.45;
+.sessionidentity {
+  min-width: 0;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  white-space: nowrap;
 }
-/* Identity tiles are small pieces of native product hardware held in one shared
-   graphite bezel. Their silhouette and colour make a session scannable before
-   its text is read; the adjacent state/path still carry all operational meaning. */
+.identitydivider {
+  width: 1px;
+  height: 15px;
+  flex: none;
+  margin: 0 1px;
+  background: var(--hair);
+}
+.session .meta .pathchip {
+  max-width: min(100%, 28rem);
+}
+/* Provider and surface artwork is deliberately unframed. It reads as a small
+   identity signature inside the card rather than a second app icon tile. */
 .sessiontag {
   display: inline-flex;
   align-items: center;
@@ -634,29 +649,32 @@ body {
   text-transform: uppercase;
 }
 .identitymark {
-  width: 31px;
-  height: 31px;
+  width: 24px;
+  height: 24px;
   flex: none;
   display: inline-grid;
   place-items: center;
-  padding: 2px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.075);
-  border-radius: 9px;
-  background: linear-gradient(168deg, #303238 0%, #1b1d21 52%, #111215 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
-    0 1px 2px rgba(0, 0, 0, 0.58),
-    0 4px 8px rgba(0, 0, 0, 0.24);
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .identityglyph {
   display: block;
-  width: 25px;
-  height: 25px;
-  border-radius: 6.5px;
+  width: 22px;
+  height: 22px;
+  overflow: visible;
 }
-.session.past .identitymark { filter: saturate(0.64) brightness(0.78); }
+.providermark[data-agent='claude'] { color: #d97757; }
+.providermark[data-agent='codex'] { color: #e6e9e8; }
+.surfacemark[data-origin='vscode'] { color: #23a7e8; }
+.surfacemark[data-origin='terminal'] { color: var(--origin-terminal); }
+.surfacemark[data-origin='phone'] { color: #bfa7d1; }
+.surfacemark[data-origin='daemon'],
+.surfacemark[data-origin='external'] { color: var(--origin-laptop); }
+.session.past .identitymark { opacity: 0.62; }
 .session.past .sessiontag {
   filter: saturate(0.7) brightness(0.88);
   box-shadow:
@@ -1361,15 +1379,14 @@ body {
 .detailhead .meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 8px 12px;
   margin: 9px 0 0;
   font: 400 12px/1.5 'Geist Mono', ui-monospace, monospace;
   color: var(--ink-3);
   flex-wrap: wrap;
 }
-.detailhead .meta .dot {
-  opacity: 0.45;
-}
+.detailidentity { gap: 8px; }
+.detailidentity .identitydivider { margin-inline: 2px; }
 .detailhead .meta .pathchip {
   max-width: 100%;
 }
@@ -2853,7 +2870,7 @@ body {
   }
 }
 
-/* Which agent a new session runs. Both options stay visible with their provider tile,
+/* Which agent a new session runs. Both options stay visible with their provider mark,
    vendor subtitle and a proper selected state rather than ambiguous grey rectangles. */
 .agentpick {
   display: grid;
@@ -3075,7 +3092,10 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  padding:
+    max(12px, env(safe-area-inset-top))
+    12px
+    calc(12px + env(safe-area-inset-bottom));
   background: rgba(4, 5, 6, 0.74);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -3162,7 +3182,52 @@ body {
 .key.danger { color: var(--clay); }
 
 /* ------------------------------------------------------------ in-product help */
-.help-sheet h2 { margin-bottom: 12px; }
+.help-sheet-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -8px -4px 14px;
+  padding: 8px 4px 2px;
+  background: linear-gradient(180deg, #202227 0%, rgba(32, 34, 39, 0.97) 76%, rgba(32, 34, 39, 0) 100%);
+}
+.help-sheet-header > div {
+  min-width: 0;
+  flex: 1;
+}
+.account-sheet .help-sheet-header h2 {
+  margin: 0;
+  padding-right: 0;
+  overflow-wrap: anywhere;
+}
+.help-sheet-close {
+  appearance: none;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  margin-top: -2px;
+  border: 1px solid var(--hair);
+  border-radius: 13px;
+  color: var(--ink-2);
+  background: var(--grad-key);
+  box-shadow: var(--raise);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.help-sheet-close:active {
+  transform: translateY(1px);
+  color: var(--ink);
+  box-shadow: var(--pressed);
+}
+.help-sheet-close:focus-visible {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 2px;
+}
 .help-connection {
   display: flex;
   align-items: center;
