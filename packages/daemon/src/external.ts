@@ -145,6 +145,8 @@ interface ExternalSession {
   timer: ReturnType<typeof setInterval> | null
   workspaceConflict?: { cwd: string; ownerSessionId: string; processPaused: boolean }
   suspended: boolean
+  /** Discovered from Codex's durable VS Code transcript without a lifecycle/PID hook. */
+  observedOnly: boolean
 }
 
 /** Everything about a permission question beyond the tool itself. */
@@ -329,6 +331,7 @@ export class ExternalSessions {
         remainder: '',
         timer: null,
         suspended: false,
+        observedOnly: false,
       }
       this.sessions.set(row.agentSessionId, session)
       this.claimWorkspace(session)
@@ -357,6 +360,36 @@ export class ExternalSessions {
     this.claimWorkspace(session)
   }
 
+  /** Adopt a Codex transcript observed after startup, including sessions older than the hooks. */
+  observeCodexSession(info: {
+    sessionId: string
+    cwd: string
+    transcriptPath: string
+    surface: Surface
+    title?: string
+  }): void {
+    const session = this.ensure(info.sessionId, info.cwd, info.transcriptPath, 'codex', info.surface, true)
+    if (info.title !== undefined && info.title !== session.title) {
+      session.named = true
+      session.title = info.title
+      this.persist(info.sessionId, session)
+    }
+    // Every observed write is real activity even when the prompt-derived title did not change.
+    // Emitting a bounded status beat keeps resumed sessions ordered by current activity rather
+    // than by the month in which their durable conversation was first created.
+    this.emit(session.sessionId, {
+      type: 'session.status',
+      payload: {
+        status: session.status,
+        live: true,
+        controller: 'external',
+        control: 'observe',
+        ...(info.title === undefined ? {} : { title: info.title }),
+      },
+    })
+    this.claimWorkspace(session)
+  }
+
   /**
    * Stop a terminal session from the phone — for real. The recorded pid is only
    * trusted after re-verifying it still belongs to a claude process, because PIDs
@@ -366,6 +399,7 @@ export class ExternalSessions {
     const entry = [...this.sessions.entries()].find(([, s]) => s.sessionId === externalSessionId)
     if (!entry) return false
     const [claudeSessionId, session] = entry
+    if (session.observedOnly) return false
 
     /**
      * The process is gone, or we never learned what it was.
@@ -734,7 +768,7 @@ export class ExternalSessions {
   /** Mute or unmute a session from the phone. Returns false for a session it does not know. */
   setGate(externalSessionId: string, gate: SessionGate): boolean {
     const session = [...this.sessions.values()].find((s) => s.sessionId === externalSessionId)
-    if (!session) return false
+    if (!session || session.observedOnly) return false
     session.gate = gate
     this.emit(session.sessionId, {
       type: 'session.status',
@@ -792,6 +826,7 @@ export class ExternalSessions {
     startedAt: number
     origin: Surface
     controller: 'external'
+    control: 'full' | 'observe'
     title: string
     resumable: boolean
     resumeId: string
@@ -814,12 +849,14 @@ export class ExternalSessions {
       resumeId: claudeSessionId,
       gate: session.gate,
       controller: 'external' as const,
+      control: session.observedOnly ? 'observe' as const : 'full' as const,
       ...(session.workspaceConflict === undefined ? {} : { workspaceConflict: session.workspaceConflict }),
     }))
   }
 
   /** Write this session down so a restart can take it back. */
   private persist(agentSessionId: string, session: ExternalSession): void {
+    if (session.observedOnly) return
     this.registry?.remember({
       agentSessionId,
       sessionId: session.sessionId,
@@ -899,9 +936,22 @@ export class ExternalSessions {
     transcriptPath: string,
     agent: TerminalAgent = 'claude',
     surface: Surface = 'terminal',
+    tailOnly = false,
   ): ExternalSession {
     const existing = this.sessions.get(claudeSessionId)
-    if (existing) return existing
+    if (existing) {
+      // A later lifecycle hook promotes a transcript-only observation into an ordinary,
+      // fully controlled external session without duplicating its card or conversation id.
+      if (!tailOnly && existing.observedOnly) {
+        existing.observedOnly = false
+        this.persist(claudeSessionId, existing)
+        this.emit(existing.sessionId, {
+          type: 'session.status',
+          payload: { status: existing.status, live: true, controller: 'external', control: 'full' },
+        })
+      }
+      return existing
+    }
 
     const sessionId = `ext_${claudeSessionId}`
     // A daemon restart mid-conversation must adopt, not duplicate: history in the
@@ -921,10 +971,11 @@ export class ExternalSessions {
       named: false,
       permissionMode: null,
       gate: 'ask',
-      offset: hasHistory && existsSync(transcriptPath) ? statSync(transcriptPath).size : 0,
+      offset: (tailOnly || hasHistory) && existsSync(transcriptPath) ? statSync(transcriptPath).size : 0,
       remainder: '',
       timer: null,
       suspended: false,
+      observedOnly: tailOnly,
     }
     this.sessions.set(claudeSessionId, session)
     this.persist(claudeSessionId, session)
@@ -938,13 +989,19 @@ export class ExternalSessions {
           title: session.title,
           origin: surface,
           controller: 'external',
+          control: tailOnly ? 'observe' : 'full',
           resumeId: claudeSessionId,
         },
       })
     }
     this.emit(sessionId, {
       type: 'session.status',
-      payload: { status: 'running', live: true, controller: 'external' },
+      payload: {
+        status: 'running',
+        live: true,
+        controller: 'external',
+        control: tailOnly ? 'observe' : 'full',
+      },
     })
 
     session.timer = setInterval(() => this.drain(session), this.pollMs)

@@ -9,7 +9,7 @@
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AnimatePresence } from 'motion/react'
-import { ConsoleScreen, DetailScreen, Rail } from './App.js'
+import { ConsoleScreen, DetailScreen, HelpSheet, Rail } from './App.js'
 import { NewSessionSheet } from './ui/NewSessionSheet.js'
 import { DelegateSheet, type PreviewDelegationInput } from './ui/DelegateSheet.js'
 import { ReturnSheet } from './ui/ReturnSheet.js'
@@ -572,6 +572,28 @@ function SettingsPreview() {
 }
 
 function Preview() {
+  if (screen === 'help') {
+    return (
+      <>
+        <Rail connected via="relay" />
+        <ConsoleScreen
+          approvals={[]}
+          active={[sticknotes, resume]}
+          past={[scraper, migration]}
+          snapshot={{ sessions: snapshot.sessions, approvals: [] }}
+          diagnostic={null}
+          error={null}
+          onClearError={noop}
+          onDecide={noop}
+          onAnswer={noop}
+          onLeave={noop}
+          onOpen={noop}
+          onNew={noop}
+        />
+        <HelpSheet connected via="relay" onClose={noop} />
+      </>
+    )
+  }
   if (screen === 'flow') return <Flow />
   if (screen === 'delegate') return <DelegatePreview />
   if (screen === 'return') return <ReturnPreviewScreen />

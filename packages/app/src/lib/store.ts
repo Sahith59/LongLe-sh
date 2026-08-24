@@ -30,6 +30,8 @@ export interface SessionView {
   sessionId: string
   /** Stable creation time used for deterministic ordering across reconnects and providers. */
   startedAt?: number
+  /** Most recent durable event, used for stable reconnect ordering instead of creation time. */
+  lastActivityAt?: number
   agent: string
   cwd: string
   title: string
@@ -55,6 +57,8 @@ export interface SessionView {
   gate?: 'ask' | 'auto'
   /** Current process owner; origin remains historical after a handoff. */
   controller?: 'longleash' | 'external'
+  /** Whether LongLeash can operate this process or is safely observing native activity only. */
+  control?: 'full' | 'observe'
   /** Present when this session was deliberately created from another LongLeash session. */
   relationship?: SessionRelationship
   settings?: SessionSettings
@@ -92,6 +96,8 @@ export interface SessionSeed {
   sessionId: string
   /** Absent only when talking to a daemon released before deterministic list ordering. */
   startedAt?: number
+  /** Most recent durable event known by the daemon. Absent on older daemons. */
+  lastActivityAt?: number
   agent: string
   cwd: string
   title: string
@@ -103,6 +109,7 @@ export interface SessionSeed {
   resumeId?: string
   gate?: 'ask' | 'auto'
   controller?: 'longleash' | 'external'
+  control?: 'full' | 'observe'
   relationship?: SessionRelationship
   settings?: SessionSettings
   workspace?: SessionWorkspace
@@ -186,6 +193,7 @@ export function createStore(options: StoreOptions = {}) {
     cursors[event.sessionId] = event.seq
 
     const session = ensure(event.sessionId)
+    session.lastActivityAt = Math.max(session.lastActivityAt ?? 0, event.ts)
     switch (event.type) {
       case 'session.started': {
         // A fresh start supersedes any earlier failure.
@@ -195,6 +203,8 @@ export function createStore(options: StoreOptions = {}) {
           cwd: string
           title?: string
           origin?: string
+          controller?: 'longleash' | 'external'
+          control?: 'full' | 'observe'
           resumeId?: string
           relationship?: SessionRelationship
           settings?: SessionSettings
@@ -206,6 +216,8 @@ export function createStore(options: StoreOptions = {}) {
         session.cwd = payload.cwd
         session.title = payload.title ?? ''
         session.origin = payload.origin ?? 'unknown'
+        if (payload.controller !== undefined) session.controller = payload.controller
+        if (payload.control !== undefined) session.control = payload.control
         if (payload.resumeId) session.resumeId = payload.resumeId
         if (payload.relationship) session.relationship = payload.relationship
         if (payload.settings) session.settings = payload.settings
@@ -275,6 +287,7 @@ export function createStore(options: StoreOptions = {}) {
           permissionMode?: string
           gate?: 'ask' | 'auto'
           controller?: 'longleash' | 'external'
+          control?: 'full' | 'observe'
           live?: boolean
           resumable?: boolean
           resumeId?: string
@@ -295,6 +308,7 @@ export function createStore(options: StoreOptions = {}) {
         if (payload.permissionMode !== undefined) session.permissionMode = payload.permissionMode
         if (payload.gate !== undefined) session.gate = payload.gate
         if (payload.controller !== undefined) session.controller = payload.controller
+        if (payload.control !== undefined) session.control = payload.control
         if (payload.workspaceConflict !== undefined) session.workspaceConflict = payload.workspaceConflict
         else delete session.workspaceConflict
         break
@@ -333,6 +347,11 @@ export function createStore(options: StoreOptions = {}) {
       const session = ensure(seed.sessionId)
       session.agent = seed.agent
       if (typeof seed.startedAt === 'number') session.startedAt = seed.startedAt
+      if (typeof seed.lastActivityAt === 'number') {
+        session.lastActivityAt = Math.max(session.lastActivityAt ?? 0, seed.lastActivityAt)
+      } else if (session.lastActivityAt === undefined && typeof seed.startedAt === 'number') {
+        session.lastActivityAt = seed.startedAt
+      }
       session.cwd = seed.cwd
       session.title = seed.title
       session.origin = seed.origin
@@ -346,6 +365,7 @@ export function createStore(options: StoreOptions = {}) {
       session.controller = seed.controller ?? (
         seed.live && (seed.origin === 'terminal' || seed.origin === 'vscode') ? 'external' : 'longleash'
       )
+      session.control = seed.control ?? 'full'
       if (seed.relationship) session.relationship = seed.relationship
       if (seed.settings) session.settings = seed.settings
       if (seed.workspace) session.workspace = seed.workspace
@@ -459,10 +479,17 @@ export function createStore(options: StoreOptions = {}) {
   }
 }
 
-/** Newest first, with a deterministic tie-breaker that cannot change between renders. */
+/**
+ * Most recently active first, with creation time and id as deterministic fallbacks.
+ * A month-old conversation resumed today belongs at the top today; ordering it by the
+ * filename's original creation date made live Codex work look like stale history.
+ */
 export function sortSessionsNewestFirst(sessions: SessionView[]): SessionView[] {
   return [...sessions].sort(
-    (left, right) => (right.startedAt ?? 0) - (left.startedAt ?? 0) || right.sessionId.localeCompare(left.sessionId),
+    (left, right) =>
+      (right.lastActivityAt ?? right.startedAt ?? 0) - (left.lastActivityAt ?? left.startedAt ?? 0) ||
+      (right.startedAt ?? 0) - (left.startedAt ?? 0) ||
+      right.sessionId.localeCompare(left.sessionId),
   )
 }
 

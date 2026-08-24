@@ -141,6 +141,8 @@ const sessionStartedPayload = z
     origin: SessionOrigin.optional(),
     /** Who owns the process now; unlike origin, this changes after a safe handoff. */
     controller: z.enum(['longleash', 'external']).optional(),
+    /** Observation-only means the native surface is visible but has not exposed process control. */
+    control: z.enum(['full', 'observe']).optional(),
     /**
      * The agent's own conversation id. Carried to the phone so a person can pick the
      * SAME conversation back up at their keyboard — `claude --resume <id>` in the
@@ -177,6 +179,8 @@ const sessionStatusPayload = z
     /** LongLeash's own gate for this session: whether it should page the phone at all. */
     gate: SessionGate.optional(),
     controller: z.enum(['longleash', 'external']).optional(),
+    /** Observation-only sessions are never presented as remotely stoppable or writable. */
+    control: z.enum(['full', 'observe']).optional(),
     /** Current overrides. An empty object explicitly means provider defaults. */
     settings: SessionSettings.optional(),
     /** A second writer was observed in this checkout; text accompanies color for accessibility. */
