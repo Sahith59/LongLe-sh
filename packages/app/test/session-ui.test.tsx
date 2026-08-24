@@ -7,6 +7,7 @@ import { Transcript } from '../src/ui/Transcript.js'
 import { DelegateSheet } from '../src/ui/DelegateSheet.js'
 import { ReturnSheet } from '../src/ui/ReturnSheet.js'
 import { SessionModePicker } from '../src/ui/SessionSettingsFields.js'
+import { IdentityLegend } from '../src/ui/SessionMarks.js'
 
 describe('session controls visible on a phone-sized flow', () => {
   it('shows the Claude/Codex choice before a folder has been selected', () => {
@@ -56,6 +57,22 @@ describe('session controls visible on a phone-sized flow', () => {
     expect(html).toContain('data-origin="vscode"')
     expect(html).toContain('Codex')
     expect(html).toContain('in VS Code')
+  })
+
+  it('renders distinctive vector identity tiles with accessible names and collision-free paint ids', () => {
+    const html = renderToStaticMarkup(<IdentityLegend />)
+    expect(html).toContain('identityglyph')
+    expect(html).toContain('aria-label="Claude"')
+    expect(html).toContain('aria-label="Codex"')
+    expect(html).toContain('aria-label="in a terminal"')
+    expect(html).toContain('aria-label="in VS Code"')
+    expect(html).toContain('aria-label="from your phone"')
+    expect(html).not.toContain('lucide')
+
+    const paintIds = [...html.matchAll(/<(?:linearGradient|radialGradient) id="([^"]+)"/g)]
+      .map((match) => match[1])
+    expect(paintIds.length).toBeGreaterThanOrEqual(8)
+    expect(new Set(paintIds).size).toBe(paintIds.length)
   })
 
   it('makes Manual, Auto, and Plan visible with a truthful sandbox boundary', () => {

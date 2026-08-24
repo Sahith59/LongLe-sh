@@ -63,6 +63,11 @@ describe('delegation mobile layout contract', () => {
     expect(css).toMatch(/\.help-sheet[\s\S]*?\.help-topic/)
   })
 
+  it('keeps provider and surface artwork inside a fixed, non-shifting mobile footprint', () => {
+    expect(css).toMatch(/\.identitymark\s*{[\s\S]*?width: 31px;[\s\S]*?height: 31px;[\s\S]*?overflow: hidden;/)
+    expect(css).toMatch(/\.identityglyph\s*{[\s\S]*?width: 25px;[\s\S]*?height: 25px;/)
+  })
+
   it('keeps the Help sheet modal, keyboard-contained, and focus-restoring', () => {
     expect(app).toMatch(/function HelpSheet[\s\S]*?role="dialog"[\s\S]*?aria-modal="true"/)
     expect(app).toMatch(/function HelpSheet[\s\S]*?event\.key === 'Escape'[\s\S]*?onClose\(\)/)

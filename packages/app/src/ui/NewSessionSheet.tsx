@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, Code2, File, Folder, Search, Sparkles, X } from 'lucide-react'
+import { Check, File, Folder, Search, X } from 'lucide-react'
 import type { AgentSettingsCatalog, FolderHit } from '../lib/client.js'
 import { EXIT, Key, SPRING, useKeyboardInset, useVisualViewportHeight } from './primitives.js'
 import { fileName, parentPath } from './format.js'
@@ -11,10 +11,10 @@ import {
   settingsDraft,
   settingsFromDraft,
 } from './SessionSettingsFields.js'
+import { ProviderMark } from './SessionMarks.js'
 
 const AGENT_NAME = { claude: 'Claude', codex: 'Codex' } as const
 const AGENT_DETAIL = { claude: 'Anthropic agent', codex: 'OpenAI agent' } as const
-const AGENT_ICON = { claude: Sparkles, codex: Code2 } as const
 
 function StepLabel({ number, children }: { number: number; children: string }) {
   return (
@@ -35,7 +35,6 @@ function AgentPicker({
   return (
     <div className="agentpick" role="group" aria-label="Which agent">
       {(['claude', 'codex'] as const).map((option) => {
-        const Icon = AGENT_ICON[option]
         const selected = agent === option
         return (
           <Key
@@ -45,9 +44,7 @@ function AgentPicker({
             label={`Use ${AGENT_NAME[option]}`}
             onClick={() => onPick(option)}
           >
-            <span className="agenticon" data-agent={option} aria-hidden="true">
-              <Icon size={18} strokeWidth={2.1} />
-            </span>
+            <ProviderMark agent={option} decorative />
             <span className="agentcopy">
               <strong>{AGENT_NAME[option]}</strong>
               <small>{AGENT_DETAIL[option]}</small>
