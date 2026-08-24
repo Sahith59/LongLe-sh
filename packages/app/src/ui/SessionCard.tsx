@@ -57,40 +57,31 @@ export function SessionCard({
       </button>
 
       <p className="meta">
-        <ProviderMark agent={session.agent} />
-        <span className="dot" aria-hidden="true">·</span>
-        <span className={`state ${session.status}`}>
-          {status}
+        <span className="sessionidentity">
+          <ProviderMark agent={session.agent} />
+          <span className={`state ${session.status}`}>
+            {status}
+          </span>
+          <span className="identitydivider" aria-hidden="true" />
+          <SurfaceMark origin={session.origin} />
         </span>
-        <span className="dot" aria-hidden="true">·</span>
         <PathChip text={session.cwd} kind="folder" max={26} expandable />
-        <span className="dot" aria-hidden="true">·</span>
-        <SurfaceMark origin={session.origin} />
         {session.settings?.mode ? (
-          <>
-            <span className="dot" aria-hidden="true">·</span>
-            <span className="sessiontag modetag">{session.settings.mode}</span>
-          </>
+          <span className="sessiontag modetag">{session.settings.mode}</span>
         ) : null}
         {session.relationship ? (
-          <>
-            <span className="dot" aria-hidden="true">·</span>
-            <span className="sessiontag childtag">
-              child · {session.relationship.role}
-            </span>
-          </>
+          <span className="sessiontag childtag">
+            child · {session.relationship.role}
+          </span>
         ) : null}
         {children && children.total > 0 ? (
-          <>
-            <span className="dot" aria-hidden="true">·</span>
-            <span className="sessiontag parenttag">
-              parent · {children.active > 0
-                ? `${children.active} active`
-                : children.ready > 0
-                  ? `${children.ready} ready`
-                  : `${children.total} ${children.total === 1 ? 'child' : 'children'}`}
-            </span>
-          </>
+          <span className="sessiontag parenttag">
+            parent · {children.active > 0
+              ? `${children.active} active`
+              : children.ready > 0
+                ? `${children.ready} ready`
+                : `${children.total} ${children.total === 1 ? 'child' : 'children'}`}
+          </span>
         ) : null}
       </p>
 

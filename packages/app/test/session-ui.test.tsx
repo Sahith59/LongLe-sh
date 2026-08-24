@@ -59,7 +59,7 @@ describe('session controls visible on a phone-sized flow', () => {
     expect(html).toContain('in VS Code')
   })
 
-  it('renders distinctive vector identity tiles with accessible names and collision-free paint ids', () => {
+  it('renders clean vector marks with accessible names and no nested app-tile backgrounds', () => {
     const html = renderToStaticMarkup(<IdentityLegend />)
     expect(html).toContain('identityglyph')
     expect(html).toContain('aria-label="Claude"')
@@ -68,11 +68,35 @@ describe('session controls visible on a phone-sized flow', () => {
     expect(html).toContain('aria-label="in VS Code"')
     expect(html).toContain('aria-label="from your phone"')
     expect(html).not.toContain('lucide')
+    expect(html).not.toContain('<linearGradient')
+    expect(html).not.toMatch(/<rect[^>]+width="30"[^>]+rx=/)
+    expect(html).toContain('M23.15 2.587')
+    expect(html).toContain('M22.2819 9.8211')
+  })
 
-    const paintIds = [...html.matchAll(/<(?:linearGradient|radialGradient) id="([^"]+)"/g)]
-      .map((match) => match[1])
-    expect(paintIds.length).toBeGreaterThanOrEqual(8)
-    expect(new Set(paintIds).size).toBe(paintIds.length)
+  it('keeps provider, state, and origin in one non-orphaning metadata group', () => {
+    const html = renderToStaticMarkup(
+      <SessionCard
+        session={{
+          sessionId: 'grouped',
+          agent: 'claude',
+          live: false,
+          cwd: '/Users/me/project',
+          title: 'Grouped metadata',
+          origin: 'phone',
+          status: 'waiting',
+          blocks: [],
+          output: '',
+          activity: [],
+          resumable: true,
+        }}
+        pending={0}
+        onOpen={() => {}}
+      />,
+    )
+    expect(html).toContain('class="sessionidentity"')
+    expect(html).toContain('class="identitydivider"')
+    expect(html).not.toContain('class="dot"')
   })
 
   it('makes Manual, Auto, and Plan visible with a truthful sandbox boundary', () => {

@@ -1,174 +1,71 @@
-import { useId, type ComponentType } from 'react'
+import type { ComponentType } from 'react'
 import { AGENT_LABEL, ORIGIN_LABEL } from './format.js'
 
 type IconProps = { className?: string }
 
-function usePaintId(prefix: string) {
-  return `${prefix}-${useId().replace(/:/g, '')}`
-}
-
-/**
- * Provider and surface identities are deliberately drawn here as small SVG app
- * tiles. At session-card size a generic outline glyph loses its identity; these
- * retain each product's silhouette, native colour and material without loading
- * raster assets or another icon package.
+/*
+ * These are marks, not app tiles. Provider marks use the products' established
+ * silhouettes; surface marks use the same single-weight system language. None
+ * of them owns a background, border, shadow, or rounded-square container, so a
+ * session card never renders the "icon inside another icon" effect.
  */
 function ClaudeIcon({ className }: IconProps) {
-  const coral = usePaintId('claude-coral')
   return (
-    <svg className={className} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id={coral} x1="5" y1="3" x2="27" y2="30" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#df7c5d" />
-          <stop offset="1" stopColor="#c95e43" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="30" height="30" rx="7.4" fill={`url(#${coral})`} />
-      <path d="M3.5 3.2h25" stroke="#fff" strokeOpacity=".14" strokeLinecap="round" />
-      <g fill="none" stroke="#fff" strokeWidth="3.25" strokeLinecap="round">
-        <path d="M16 5.1v6.2" />
-        <path d="m22.2 6.8-3.1 5.2" />
-        <path d="m26.6 11.7-5.7 2.7" />
-        <path d="m27 18-6.1-1" />
-        <path d="m23.5 24.7-4.4-5" />
-        <path d="m16.8 27-.6-6.1" />
-        <path d="m9.9 25.6 3.2-5.4" />
-        <path d="m5.2 20.8 5.9-2.5" />
-        <path d="m5.1 13.9 6 1.2" />
-        <path d="m8.7 7.9 4.2 4.7" />
-      </g>
-      <circle cx="16" cy="16.1" r="3.45" fill="#fff" />
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"
+      />
     </svg>
   )
 }
 
 function CodexIcon({ className }: IconProps) {
-  const cloud = usePaintId('codex-cloud')
-  const porcelain = usePaintId('codex-porcelain')
   return (
-    <svg className={className} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id={porcelain} x1="4" y1="2" x2="27" y2="31" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#fff" />
-          <stop offset="1" stopColor="#e9eaf0" />
-        </linearGradient>
-        <linearGradient id={cloud} x1="8" y1="7" x2="24" y2="25" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#b9a6ff" />
-          <stop offset=".48" stopColor="#647dff" />
-          <stop offset="1" stopColor="#303df0" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="30" height="30" rx="7.4" fill={`url(#${porcelain})`} />
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path
-        d="M9.1 23.8c-3 0-5.3-2.25-5.3-5.04 0-2.35 1.55-4.3 3.78-4.88C7.45 9.98 10.42 7 14.18 7c2.81 0 5.2 1.66 6.28 4.03.45-.15.94-.23 1.45-.23 2.65 0 4.8 2.07 4.8 4.63 0 .42-.06.82-.17 1.2 1.08.7 1.78 1.9 1.78 3.27 0 2.16-1.82 3.9-4.07 3.9Z"
-        fill={`url(#${cloud})`}
+        fill="currentColor"
+        d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654 2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"
       />
-      <path d="M7.9 15.6c.35-3.42 2.8-6.4 6.4-7.06" fill="none" stroke="#fff" strokeOpacity=".32" strokeWidth="1.1" strokeLinecap="round" />
-      <path d="m11.35 14.45 2.55 2.45-2.55 2.45" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M16.5 19.35h4.45" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
     </svg>
   )
 }
 
 function VSCodeIcon({ className }: IconProps) {
-  const tile = usePaintId('vscode-tile')
-  const blue = usePaintId('vscode-blue')
   return (
-    <svg className={className} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id={tile} x1="3" y1="2" x2="29" y2="31" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#f7f8fa" />
-          <stop offset="1" stopColor="#dfe4e9" />
-        </linearGradient>
-        <linearGradient id={blue} x1="8" y1="8" x2="25" y2="25" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#28a8ea" />
-          <stop offset="1" stopColor="#0879c9" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="30" height="30" rx="7.4" fill={`url(#${tile})`} />
-      <path d="m7.35 10.2 5.2 4.25L22.7 5.3a1.7 1.7 0 0 1 1.76-.3l2.63 1.25c.56.27.91.83.91 1.45v16.6c0 .62-.35 1.18-.91 1.45L24.46 27a1.7 1.7 0 0 1-1.76-.3l-10.15-9.15-5.2 4.25a1.05 1.05 0 0 1-1.4-.06l-1.62-1.5a1 1 0 0 1 .01-1.49L7.72 16l-3.38-2.75a1 1 0 0 1-.01-1.49l1.62-1.5a1.05 1.05 0 0 1 1.4-.06Z" fill={`url(#${blue})`} />
-      <path d="M22.74 9.9 14.42 16l8.32 6.1Z" fill="#0875bd" />
-      <path d="m7.35 10.2 5.2 4.25 1.87 1.55-1.87 1.55-5.2 4.25" fill="none" stroke="#31b4f2" strokeWidth="1.05" strokeLinejoin="round" />
-      <path d="M23.2 5.08v21.84" stroke="#fff" strokeOpacity=".17" strokeWidth=".8" />
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M23.15 2.587 18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352Zm-5.146 14.861L10.826 12l7.178-5.448v10.896Z" />
     </svg>
   )
 }
 
 function TerminalIcon({ className }: IconProps) {
-  const shell = usePaintId('terminal-shell')
-  const chrome = usePaintId('terminal-chrome')
   return (
-    <svg className={className} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id={shell} x1="4" y1="2" x2="27" y2="31" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#343536" />
-          <stop offset=".38" stopColor="#1e1f20" />
-          <stop offset="1" stopColor="#0b0b0c" />
-        </linearGradient>
-        <linearGradient id={chrome} x1="10" y1="10" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#fff" />
-          <stop offset=".52" stopColor="#d4d5d7" />
-          <stop offset="1" stopColor="#888a8e" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="30" height="30" rx="7.4" fill={`url(#${shell})`} stroke="#56585c" strokeWidth=".55" />
-      <path d="M5.2 4.1c4-2.25 17.1-2.3 21.5.1" fill="none" stroke="#fff" strokeOpacity=".11" strokeLinecap="round" />
-      <path d="m9.15 11.1 5.1 4.9-5.1 4.9" fill="none" stroke={`url(#${chrome})`} strokeWidth="2.65" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M17.15 21h6.25" fill="none" stroke={`url(#${chrome})`} strokeWidth="2.65" strokeLinecap="round" />
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m3.75 6.6 5.15 5.4-5.15 5.4M11.7 17.4h8.55" fill="none" stroke="currentColor" strokeWidth="2.35" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
 
 function PhoneIcon({ className }: IconProps) {
-  const shell = usePaintId('phone-shell')
-  const screen = usePaintId('phone-screen')
   return (
-    <svg className={className} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id={shell} x1="4" y1="2" x2="27" y2="31" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#36383c" />
-          <stop offset="1" stopColor="#111215" />
-        </linearGradient>
-        <linearGradient id={screen} x1="12" y1="8" x2="20" y2="24" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#1c2326" />
-          <stop offset="1" stopColor="#090b0d" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="30" height="30" rx="7.4" fill={`url(#${shell})`} stroke="#55585f" strokeWidth=".55" />
-      <rect x="10.35" y="5.15" width="11.3" height="21.7" rx="3.2" fill="#aeb1b7" />
-      <rect x="11.55" y="6.35" width="8.9" height="19.3" rx="2.25" fill={`url(#${screen})`} />
-      <path d="M14.15 8h3.7" stroke="#8c9096" strokeWidth=".8" strokeLinecap="round" />
-      <circle cx="16" cy="22.9" r="1.2" fill="#8fc5a5" />
-      <path d="M13.45 17.7a3.6 3.6 0 0 1 5.1 0M14.65 19a1.92 1.92 0 0 1 2.7 0" fill="none" stroke="#a9d1ba" strokeWidth=".85" strokeLinecap="round" />
-      <circle cx="16" cy="20.25" r=".62" fill="#c7e4d2" />
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="6.7" y="1.6" width="10.6" height="20.8" rx="2.7" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M9.8 4.4h4.4M10.2 16.4a2.55 2.55 0 0 1 3.6 0m-2.25 2.05a.64.64 0 1 0 .9 0" fill="none" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
     </svg>
   )
 }
 
 function LaptopIcon({ className }: IconProps) {
-  const shell = usePaintId('laptop-shell')
   return (
-    <svg className={className} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id={shell} x1="3" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#303238" />
-          <stop offset="1" stopColor="#121316" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="30" height="30" rx="7.4" fill={`url(#${shell})`} stroke="#4b4e55" strokeWidth=".55" />
-      <rect x="7.3" y="7.7" width="17.4" height="12.8" rx="1.8" fill="#0a0b0d" stroke="#b0b3b9" strokeWidth="1.35" />
-      <path d="M5.7 22.3h20.6l-1.55 2H7.25Z" fill="#a7aab0" />
-      <path d="M14.05 22.35h3.9" stroke="#676a70" strokeWidth=".75" strokeLinecap="round" />
-      <circle cx="21.65" cy="10.85" r="1.25" fill="#9dcbb0" />
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="4.1" y="4" width="15.8" height="11.8" rx="1.7" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M2.5 18.5h19l-1.25 1.5H3.75Z" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinejoin="round" />
     </svg>
   )
 }
 
-const providerIcons: Record<string, ComponentType<IconProps>> = {
-  claude: ClaudeIcon,
-  codex: CodexIcon,
-}
-
+const providerIcons: Record<string, ComponentType<IconProps>> = { claude: ClaudeIcon, codex: CodexIcon }
 const surfaceIcons: Record<string, ComponentType<IconProps>> = {
   terminal: TerminalIcon,
   vscode: VSCodeIcon,
@@ -177,7 +74,6 @@ const surfaceIcons: Record<string, ComponentType<IconProps>> = {
   external: LaptopIcon,
 }
 
-/** Compact graphical identity plates. The label remains available to assistive tech and Help. */
 export function ProviderMark({ agent, decorative = false }: { agent: string; decorative?: boolean }) {
   const Icon = providerIcons[agent] ?? CodexIcon
   const label = AGENT_LABEL[agent] ?? agent

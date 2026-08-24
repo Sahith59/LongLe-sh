@@ -837,11 +837,15 @@ function HelpSheet({ connected, via, onClose }: { connected: boolean; via?: Link
         aria-labelledby="help-sheet-title"
         style={viewportHeight === null ? undefined : { maxHeight: `${Math.max(240, viewportHeight - 24)}px` }}
       >
-        <button className="sheetclose" type="button" onClick={onClose} aria-label="Close help">
-          <X size={20} aria-hidden="true" />
-        </button>
-        <p className="account-kicker">Pocket field guide</p>
-        <h2 id="help-sheet-title">Operate LongLeash</h2>
+        <header className="help-sheet-header">
+          <div>
+            <p className="account-kicker">Pocket field guide</p>
+            <h2 id="help-sheet-title">Operate LongLeash</h2>
+          </div>
+          <button className="help-sheet-close" type="button" onClick={onClose} aria-label="Close help">
+            <X size={20} aria-hidden="true" />
+          </button>
+        </header>
         <div className={`help-connection${connected ? ' connected' : ''}`}>
           <Led status={connected ? 'running' : 'ended'} />
           <span>{connected ? `Laptop linked ${via === 'relay' ? 'through relay' : 'directly'}` : 'Laptop reconnecting'}</span>
@@ -1420,63 +1424,45 @@ export function DetailScreen({
             </div>
           </div>
           <p className="meta">
-            <Led status={session.status} />
-            <span className={`state ${session.status}`}>
-              {!session.live && session.status === 'waiting'
-                ? 'ready to reopen'
-                : (STATUS_LABEL[session.status] ?? session.status)}
+            <span className="sessionidentity detailidentity">
+              <Led status={session.status} />
+              <span className={`state ${session.status}`}>
+                {!session.live && session.status === 'waiting'
+                  ? 'ready to reopen'
+                  : (STATUS_LABEL[session.status] ?? session.status)}
+              </span>
+              <span className="identitydivider" aria-hidden="true" />
+              <ProviderMark agent={session.agent} />
+              <SurfaceMark origin={session.origin} />
             </span>
-            <span className="dot" aria-hidden="true">·</span>
-            <ProviderMark agent={session.agent} />
-            <span className="dot" aria-hidden="true">·</span>
-            <SurfaceMark origin={session.origin} />
             {session.settings?.mode ? (
-              <>
-                <span className="dot" aria-hidden="true">·</span>
-                <span className="sessiontag modetag">{session.settings.mode}</span>
-              </>
+              <span className="sessiontag modetag">{session.settings.mode}</span>
             ) : null}
             {session.permissionMode ? (
-              <>
-                <span className="dot" aria-hidden="true">·</span>
-                <span title="The permission mode this session is running in">
-                  {MODE_LABEL[session.permissionMode] ?? session.permissionMode}
-                </span>
-              </>
+              <span title="The permission mode this session is running in">
+                {MODE_LABEL[session.permissionMode] ?? session.permissionMode}
+              </span>
             ) : null}
             {session.settings?.model ? (
-              <>
-                <span className="dot" aria-hidden="true">·</span>
-                <span className="sessiontag settingtag">{session.settings.model}</span>
-              </>
+              <span className="sessiontag settingtag">{session.settings.model}</span>
             ) : null}
             {session.settings?.effort ? (
-              <>
-                <span className="dot" aria-hidden="true">·</span>
-                <span>{session.settings.effort} effort</span>
-              </>
+              <span>{session.settings.effort} effort</span>
             ) : null}
             {session.settings?.thinking ? (
-              <>
-                <span className="dot" aria-hidden="true">·</span>
-                <span>
-                  {session.settings.thinking.mode === 'fixed'
-                    ? `${session.settings.thinking.budgetTokens?.toLocaleString()} thinking tokens`
-                    : session.settings.thinking.mode === 'disabled'
-                      ? 'thinking off'
-                      : 'adaptive thinking'}
-                </span>
-              </>
+              <span>
+                {session.settings.thinking.mode === 'fixed'
+                  ? `${session.settings.thinking.budgetTokens?.toLocaleString()} thinking tokens`
+                  : session.settings.thinking.mode === 'disabled'
+                    ? 'thinking off'
+                    : 'adaptive thinking'}
+              </span>
             ) : null}
             {session.workspace?.mode === 'isolated' ? (
-              <>
-                <span className="dot" aria-hidden="true">·</span>
-                <span className="sessiontag isolatedtag" title={session.workspace.branch}>
-                  isolated branch
-                </span>
-              </>
+              <span className="sessiontag isolatedtag" title={session.workspace.branch}>
+                isolated branch
+              </span>
             ) : null}
-            <span className="dot" aria-hidden="true">·</span>
             <PathChip text={session.cwd} kind="folder" max={30} expandable />
           </p>
           {externallyDriven && live ? (

@@ -63,9 +63,10 @@ describe('delegation mobile layout contract', () => {
     expect(css).toMatch(/\.help-sheet[\s\S]*?\.help-topic/)
   })
 
-  it('keeps provider and surface artwork inside a fixed, non-shifting mobile footprint', () => {
-    expect(css).toMatch(/\.identitymark\s*{[\s\S]*?width: 31px;[\s\S]*?height: 31px;[\s\S]*?overflow: hidden;/)
-    expect(css).toMatch(/\.identityglyph\s*{[\s\S]*?width: 25px;[\s\S]*?height: 25px;/)
+  it('keeps standalone provider and surface marks crisp without a double bezel', () => {
+    expect(css).toMatch(/\.identitymark\s*{[\s\S]*?width: 24px;[\s\S]*?height: 24px;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/)
+    expect(css).toMatch(/\.identityglyph\s*{[\s\S]*?width: 22px;[\s\S]*?height: 22px;/)
+    expect(css).toMatch(/\.sessionidentity\s*{[\s\S]*?display: inline-flex;[\s\S]*?white-space: nowrap;/)
   })
 
   it('keeps the Help sheet modal, keyboard-contained, and focus-restoring', () => {
@@ -73,6 +74,10 @@ describe('delegation mobile layout contract', () => {
     expect(app).toMatch(/function HelpSheet[\s\S]*?event\.key === 'Escape'[\s\S]*?onClose\(\)/)
     expect(app).toMatch(/function HelpSheet[\s\S]*?event\.key !== 'Tab'[\s\S]*?last\.focus\(\)[\s\S]*?first\.focus\(\)/)
     expect(app).toMatch(/function HelpSheet[\s\S]*?previouslyFocused\?\.focus\(\)/)
+    expect(app).toMatch(/function HelpSheet[\s\S]*?className="help-sheet-header"[\s\S]*?className="help-sheet-close"/)
+    expect(css).toMatch(/\.help-sheet-header\s*{[\s\S]*?position: sticky;[\s\S]*?display: flex;/)
+    expect(css).toMatch(/\.help-sheet-close\s*{[\s\S]*?width: 44px;[\s\S]*?height: 44px;[\s\S]*?flex: none;/)
+    expect(css).toMatch(/\.account-sheet-scrim\s*{[\s\S]*?env\(safe-area-inset-top\)/)
     expect(app).toContain('href="/docs/getting-started"')
   })
 })
