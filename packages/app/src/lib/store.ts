@@ -57,6 +57,8 @@ export interface SessionView {
   gate?: 'ask' | 'auto'
   /** Current process owner; origin remains historical after a handoff. */
   controller?: 'longleash' | 'external'
+  /** Current process surface; origin remains where the conversation first began. */
+  surface?: string
   /** Whether LongLeash can operate this process or is safely observing native activity only. */
   control?: 'full' | 'observe'
   /** Present when this session was deliberately created from another LongLeash session. */
@@ -109,6 +111,7 @@ export interface SessionSeed {
   resumeId?: string
   gate?: 'ask' | 'auto'
   controller?: 'longleash' | 'external'
+  surface?: string
   control?: 'full' | 'observe'
   relationship?: SessionRelationship
   settings?: SessionSettings
@@ -204,6 +207,7 @@ export function createStore(options: StoreOptions = {}) {
           title?: string
           origin?: string
           controller?: 'longleash' | 'external'
+          surface?: string
           control?: 'full' | 'observe'
           resumeId?: string
           relationship?: SessionRelationship
@@ -216,6 +220,8 @@ export function createStore(options: StoreOptions = {}) {
         session.cwd = payload.cwd
         session.title = payload.title ?? ''
         session.origin = payload.origin ?? 'unknown'
+        const surface = payload.surface ?? payload.origin
+        if (surface !== undefined) session.surface = surface
         if (payload.controller !== undefined) session.controller = payload.controller
         if (payload.control !== undefined) session.control = payload.control
         if (payload.resumeId) session.resumeId = payload.resumeId
@@ -245,6 +251,23 @@ export function createStore(options: StoreOptions = {}) {
         }
         session.blocks = trimBlocks(session.blocks, maxOutput)
         if (kind === 'text') session.output = (session.output + payload.text).slice(-maxOutput)
+        break
+      }
+      case 'session.transcript.reset': {
+        const payload = event.payload as {
+          blocks?: { kind: BlockKind; text: string }[]
+        }
+        session.blocks = trimBlocks((payload.blocks ?? []).map((block) => ({
+          ...block,
+          firstSeq: event.seq,
+          lastSeq: event.seq,
+        })), maxOutput)
+        session.output = session.blocks
+          .filter((block) => block.kind === 'text')
+          .map((block) => block.text)
+          .join('')
+          .slice(-maxOutput)
+        session.activity = []
         break
       }
       case 'activity.tool': {
@@ -287,6 +310,7 @@ export function createStore(options: StoreOptions = {}) {
           permissionMode?: string
           gate?: 'ask' | 'auto'
           controller?: 'longleash' | 'external'
+          surface?: string
           control?: 'full' | 'observe'
           live?: boolean
           resumable?: boolean
@@ -308,6 +332,7 @@ export function createStore(options: StoreOptions = {}) {
         if (payload.permissionMode !== undefined) session.permissionMode = payload.permissionMode
         if (payload.gate !== undefined) session.gate = payload.gate
         if (payload.controller !== undefined) session.controller = payload.controller
+        if (payload.surface !== undefined) session.surface = payload.surface
         if (payload.control !== undefined) session.control = payload.control
         if (payload.workspaceConflict !== undefined) session.workspaceConflict = payload.workspaceConflict
         else delete session.workspaceConflict
@@ -365,6 +390,7 @@ export function createStore(options: StoreOptions = {}) {
       session.controller = seed.controller ?? (
         seed.live && (seed.origin === 'terminal' || seed.origin === 'vscode') ? 'external' : 'longleash'
       )
+      session.surface = seed.surface ?? seed.origin
       session.control = seed.control ?? 'full'
       if (seed.relationship) session.relationship = seed.relationship
       if (seed.settings) session.settings = seed.settings

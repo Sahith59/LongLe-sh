@@ -613,6 +613,12 @@ export class LongLeashServer {
 
   /** Tell the client what it may do, so it never has to guess a project path. */
   private sendHello(connection: Connection): void {
+    // A phone-started conversation keeps one stable card when its native resume id moves to
+    // Terminal/VS Code. The external live owner overrides the dormant managed row in-place.
+    const bySession = new Map(
+      [...(this.sessions?.listSessions() ?? []), ...(this.external?.listSessions() ?? [])]
+        .map((session) => [session.sessionId, session] as const),
+    )
     this.sendTo(connection, {
       v: PROTOCOL_VERSION,
       type: 'hello',
@@ -620,9 +626,10 @@ export class LongLeashServer {
       roots: this.sessions?.listAllowedRoots() ?? [],
       // Everything the daemon knows about, so a reloaded phone rebuilds instead of showing
       // nothing — including sessions the human started in a terminal.
-      sessions: [...(this.sessions?.listSessions() ?? []), ...(this.external?.listSessions() ?? [])]
+      sessions: [...bySession.values()]
         .map((session) => ({
           ...session,
+          title: this.eventLog.aliasFor(session.sessionId) ?? session.title,
           lastActivityAt: this.eventLog.latestTimestamp(session.sessionId) || session.startedAt,
         }))
         .sort((left, right) => left.startedAt - right.startedAt || left.sessionId.localeCompare(right.sessionId)),
@@ -1029,9 +1036,70 @@ export class LongLeashServer {
       return
     }
 
+    if (message.type === 'renameSession') {
+      const title = message.title.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+      const externalRenamed = this.external?.renameSession(message.sessionId, title) === true
+      const managedRenamed = this.sessions.renameSession(message.sessionId, title, !externalRenamed)
+      const renamed = externalRenamed || managedRenamed
+      this.log(`rename ${message.sessionId} -> ${renamed ? 'renamed' : 'unknown'}`)
+      this.sendTo(connection, {
+        v: PROTOCOL_VERSION,
+        type: 'ack',
+        of: 'renameSession',
+        sessionId: message.sessionId,
+        outcome: renamed ? 'renamed' : 'unknown-session',
+      })
+      if (!renamed) {
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'error',
+          code: 'unknown-session',
+          message: 'This conversation is no longer known to the laptop, so its name was not changed.',
+        })
+      }
+      return
+    }
+
+    if (message.type === 'reclaimSession') {
+      const sessionManager = this.sessions
+      void (async () => {
+        const outcome = await this.external?.reclaimToPhone(message.sessionId, connection.deviceId)
+          ?? 'not-found'
+        let reopened = false
+        if (outcome === 'reclaimed') {
+          reopened = await sessionManager.resumeSession(message.sessionId, connection.deviceId)
+        }
+        const success = outcome === 'reclaimed' && reopened
+        this.log(`reclaim ${message.sessionId} -> ${success ? 'phone-ready' : outcome}`)
+        this.sendTo(connection, {
+          v: PROTOCOL_VERSION,
+          type: 'ack',
+          of: 'reclaimSession',
+          sessionId: message.sessionId,
+          outcome: success ? 'phone-ready' : outcome,
+        })
+        if (!success) {
+          const detail = outcome === 'observe-only'
+            ? 'This VS Code conversation is visible, but its lifecycle hook has not provided a verified process handle. Stop it in VS Code; LongLeash will make the same conversation reopenable when SessionEnd arrives.'
+            : outcome === 'unverified'
+              ? 'LongLeash could not verify that the Terminal or VS Code writer exited, so it kept control there. Nothing was started on the phone.'
+              : outcome === 'reclaimed'
+                ? 'The native writer ended, but this provider did not expose a recoverable conversation point. Nothing new was started.'
+                : 'This native session is no longer connected to the laptop daemon.'
+          this.sendTo(connection, {
+            v: PROTOCOL_VERSION,
+            type: 'error',
+            code: 'cannot-reclaim',
+            message: detail,
+          })
+        }
+      })()
+      return
+    }
+
     if (message.type === 'setGate') {
       const applied =
-        this.external !== null && message.sessionId.startsWith('ext_')
+        this.external !== null && this.external.hasLiveSession(message.sessionId)
           ? this.external.setGate(message.sessionId, message.gate)
           : false
       this.log(`gate ${message.sessionId} -> ${message.gate}${applied ? '' : ' (unknown session)'}`)
@@ -1193,7 +1261,7 @@ export class LongLeashServer {
        * therefore impossible on any reopened session — permanently, with `refused` in the log
        * one second after `reopened`, which is exactly how this was finally caught.
        */
-      if (message.sessionId.startsWith('ext_') && this.external !== null) {
+      if (this.external?.hasLiveSession(message.sessionId) === true) {
         const sessions = this.sessions
         void this.external.stop(message.sessionId, connection.deviceId).then((stopped) => {
           if (stopped) {

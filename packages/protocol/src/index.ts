@@ -141,6 +141,8 @@ const sessionStartedPayload = z
     origin: SessionOrigin.optional(),
     /** Who owns the process now; unlike origin, this changes after a safe handoff. */
     controller: z.enum(['longleash', 'external']).optional(),
+    /** Where the process is controlled now; origin remains its historical birthplace. */
+    surface: SessionOrigin.optional(),
     /** Observation-only means the native surface is visible but has not exposed process control. */
     control: z.enum(['full', 'observe']).optional(),
     /**
@@ -179,6 +181,8 @@ const sessionStatusPayload = z
     /** LongLeash's own gate for this session: whether it should page the phone at all. */
     gate: SessionGate.optional(),
     controller: z.enum(['longleash', 'external']).optional(),
+    /** Current UI/process surface after a handoff. */
+    surface: SessionOrigin.optional(),
     /** Observation-only sessions are never presented as remotely stoppable or writable. */
     control: z.enum(['full', 'observe']).optional(),
     /** Current overrides. An empty object explicitly means provider defaults. */
@@ -199,6 +203,21 @@ const streamDeltaPayload = z
   .object({
     kind: z.enum(['text', 'tool', 'thinking', 'user']),
     text: z.string(),
+  })
+  .passthrough()
+
+/**
+ * Replace the rendered transcript before replaying a fresh bounded snapshot.
+ * Used when LongLeash begins observing a provider conversation that predates the daemon;
+ * the durable provider transcript is authoritative, while an older LongLeash tail may be stale.
+ */
+const transcriptResetPayload = z
+  .object({
+    reason: z.enum(['provider-snapshot', 'recovery']),
+    blocks: z.array(z.object({
+      kind: z.enum(['text', 'tool', 'thinking', 'user']),
+      text: z.string().max(120_000),
+    }).strict()).max(80).optional(),
   })
   .passthrough()
 
@@ -295,6 +314,7 @@ function event<T extends string, P extends z.ZodTypeAny>(type: T, payload: P) {
 export const SessionEventSchema = z.discriminatedUnion('type', [
   event('session.started', sessionStartedPayload),
   event('session.status', sessionStatusPayload),
+  event('session.transcript.reset', transcriptResetPayload),
   event('stream.delta', streamDeltaPayload),
   event('approval.requested', approvalRequestedPayload),
   event('approval.decided', approvalDecidedPayload),
@@ -448,6 +468,28 @@ const takeOverMessage = z
     type: z.literal('takeOver'),
     sessionId: z.string().min(1),
     text: z.string().min(1),
+  })
+  .passthrough()
+
+/** End a verified Terminal/IDE writer and park the same conversation on the phone. */
+const reclaimSessionMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('reclaimSession'),
+    sessionId: z.string().min(1),
+  })
+  .passthrough()
+
+/** A user-owned label. It is local to their laptop and survives reconnects/restarts. */
+const renameSessionMessage = z
+  .object({
+    ...clientBase,
+    type: z.literal('renameSession'),
+    sessionId: z.string().min(1),
+    title: z.string().trim().min(1).max(80).refine(
+      (value) => value.replace(/[\u0000-\u001f\u007f]/g, '').trim().length > 0,
+      'A session name needs visible text.',
+    ),
   })
   .passthrough()
 
@@ -648,6 +690,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   pushUnsubscribeMessage,
   pushTestMessage,
   takeOverMessage,
+  reclaimSessionMessage,
+  renameSessionMessage,
   setGateMessage,
   previewDelegationMessage,
   startDelegationMessage,

@@ -51,6 +51,20 @@ describe('session list', () => {
     expect(session?.status).toBe('running')
   })
 
+  it('replaces stale observed transcript blocks with a provider snapshot boundary', () => {
+    const store = createStore()
+    store.apply(started('ses_1'))
+    store.apply(delta('ses_1', 2, 'stale answer'))
+    store.apply(ev({
+      v: 1, seq: 3, sessionId: 'ses_1', ts: 3,
+      type: 'session.transcript.reset', payload: {
+        reason: 'provider-snapshot', blocks: [{ kind: 'user', text: 'current question' }],
+      },
+    }))
+    expect(stateOf(store).sessions.ses_1?.blocks.map((block) => block.text)).toEqual(['current question'])
+    expect(stateOf(store).sessions.ses_1?.output).toBe('')
+  })
+
   it('falls back to a neutral origin rather than claiming a session came from the phone', () => {
     const store = createStore()
     store.apply(started('ses_1', 1, null))

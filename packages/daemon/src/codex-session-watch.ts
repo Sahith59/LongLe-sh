@@ -1,7 +1,12 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative, resolve } from 'node:path'
-import { titleFrom, type Surface } from './external.js'
+import { titleFrom, transcriptDeltas, type Surface } from './external.js'
+
+export interface ObservedTranscriptBlock {
+  kind: 'text' | 'tool' | 'thinking' | 'user'
+  text: string
+}
 
 export interface ObservedCodexSession {
   sessionId: string
@@ -9,6 +14,9 @@ export interface ObservedCodexSession {
   transcriptPath: string
   surface: Surface
   title?: string
+  activityAt: number
+  /** A bounded, provider-authoritative view used to replace stale pre-observer history. */
+  snapshot: ObservedTranscriptBlock[]
 }
 
 interface WatchOptions {
@@ -49,8 +57,11 @@ export function inspectCodexTranscript(
   maxTailBytes = MAX_INITIAL_TAIL,
 ): ObservedCodexSession | null {
   let size: number
+  let activityAt: number
   try {
-    size = statSync(path).size
+    const stats = statSync(path)
+    size = stats.size
+    activityAt = stats.mtimeMs
   } catch {
     return null
   }
@@ -79,6 +90,7 @@ export function inspectCodexTranscript(
     const lines = tailText.split('\n')
     if (tailOffset > 0) lines.shift() // first tail line may begin in the middle of JSON
     let title: string | undefined
+    const snapshot: ObservedTranscriptBlock[] = []
     for (let index = lines.length - 1; index >= 0; index -= 1) {
       const line = lines[index]
       if (!line?.includes('"role":"user"')) continue
@@ -100,11 +112,38 @@ export function inspectCodexTranscript(
         // A partial/corrupt record is ignored; the next complete write repairs discovery.
       }
     }
+    // Keep only recent structured conversation blocks. Huge compaction records are skipped:
+    // parsing one can multiply memory use, and newer ordinary response_item records contain
+    // the human-visible tail we need. The cap is deliberately below the phone store's cap.
+    for (const line of lines) {
+      if (line.length === 0 || line.length > 1_000_000) continue
+      try {
+        for (const delta of transcriptDeltas(JSON.parse(line))) {
+          if (delta.type !== 'stream.delta' || delta.payload.text.trim() === '') continue
+          snapshot.push({ kind: delta.payload.kind, text: delta.payload.text })
+        }
+      } catch {
+        // Partial/corrupt records are retried after the next complete provider write.
+      }
+    }
+    let retained = snapshot.slice(-80)
+    let characters = retained.reduce((sum, block) => sum + block.text.length, 0)
+    while (retained.length > 1 && characters > 120_000) {
+      characters -= retained.shift()?.text.length ?? 0
+    }
     // Codex app-server periodically compacts its entire context into one very large record.
     // Parsing that 20–60 MB JSON object would multiply memory use. Extract only the final user
     // text string from the bounded tail and let the shared human-text cleaner remove IDE chrome.
     if (title === undefined) title = titleFrom(latestUserText(tailText) ?? '') ?? undefined
-    return { sessionId, cwd, transcriptPath: path, surface, ...(title === undefined ? {} : { title }) }
+    return {
+      sessionId,
+      cwd,
+      transcriptPath: path,
+      surface,
+      activityAt,
+      snapshot: retained,
+      ...(title === undefined ? {} : { title }),
+    }
   } catch {
     return null
   }

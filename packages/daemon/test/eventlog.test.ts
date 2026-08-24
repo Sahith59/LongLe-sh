@@ -168,6 +168,18 @@ describe('EventLog: durability across restart', () => {
     second.close()
   })
 
+  it('persists a user-owned session alias across daemon restarts', () => {
+    const dbPath = join(dir, 'events.db')
+    const first = new EventLog(dbPath)
+    first.setAlias('ses_a', 'Release audit')
+    first.close()
+
+    const second = new EventLog(dbPath)
+    expect(second.aliasFor('ses_a')).toBe('Release audit')
+    expect(second.aliasFor('ses_missing')).toBeUndefined()
+    second.close()
+  })
+
   it('rejects tampered rows on replay instead of returning garbage', () => {
     const dbPath = join(dir, 'events.db')
     const log = new EventLog(dbPath)

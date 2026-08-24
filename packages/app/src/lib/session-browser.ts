@@ -64,10 +64,10 @@ export function browseSessions(
     if (options.scope === 'needs' && pending === 0) return []
     if (options.scope === 'history' && isActive(session)) return []
     if (options.agent !== 'all' && session.agent !== options.agent) return []
-    if (options.surface !== 'all' && session.origin !== options.surface) return []
+    if (options.surface !== 'all' && (session.surface ?? session.origin) !== options.surface) return []
 
     if (terms.length === 0) return [{ session }]
-    const identity = normalized(`${session.title} ${session.cwd} ${session.agent} ${session.origin}`)
+    const identity = normalized(`${session.title} ${session.cwd} ${session.agent} ${session.surface ?? session.origin}`)
     const message = messageMatch(session, terms)
     const transcript = normalized(`${session.output} ${session.blocks.map((block) => block.text).join(' ')}`)
     if (!terms.every((term) => identity.includes(term) || transcript.includes(term))) return []

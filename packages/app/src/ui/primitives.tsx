@@ -102,6 +102,7 @@ export function Key({
   disabled,
   label,
   pressed,
+  type = 'button',
 }: {
   children: ReactNode
   onClick?: () => void
@@ -109,10 +110,11 @@ export function Key({
   disabled?: boolean
   label?: string
   pressed?: boolean
+  type?: 'button' | 'submit'
 }) {
   return (
     <motion.button
-      type="button"
+      type={type}
       className={`key ${className}`}
       onClick={onClick}
       disabled={disabled}

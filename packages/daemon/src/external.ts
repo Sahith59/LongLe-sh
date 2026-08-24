@@ -117,6 +117,8 @@ export interface ExternalSessionsOptions {
     startedAt: number
   }) => void
   workspace?: WorkspaceLeaseManager
+  /** Reuse the original LongLeash card when a phone conversation moves to a native surface. */
+  resolveSessionId?: (agentSessionId: string) => string | undefined
 }
 
 interface ExternalSession {
@@ -147,6 +149,7 @@ interface ExternalSession {
   suspended: boolean
   /** Discovered from Codex's durable VS Code transcript without a lifecycle/PID hook. */
   observedOnly: boolean
+  observedFingerprint?: string
 }
 
 /** Everything about a permission question beyond the tool itself. */
@@ -235,6 +238,7 @@ export class ExternalSessions {
   private readonly stopTimeoutMs: number
   private readonly onEnded: ExternalSessionsOptions['onEnded']
   private readonly workspace: WorkspaceLeaseManager | undefined
+  private readonly resolveSessionId: ((agentSessionId: string) => string | undefined) | undefined
   private readonly unsubscribeWorkspace: (() => void) | undefined
 
   constructor(opts: ExternalSessionsOptions) {
@@ -257,6 +261,7 @@ export class ExternalSessions {
     this.waitForExit = opts.waitForExit ?? ((pid, timeoutMs) => this.pollForExit(pid, timeoutMs))
     this.onEnded = opts.onEnded
     this.workspace = opts.workspace
+    this.resolveSessionId = opts.resolveSessionId
     this.unsubscribeWorkspace = this.workspace?.subscribe(() => this.reconcileWorkspace())
     // A crashed daemon takes its hook waiters with it; those questions were
     // answered at the terminal long ago. Never resurrect them as a phantom inbox.
@@ -293,6 +298,43 @@ export class ExternalSessions {
     return [...this.sessions.values()].some((session) => session.sessionId === sessionId)
   }
 
+  renameSession(sessionId: string, title: string): boolean {
+    const entry = [...this.sessions.entries()].find(([, session]) => session.sessionId === sessionId)
+    if (entry === undefined) return false
+    const [agentSessionId, session] = entry
+    session.title = title
+    session.named = true
+    this.eventLog.setAlias(sessionId, title)
+    this.persist(agentSessionId, session)
+    this.emit(sessionId, {
+      type: 'session.status',
+      payload: {
+        status: session.status,
+        live: true,
+        title,
+        controller: 'external',
+        control: session.observedOnly ? 'observe' : 'full',
+        surface: session.surface,
+      },
+    })
+    return true
+  }
+
+  /**
+   * End a native writer so the same conversation can be parked on the phone.
+   * Observation-only sessions have no authenticated PID and are never remotely terminated.
+   */
+  async reclaimToPhone(
+    externalSessionId: string,
+    decidedBy: string,
+  ): Promise<'reclaimed' | 'not-found' | 'observe-only' | 'unverified'> {
+    const session = [...this.sessions.values()].find((item) => item.sessionId === externalSessionId)
+    if (session === undefined) return 'not-found'
+    if (session.observedOnly) return 'observe-only'
+    if (session.pid === null) return 'unverified'
+    return await this.stop(externalSessionId, decidedBy) ? 'reclaimed' : 'unverified'
+  }
+
   /**
    * Take back the sessions a previous run was watching.
    *
@@ -321,7 +363,7 @@ export class ExternalSessions {
         transcriptPath: row.transcriptPath,
         status: 'running',
         startedAt: row.startedAt,
-        title: row.title,
+        title: this.eventLog.aliasFor(row.sessionId) ?? row.title,
         pid: row.pid,
         named: true,
         permissionMode: null,
@@ -338,7 +380,11 @@ export class ExternalSessions {
       session.timer = setInterval(() => this.drain(session), this.pollMs)
       session.timer.unref?.()
       this.emit(session.sessionId, {
-        type: 'session.status', payload: { status: 'running', live: true },
+        type: 'session.status',
+        payload: {
+          status: 'running', live: true, controller: 'external', control: 'full',
+          surface: session.surface,
+        },
       })
     }
   }
@@ -367,12 +413,26 @@ export class ExternalSessions {
     transcriptPath: string
     surface: Surface
     title?: string
+    activityAt: number
+    snapshot: { kind: 'text' | 'tool' | 'thinking' | 'user'; text: string }[]
   }): void {
     const session = this.ensure(info.sessionId, info.cwd, info.transcriptPath, 'codex', info.surface, true)
-    if (info.title !== undefined && info.title !== session.title) {
+    const alias = this.eventLog.aliasFor(session.sessionId)
+    const nextTitle = alias ?? info.title
+    if (nextTitle !== undefined && nextTitle !== session.title) {
       session.named = true
-      session.title = info.title
+      session.title = nextTitle
       this.persist(info.sessionId, session)
+    }
+    // Replace stale LongLeash history once, then let the ordinary bounded tailer append only
+    // new JSONL records. Persisting the whole snapshot on every provider write would make a
+    // long-running conversation grow the event database quadratically.
+    if (session.observedOnly && session.observedFingerprint === undefined) {
+      session.observedFingerprint = JSON.stringify(info.snapshot)
+      this.emit(session.sessionId, {
+        type: 'session.transcript.reset',
+        payload: { reason: 'provider-snapshot', blocks: info.snapshot },
+      })
     }
     // Every observed write is real activity even when the prompt-derived title did not change.
     // Emitting a bounded status beat keeps resumed sessions ordered by current activity rather
@@ -383,11 +443,19 @@ export class ExternalSessions {
         status: session.status,
         live: true,
         controller: 'external',
-        control: 'observe',
-        ...(info.title === undefined ? {} : { title: info.title }),
+        control: session.observedOnly ? 'observe' : 'full',
+        ...(nextTitle === undefined ? {} : { title: nextTitle }),
       },
     })
-    this.claimWorkspace(session)
+    if (session.observedOnly) {
+      // Observation is read-only. Claiming the checkout made a viewer look like a second writer
+      // and produced the alarming conflict card in the field even though it could not write.
+      if (session.workspaceConflict !== undefined) delete session.workspaceConflict
+    } else {
+      // A lifecycle hook already promoted this conversation. That full-control evidence wins
+      // over the watcher, and the real native writer keeps its lease and phone controls.
+      this.claimWorkspace(session)
+    }
   }
 
   /**
@@ -947,17 +1015,29 @@ export class ExternalSessions {
         this.persist(claudeSessionId, existing)
         this.emit(existing.sessionId, {
           type: 'session.status',
-          payload: { status: existing.status, live: true, controller: 'external', control: 'full' },
+          payload: {
+            status: existing.status,
+            live: true,
+            controller: 'external',
+            control: 'full',
+            surface: existing.surface,
+          },
         })
+        if (existing.timer === null) {
+          existing.timer = setInterval(() => this.drain(existing), this.pollMs)
+          existing.timer.unref?.()
+          this.drain(existing)
+        }
       }
       return existing
     }
 
-    const sessionId = `ext_${claudeSessionId}`
+    const sessionId = this.resolveSessionId?.(claudeSessionId) ?? `ext_${claudeSessionId}`
     // A daemon restart mid-conversation must adopt, not duplicate: history in the
     // log means the phone already has the story up to where the tail resumes.
     const replay = this.eventLog.replay(sessionId, 0)
     const hasHistory = replay.gap === false ? replay.events.length > 0 : true
+    const alias = this.eventLog.aliasFor(sessionId)
     const session: ExternalSession = {
       sessionId,
       agent,
@@ -966,9 +1046,9 @@ export class ExternalSessions {
       transcriptPath,
       status: 'running',
       startedAt: this.now(),
-      title: `${basename(cwd)} — ${surface === 'vscode' ? 'VS Code' : AGENT_LABEL[agent]}`,
+      title: alias ?? `${basename(cwd)} — ${surface === 'vscode' ? 'VS Code' : AGENT_LABEL[agent]}`,
       pid: null,
-      named: false,
+      named: alias !== undefined,
       permissionMode: null,
       gate: 'ask',
       offset: (tailOnly || hasHistory) && existsSync(transcriptPath) ? statSync(transcriptPath).size : 0,
@@ -990,6 +1070,7 @@ export class ExternalSessions {
           origin: surface,
           controller: 'external',
           control: tailOnly ? 'observe' : 'full',
+          surface,
           resumeId: claudeSessionId,
         },
       })
@@ -1001,9 +1082,12 @@ export class ExternalSessions {
         live: true,
         controller: 'external',
         control: tailOnly ? 'observe' : 'full',
+        surface,
       },
     })
 
+    // Observation starts at the current EOF. Its one-time snapshot supplies the visible past;
+    // the shared tailer then appends only records written after discovery.
     session.timer = setInterval(() => this.drain(session), this.pollMs)
     session.timer.unref?.()
     this.drain(session)
@@ -1012,7 +1096,9 @@ export class ExternalSessions {
 
   /** Retry claims after startup reconciliation released dead managed-session ownership. */
   reconcileWorkspace(): void {
-    for (const session of this.sessions.values()) this.claimWorkspace(session)
+    for (const session of this.sessions.values()) {
+      if (!session.observedOnly) this.claimWorkspace(session)
+    }
   }
 
   private claimWorkspace(session: ExternalSession): void {

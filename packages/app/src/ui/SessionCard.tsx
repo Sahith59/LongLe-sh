@@ -5,6 +5,7 @@ import { Led, SPRING } from './primitives.js'
 import { STATUS_LABEL } from './format.js'
 import { PathChip } from './PathChip.js'
 import { ProviderMark, SurfaceMark } from './SessionMarks.js'
+import { activityTime } from '../lib/activity-time.js'
 
 /**
  * A machined key the width of the screen. The card itself is a div so the
@@ -39,6 +40,7 @@ export function SessionCard({
     ? 'ready to reopen'
     : (STATUS_LABEL[session.status] ?? session.status)
   const still = useReducedMotion()
+  const activity = activityTime(session.lastActivityAt ?? session.startedAt)
 
   return (
     <motion.article
@@ -68,9 +70,14 @@ export function SessionCard({
             {status}
           </span>
           <span className="identitydivider" aria-hidden="true" />
-          <SurfaceMark origin={session.origin} />
+          <SurfaceMark origin={session.surface ?? session.origin} />
         </span>
         <PathChip text={session.cwd} kind="folder" max={26} expandable />
+        {activity ? (
+          <time className="sessiontime" dateTime={activity.dateTime} title={activity.title}>
+            {activity.label}
+          </time>
+        ) : null}
         {session.settings?.mode ? (
           <span className="sessiontag modetag">{session.settings.mode}</span>
         ) : null}
