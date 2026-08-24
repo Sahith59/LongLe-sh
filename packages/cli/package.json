@@ -1,6 +1,6 @@
 {
   "name": "@longleash/cli",
-  "version": "0.1.0-rc.9",
+  "version": "0.1.0-rc.10",
   "description": "Securely control Claude Code and Codex sessions on your laptop from your phone.",
   "license": "MIT",
   "type": "module",
