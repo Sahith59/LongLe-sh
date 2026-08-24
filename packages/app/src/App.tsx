@@ -942,7 +942,14 @@ export function HelpSheet({ connected, via, onClose }: { connected: boolean; via
           </details>
         </div>
 
-        <a className="help-docs" href="/docs/getting-started">Open the full guide</a>
+        <a
+          className="help-docs"
+          href="https://longleash.dev/docs/getting-started"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open the full guide
+        </a>
       </section>
     </div>,
     document.body,

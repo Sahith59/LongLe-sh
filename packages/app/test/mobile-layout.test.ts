@@ -80,6 +80,9 @@ describe('delegation mobile layout contract', () => {
     expect(css).toMatch(/\.help-sheet-scroll\s*{[\s\S]*?overflow-y: auto;/)
     expect(css).toMatch(/\.help-sheet-close\s*{[\s\S]*?width: 44px;[\s\S]*?height: 44px;[\s\S]*?flex: none;/)
     expect(css).toMatch(/\.account-sheet-scrim\s*{[\s\S]*?env\(safe-area-inset-top\)/)
-    expect(app).toContain('href="/docs/getting-started"')
+    expect(app).toMatch(
+      /href="https:\/\/longleash\.dev\/docs\/getting-started"[\s\S]*?target="_blank"[\s\S]*?rel="noreferrer"/,
+    )
+    expect(app).not.toContain('href="/docs/getting-started"')
   })
 })
