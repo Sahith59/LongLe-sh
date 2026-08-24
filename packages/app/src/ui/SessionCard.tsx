@@ -20,6 +20,7 @@ export function SessionCard({
   children,
   onOpen,
   settling = false,
+  searchMatch,
 }: {
   session: SessionView
   pending: number
@@ -27,10 +28,14 @@ export function SessionCard({
   onOpen: () => void
   /** Reconnect replay is one state replacement, not a sequence the user should watch animate. */
   settling?: boolean
+  /** The matching message excerpt when this card was found through transcript search. */
+  searchMatch?: string
 }) {
   const preview = session.output.trim().slice(-180)
   const past = session.status === 'ended' || session.status === 'errored' || !session.live
-  const status = !session.live && session.status === 'waiting'
+  const status = session.control === 'observe'
+    ? 'observed in VS Code'
+    : !session.live && session.status === 'waiting'
     ? 'ready to reopen'
     : (STATUS_LABEL[session.status] ?? session.status)
   const still = useReducedMotion()
@@ -92,7 +97,9 @@ export function SessionCard({
         </span>
       ) : null}
 
-      {preview ? <p className="preview">{preview}</p> : null}
+      {searchMatch ? (
+        <p className="sessionmatch"><span>Match</span>{searchMatch}</p>
+      ) : preview ? <p className="preview">{preview}</p> : null}
     </motion.article>
   )
 }

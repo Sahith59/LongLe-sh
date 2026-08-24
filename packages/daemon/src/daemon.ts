@@ -23,6 +23,7 @@ import { DelegationManager } from './delegation-manager.js'
 import { WorkspaceLeaseManager } from './workspace-leases.js'
 import { ReturnBuilder } from './return-builder.js'
 import { WorktreeManager } from './worktrees.js'
+import { CodexSessionWatcher } from './codex-session-watch.js'
 
 export interface DaemonOptions {
   /** Directories agents may work in. Nothing outside these can be targeted. */
@@ -246,6 +247,11 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
         agentSessionId: info.claudeSessionId,
       }),
   })
+  const codexWatcher = new CodexSessionWatcher({
+    roots,
+    onSession: (session) => external.observeCodexSession(session),
+  })
+  codexWatcher.start()
   // Keeps the inbox honest: anything whose deadline passed with no live waiter — the state a
   // restarted daemon inherits — is closed out and the phone is told, rather than showing a
   // question forever that nothing can answer.
@@ -313,6 +319,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     posture: readPermissionPosture(),
     stop: async () => {
       stopMaintenance()
+      codexWatcher.stop()
       bridge?.stop()
       // Agents first: a consume loop still writing while the databases close is an
       // unhandled rejection and a corrupted final status.

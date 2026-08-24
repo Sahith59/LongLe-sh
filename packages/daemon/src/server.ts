@@ -621,6 +621,10 @@ export class LongLeashServer {
       // Everything the daemon knows about, so a reloaded phone rebuilds instead of showing
       // nothing — including sessions the human started in a terminal.
       sessions: [...(this.sessions?.listSessions() ?? []), ...(this.external?.listSessions() ?? [])]
+        .map((session) => ({
+          ...session,
+          lastActivityAt: this.eventLog.latestTimestamp(session.sessionId) || session.startedAt,
+        }))
         .sort((left, right) => left.startedAt - right.startedAt || left.sessionId.localeCompare(right.sessionId)),
       capabilities: {
         startSession: this.sessions !== null,
@@ -1049,6 +1053,12 @@ export class LongLeashServer {
           const externalSession = liveExternal
             ? this.external?.listSessions().find((item) => item.sessionId === message.sessionId)
             : undefined
+          if (externalSession?.control === 'observe') {
+            throw new SessionError(
+              'session-busy',
+              'This Codex conversation is visible through its active VS Code transcript, but its process has not exposed a control hook yet. Continue or stop it in VS Code; LongLeash changed nothing.',
+            )
+          }
           // Finish every deterministic validation before touching another controller's process.
           // In particular, never close a live Codex IDE session and only then discover that its
           // Claude-only thinking setting could not be accepted.

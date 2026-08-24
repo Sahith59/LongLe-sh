@@ -28,6 +28,7 @@ export class EventLog {
   private readonly insertStmt: Database.Statement
   private readonly maxSeqStmt: Database.Statement
   private readonly minSeqStmt: Database.Statement
+  private readonly latestTsStmt: Database.Statement
   private readonly selectFromStmt: Database.Statement
   private readonly pruneStmt: Database.Statement
 
@@ -55,6 +56,9 @@ export class EventLog {
     )
     this.minSeqStmt = this.rawDb.prepare(
       'SELECT COALESCE(MIN(seq), 0) AS seq FROM events WHERE session_id = ?',
+    )
+    this.latestTsStmt = this.rawDb.prepare(
+      'SELECT COALESCE(MAX(ts), 0) AS ts FROM events WHERE session_id = ?',
     )
     this.selectFromStmt = this.rawDb.prepare(
       'SELECT * FROM events WHERE session_id = ? AND seq > ? ORDER BY seq ASC',
@@ -113,6 +117,10 @@ export class EventLog {
 
   latestSeq(sessionId: string): number {
     return (this.maxSeqStmt.get(sessionId) as { seq: number }).seq
+  }
+
+  latestTimestamp(sessionId: string): number {
+    return (this.latestTsStmt.get(sessionId) as { ts: number }).ts
   }
 
   pruneBefore(sessionId: string, uptoExclusive: number): void {

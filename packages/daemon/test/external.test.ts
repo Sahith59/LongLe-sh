@@ -87,6 +87,45 @@ describe('terminal sessions, adopted through hooks', () => {
     external.shutdown()
   })
 
+  it('shows a resumed VS Code Codex transcript without pretending it can stop the process', async () => {
+    const transcript = join(dir, 'observed.jsonl')
+    writeFileSync(transcript, '')
+    const external = manager()
+    external.observeCodexSession({
+      sessionId: 'codex-resumed',
+      cwd: dir,
+      transcriptPath: transcript,
+      surface: 'vscode',
+      title: 'Fix the current session list',
+    })
+    expect(external.listSessions()[0]).toMatchObject({
+      sessionId: 'ext_codex-resumed',
+      agent: 'codex',
+      origin: 'vscode',
+      control: 'observe',
+      title: 'Fix the current session list',
+    })
+    expect(external.setGate('ext_codex-resumed', 'auto')).toBe(false)
+    await expect(external.stop('ext_codex-resumed', 'dev_phone')).resolves.toBe(false)
+    external.shutdown()
+  })
+
+  it('promotes an observed transcript when a later lifecycle hook exposes control', () => {
+    const transcript = join(dir, 'promoted.jsonl')
+    writeFileSync(transcript, '')
+    const external = manager()
+    external.observeCodexSession({
+      sessionId: 'codex-promoted',
+      cwd: dir,
+      transcriptPath: transcript,
+      surface: 'vscode',
+    })
+    external.sessionStart('codex-promoted', dir, transcript, 4242, 'codex', 'vscode')
+    expect(external.listSessions()[0]?.control).toBe('full')
+    expect(external.setGate('ext_codex-promoted', 'auto')).toBe(true)
+    external.shutdown()
+  })
+
   it('tails the transcript Claude Code writes — text, thinking, tools, and the human', async () => {
     const transcript = join(dir, 't.jsonl')
     writeFileSync(

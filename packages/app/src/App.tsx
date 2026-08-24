@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
@@ -22,6 +22,9 @@ import {
   Trash2,
   X,
   CircleHelp,
+  Search,
+  ArrowUpDown,
+  Eye,
 } from 'lucide-react'
 import type { DelegationPreview, DelegationReturnPreview, DelegationSummary } from '@longleash/protocol'
 import {
@@ -85,6 +88,14 @@ import {
 } from './ui/SessionSettingsSheet.js'
 import { useAccount } from './lib/account-context.js'
 import { IdentityLegend, ProviderMark, SurfaceMark } from './ui/SessionMarks.js'
+import { availableAppBuild, publishedBuild } from './lib/app-update.js'
+import {
+  browseSessions,
+  type SessionAgent,
+  type SessionScope,
+  type SessionSort,
+  type SessionSurface,
+} from './lib/session-browser.js'
 
 export default function App() {
   const store = useMemo(() => createStore(), [])
@@ -134,10 +145,40 @@ export default function App() {
   const pendingDelegation = useRef<PendingDelegationLaunch | null>(null)
   const [pushKey, setPushKey] = useState<string | null>(null)
   const [alerts, setAlerts] = useState<AlertsState | null>(null)
-  /** Set when the laptop is running a newer release than this app bundle. */
+  /** Set only when the public origin proves it serves a newer app bundle. */
   const [staleApp, setStaleApp] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
+  const updateCheckRef = useRef(0)
   const clientRef = useRef<Client | null>(null)
+
+  // Update availability belongs to the public app origin, not to a daemon commit hash. Check
+  // independently of laptop connectivity so the action also appears (and clears) while the
+  // daemon is reconnecting. Focus/visibility checks make returning to an installed PWA enough;
+  // nobody should need to close it or wait for an arbitrary WebSocket hello.
+  useEffect(() => {
+    let mounted = true
+    const check = () => {
+      const request = ++updateCheckRef.current
+      void publishedBuild().then((published) => {
+        if (!mounted || request !== updateCheckRef.current) return
+        setStaleApp(availableAppBuild(__BUILD__, published))
+        if (published === __BUILD__) setUpdating(false)
+      })
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') check()
+    }
+    check()
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', onVisible)
+    const interval = window.setInterval(check, 5 * 60_000)
+    return () => {
+      mounted = false
+      window.removeEventListener('focus', check)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.clearInterval(interval)
+    }
+  }, [])
 
   /**
    * A notification tapped while the app is ALREADY open. The service worker cannot navigate a
@@ -231,11 +272,6 @@ export default function App() {
           return: hello.capabilities.delegation?.return === true,
           workspace: hello.capabilities.delegation?.workspace ?? 'legacy',
         })
-        // The laptop was released with a different build than this app. Almost always means
-        // the phone is loading an old bundle from the relay, which otherwise presents itself
-        // as features that simply do not exist.
-        const expected = hello.expectsApp ?? null
-        setStaleApp(expected !== null && expected !== __BUILD__ ? expected : null)
         const key = hello.push?.publicKey ?? null
         setPushKey(key)
         const permission = pushPermission()
@@ -390,6 +426,17 @@ export default function App() {
     if (updating) return
     setUpdating(true)
     void (async () => {
+      const published = await publishedBuild()
+      if (published === null) {
+        // Keep the last proven update visible. Going offline must not silently claim success.
+        setUpdating(false)
+        return
+      }
+      if (availableAppBuild(__BUILD__, published) === null) {
+        setStaleApp(null)
+        setUpdating(false)
+        return
+      }
       try {
         // The relay owns the phone bundle. Remove every cached shell, ask the worker to
         // re-check now, then reload from the public release rather than an old local copy.
@@ -400,7 +447,7 @@ export default function App() {
         // Cache access can be denied in private mode. Reloading still gives the network path
         // its chance, and the build banner remains if that did not work.
       }
-      window.location.reload()
+      window.location.replace(`${window.location.pathname}?updated=${encodeURIComponent(published ?? 'latest')}`)
     })()
   }, [updating])
 
@@ -454,7 +501,7 @@ export default function App() {
    * with no process behind it is dormant: worth keeping, not worth announcing as live.
    */
   const active = allSessions.filter(
-    (s) => s.status === 'running' || (s.status === 'waiting' && s.live),
+    (s) => s.live && (s.status === 'running' || s.status === 'waiting'),
   )
   const past = allSessions.filter(
     (s) => s.status === 'ended' || s.status === 'errored' || !s.live,
@@ -782,7 +829,7 @@ export function Rail({
   )
 }
 
-function HelpSheet({ connected, via, onClose }: { connected: boolean; via?: LinkPath; onClose: () => void }) {
+export function HelpSheet({ connected, via, onClose }: { connected: boolean; via?: LinkPath; onClose: () => void }) {
   const dialogRef = useRef<HTMLElement | null>(null)
   const viewportHeight = useVisualViewportHeight(true)
 
@@ -831,12 +878,13 @@ function HelpSheet({ connected, via, onClose }: { connected: boolean; via?: Link
     }}>
       <section
         ref={dialogRef}
-        className="account-sheet help-sheet"
+        className="help-sheet"
         role="dialog"
         aria-modal="true"
         aria-labelledby="help-sheet-title"
-        style={viewportHeight === null ? undefined : { maxHeight: `${Math.max(240, viewportHeight - 24)}px` }}
+        style={viewportHeight === null ? undefined : { height: `${Math.max(360, viewportHeight - 76)}px` }}
       >
+        <span className="help-sheet-handle" aria-hidden="true" />
         <header className="help-sheet-header">
           <div>
             <p className="account-kicker">Pocket field guide</p>
@@ -850,50 +898,51 @@ function HelpSheet({ connected, via, onClose }: { connected: boolean; via?: Link
           <Led status={connected ? 'running' : 'ended'} />
           <span>{connected ? `Laptop linked ${via === 'relay' ? 'through relay' : 'directly'}` : 'Laptop reconnecting'}</span>
         </div>
+        <div className="help-sheet-scroll">
+          <section className="help-quick" aria-labelledby="help-quick-title">
+            <h3 id="help-quick-title">Start a session</h3>
+            <ol>
+              <li><span>1</span><p>Keep the laptop on and awake.</p></li>
+              <li><span>2</span><p>Tap <strong>New session</strong> and choose the agent and project.</p></li>
+              <li><span>3</span><p>Choose Manual, Auto, or Plan, then send one concrete task.</p></li>
+              <li><span>4</span><p>Review approvals, reply, tune, hand off, or stop here.</p></li>
+            </ol>
+          </section>
 
-        <section className="help-quick" aria-labelledby="help-quick-title">
-          <h3 id="help-quick-title">Start in four moves</h3>
-          <ol>
-            <li>Keep the laptop on and awake; the background service keeps working after Terminal closes.</li>
-            <li>Tap <strong>New session</strong>, choose Claude or Codex, then select the project.</li>
-            <li>Choose Manual, Auto, or Plan and describe one concrete task.</li>
-            <li>Review approvals, reply, tune the next turn, or stop from the session screen.</li>
-          </ol>
-        </section>
+          <details className="help-topic">
+            <summary>Modes and safety</summary>
+            <dl>
+              <div><dt>Manual</dt><dd>Commands and edits ask first.</dd></div>
+              <div><dt>Auto</dt><dd>Uses each provider's guarded automation. Unrestricted access stays off.</dd></div>
+              <div><dt>Plan</dt><dd>Inspects and designs with workspace writes disabled.</dd></div>
+            </dl>
+            <p>Changes apply to the next turn, never work already in progress.</p>
+          </details>
 
-        <details className="help-topic" open>
-          <summary>Modes and safety</summary>
-          <dl>
-            <div><dt>Manual</dt><dd>Routes commands and edits through approval.</dd></div>
-            <div><dt>Auto</dt><dd>Uses provider automation. Claude classifies permission prompts; Codex stays in its workspace sandbox. Unrestricted access remains off.</dd></div>
-            <div><dt>Plan</dt><dd>Inspects and designs a solution with workspace writes disabled.</dd></div>
-          </dl>
-          <p>Changing mode or model affects the next turn. Work already in progress is never reinterpreted.</p>
-        </details>
+          <details className="help-topic">
+            <summary>Read the session marks</summary>
+            <IdentityLegend />
+            <p>The provider mark identifies Claude or Codex. The surface mark shows Phone, Terminal, or VS Code.</p>
+          </details>
 
-        <details className="help-topic">
-          <summary>What the session marks mean</summary>
-          <IdentityLegend />
-          <p>The first mark is the provider. The second is where the conversation originally started.</p>
-        </details>
+          <details className="help-topic">
+            <summary>Move between phone and laptop</summary>
+            <p>A native session stays with Terminal or VS Code until you explicitly move control. LongLeash preserves the conversation ID and continues the same transcript.</p>
+          </details>
 
-        <details className="help-topic">
-          <summary>Terminal and VS Code handoff</summary>
-          <p>A running native session stays under its native surface until you explicitly move control. LongLeash preserves its conversation ID, then continues the same transcript.</p>
-        </details>
+          <details className="help-topic">
+            <summary>Fix a laptop that will not link</summary>
+            <div className="help-commands">
+              <code>longleash service status</code>
+              <code>longleash doctor</code>
+              <code>longleash service restart</code>
+              <code>longleash pair</code>
+            </div>
+            <p>Run them in order. Pairing links are single-use, so print a fresh one after a failed attempt.</p>
+          </details>
+        </div>
 
-        <details className="help-topic">
-          <summary>If the laptop will not link</summary>
-          <div className="help-commands">
-            <code>longleash service status</code>
-            <code>longleash doctor</code>
-            <code>longleash service restart</code>
-            <code>longleash pair</code>
-          </div>
-          <p>Run them in order. Pairing links are single-use; print a fresh one after any failed or exposed attempt.</p>
-        </details>
-
-        <a className="help-docs" href="/docs/getting-started">Open the complete guide</a>
+        <a className="help-docs" href="/docs/getting-started">Open the full guide</a>
       </section>
     </div>,
     document.body,
@@ -1143,6 +1192,133 @@ export function parsePairingLink(raw: string): { challengeId: string; secret: st
 
 /* ------------------------------------------------------------------ screens */
 
+function SessionBrowserControls({
+  query,
+  onQuery,
+  scope,
+  onScope,
+  agent,
+  onAgent,
+  surface,
+  onSurface,
+  sort,
+  onSort,
+  filtersOpen,
+  onToggleFilters,
+  filterCount,
+  resultCount,
+}: {
+  query: string
+  onQuery: (value: string) => void
+  scope: SessionScope
+  onScope: (value: SessionScope) => void
+  agent: SessionAgent
+  onAgent: (value: SessionAgent) => void
+  surface: SessionSurface
+  onSurface: (value: SessionSurface) => void
+  sort: SessionSort
+  onSort: (value: SessionSort) => void
+  filtersOpen: boolean
+  onToggleFilters: () => void
+  filterCount: number
+  resultCount: number
+}) {
+  const choice = <T extends string>(
+    value: T,
+    selected: T,
+    select: (next: T) => void,
+    label: string,
+  ) => (
+    <button
+      key={value}
+      type="button"
+      className="sessionfilter-chip"
+      aria-pressed={selected === value}
+      onClick={() => select(value)}
+    >
+      {selected === value ? <Check size={13} strokeWidth={2.5} aria-hidden="true" /> : null}
+      {label}
+    </button>
+  )
+
+  return (
+    <section className="sessionbrowser" aria-label="Find and organize sessions">
+      <div className="sessionsearch">
+        <Search size={18} strokeWidth={2.1} aria-hidden="true" />
+        <label className="sr" htmlFor="session-search">Search sessions and messages</label>
+        <input
+          id="session-search"
+          type="search"
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          placeholder="Search sessions or messages"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        {query ? (
+          <button type="button" onClick={() => onQuery('')} aria-label="Clear session search">
+            <X size={16} strokeWidth={2.2} aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+      <div className="sessionbrowser-bar">
+        <button
+          type="button"
+          className="sessionfilter-toggle"
+          onClick={onToggleFilters}
+          aria-expanded={filtersOpen}
+          aria-controls="session-filter-panel"
+        >
+          <SlidersHorizontal size={16} strokeWidth={2.1} aria-hidden="true" />
+          Filters{filterCount > 0 ? <span>{filterCount}</span> : null}
+        </button>
+        <label className="sessionsort">
+          <span className="sr">Sort sessions</span>
+          <ArrowUpDown size={15} strokeWidth={2.1} aria-hidden="true" />
+          <select value={sort} onChange={(event) => onSort(event.target.value as SessionSort)}>
+            <option value="recommended">Priority</option>
+            <option value="recent">Recent activity</option>
+            <option value="oldest">Oldest activity</option>
+            <option value="name">Name</option>
+            <option value="project">Project</option>
+          </select>
+        </label>
+        <span className="sessionresult-count" aria-live="polite">{resultCount} shown</span>
+      </div>
+      {filtersOpen ? (
+        <div className="sessionfilter-panel" id="session-filter-panel">
+          <fieldset>
+            <legend>State</legend>
+            <div>
+              {choice('all', scope, onScope, 'All')}
+              {choice('active', scope, onScope, 'Active')}
+              {choice('needs', scope, onScope, 'Needs you')}
+              {choice('history', scope, onScope, 'History')}
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Agent</legend>
+            <div>
+              {choice('all', agent, onAgent, 'All')}
+              {choice('claude', agent, onAgent, 'Claude')}
+              {choice('codex', agent, onAgent, 'Codex')}
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Started in</legend>
+            <div>
+              {choice('all', surface, onSurface, 'Everywhere')}
+              {choice('phone', surface, onSurface, 'Phone')}
+              {choice('terminal', surface, onSurface, 'Terminal')}
+              {choice('vscode', surface, onSurface, 'VS Code')}
+            </div>
+          </fieldset>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 export function ConsoleScreen({
   approvals,
   active,
@@ -1182,6 +1358,38 @@ export function ConsoleScreen({
 }) {
   const still = useReducedMotion()
   const firstRun = approvals.length === 0 && active.length === 0 && past.length === 0
+  const [query, setQuery] = useState('')
+  const deferredQuery = useDeferredValue(query)
+  const [scope, setScope] = useState<SessionScope>('all')
+  const [agent, setAgent] = useState<SessionAgent>('all')
+  const [surface, setSurface] = useState<SessionSurface>('all')
+  const [sort, setSort] = useState<SessionSort>('recommended')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const pendingBySession = useMemo(() => approvals.reduce<Record<string, number>>((counts, approval) => {
+    counts[approval.sessionId] = (counts[approval.sessionId] ?? 0) + 1
+    return counts
+  }, {}), [approvals])
+  const results = useMemo(() => browseSessions([...active, ...past], {
+    query: deferredQuery,
+    scope,
+    agent,
+    surface,
+    sort,
+    pendingBySession,
+  }), [active, past, deferredQuery, scope, agent, surface, sort, pendingBySession])
+  const visibleActive = results.filter(({ session }) =>
+    session.live && (session.status === 'running' || session.status === 'waiting'))
+  const visiblePast = results.filter(({ session }) =>
+    !session.live || session.status === 'ended' || session.status === 'errored')
+  const refined = query.trim() !== '' || scope !== 'all' || agent !== 'all' || surface !== 'all'
+  const filterCount = Number(scope !== 'all') + Number(agent !== 'all') + Number(surface !== 'all')
+  const resetBrowser = () => {
+    setQuery('')
+    setScope('all')
+    setAgent('all')
+    setSurface('all')
+    setSort('recommended')
+  }
 
   return (
     <Screen depth={-1} still={still}>
@@ -1225,13 +1433,29 @@ export function ConsoleScreen({
         {firstRun ? (
           <FirstRun />
         ) : (
-        <section>
-          <SectionLabel count={active.length}>Active</SectionLabel>
-          {active.length === 0 ? (
-            <p className="empty">Nothing running. Start a session below.</p>
-          ) : (
+          <SessionBrowserControls
+            query={query}
+            onQuery={setQuery}
+            scope={scope}
+            onScope={setScope}
+            agent={agent}
+            onAgent={setAgent}
+            surface={surface}
+            onSurface={setSurface}
+            sort={sort}
+            onSort={setSort}
+            filtersOpen={filtersOpen}
+            onToggleFilters={() => setFiltersOpen((open) => !open)}
+            filterCount={filterCount}
+            resultCount={results.length}
+          />
+        )}
+
+        {!firstRun && visibleActive.length > 0 ? (
+          <section>
+            <SectionLabel count={visibleActive.length}>Active</SectionLabel>
             <div className="stack">
-              {active.map((session) => (
+              {visibleActive.map(({ session, match }) => (
                 <SessionCard
                   key={session.sessionId}
                   session={session}
@@ -1239,18 +1463,18 @@ export function ConsoleScreen({
                   children={delegationCounts(delegations, session.sessionId)}
                   onOpen={() => onOpen(session.sessionId)}
                   settling={settling}
+                  {...(match === undefined ? {} : { searchMatch: match })}
                 />
               ))}
             </div>
-          )}
-        </section>
-        )}
+          </section>
+        ) : null}
 
-        {past.length > 0 ? (
+        {!firstRun && visiblePast.length > 0 ? (
           <section>
-            <SectionLabel count={past.length}>Earlier</SectionLabel>
+            <SectionLabel count={visiblePast.length}>History</SectionLabel>
             <div className="stack">
-              {past.slice(0, 20).map((session) => (
+              {visiblePast.slice(0, 50).map(({ session, match }) => (
                 <SessionCard
                   key={session.sessionId}
                   session={session}
@@ -1258,9 +1482,19 @@ export function ConsoleScreen({
                   children={delegationCounts(delegations, session.sessionId)}
                   onOpen={() => onOpen(session.sessionId)}
                   settling={settling}
+                  {...(match === undefined ? {} : { searchMatch: match })}
                 />
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {!firstRun && results.length === 0 ? (
+          <section className="sessionbrowser-empty" aria-live="polite">
+            <Search size={19} strokeWidth={2} aria-hidden="true" />
+            <strong>{refined ? 'No sessions match' : 'Nothing running yet'}</strong>
+            <p>{refined ? 'Try fewer words or clear the filters.' : 'Start a session from the button below.'}</p>
+            {refined ? <button type="button" onClick={resetBrowser}>Clear search and filters</button> : null}
           </section>
         ) : null}
 
@@ -1364,7 +1598,8 @@ export function DetailScreen({
   // Typing wakes a dormant conversation, so the composer belongs to anything continuable —
   // not only to what happens to be running right now.
   const live = session.live && (session.status === 'running' || session.status === 'waiting')
-  const canType = (live || session.resumable) && session.workspaceConflict === undefined
+  const observedOnly = session.control === 'observe'
+  const canType = !observedOnly && (live || session.resumable) && session.workspaceConflict === undefined
   const readoutRef = useRef<HTMLDivElement | null>(null)
   const followTail = useRef(true)
 
@@ -1398,19 +1633,19 @@ export function DetailScreen({
               {session.title || session.sessionId}
             </motion.h2>
             <div className="detailactions">
-              {onTune && (session.agent === 'claude' || session.agent === 'codex') ? (
+              {onTune && !observedOnly && (session.agent === 'claude' || session.agent === 'codex') ? (
                 <Key className="sm tunekey" onClick={onTune} label="Change model and reasoning for this conversation">
                   <SlidersHorizontal size={14} strokeWidth={2.3} aria-hidden="true" />
                   Tune
                 </Key>
               ) : null}
-              {onDelegate ? (
+              {onDelegate && !observedOnly ? (
                 <Key className="sm delegatekey" onClick={() => onDelegate()} label="Delegate from this session">
                   <GitBranchPlus size={14} strokeWidth={2.3} aria-hidden="true" />
                   Delegate
                 </Key>
               ) : null}
-              {live ? (
+              {live && !observedOnly ? (
                 <Key className="sm stopkey" onClick={onStop} label="Stop this agent">
                   <Square size={13} strokeWidth={2.6} fill="currentColor" aria-hidden="true" />
                   Stop
@@ -1427,7 +1662,9 @@ export function DetailScreen({
             <span className="sessionidentity detailidentity">
               <Led status={session.status} />
               <span className={`state ${session.status}`}>
-                {!session.live && session.status === 'waiting'
+                {observedOnly
+                  ? 'observed in VS Code'
+                  : !session.live && session.status === 'waiting'
                   ? 'ready to reopen'
                   : (STATUS_LABEL[session.status] ?? session.status)}
               </span>
@@ -1465,14 +1702,14 @@ export function DetailScreen({
             ) : null}
             <PathChip text={session.cwd} kind="folder" max={30} expandable />
           </p>
-          {externallyDriven && live ? (
+          {externallyDriven && live && !observedOnly ? (
             <GateSwitch
               gate={session.gate ?? 'ask'}
               {...(session.permissionMode ? { permissionMode: session.permissionMode } : {})}
               onSet={onSetGate}
             />
           ) : null}
-          {(session.agent === 'claude' || session.agent === 'codex') ? (
+          {!observedOnly && (session.agent === 'claude' || session.agent === 'codex') ? (
             <TerminalHandoff
               cwd={session.cwd}
               resumeId={session.resumeId}
@@ -1483,6 +1720,16 @@ export function DetailScreen({
             />
           ) : null}
         </div>
+
+        {observedOnly ? (
+          <div className="observed-session" role="status">
+            <Eye size={18} strokeWidth={2.1} aria-hidden="true" />
+            <div>
+              <strong>Live activity from Codex in VS Code</strong>
+              <p>This conversation was already open when LongLeash connected. It stays visible and searchable here; continue or stop it in VS Code until its next lifecycle hook grants full control.</p>
+            </div>
+          </div>
+        ) : null}
 
         {session.workspaceConflict ? (
           <div className="workspace-conflict" role="alert">
