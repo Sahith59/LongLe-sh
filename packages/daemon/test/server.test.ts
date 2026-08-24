@@ -1167,6 +1167,69 @@ describe('terminal sessions over the wire — hooks in, verdicts out', () => {
 
 
 describe('take over: the baton passes from terminal to phone', () => {
+  it('parks a verified terminal writer on the phone without injecting a prompt', async () => {
+    const h = await startHarness()
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'll-reclaim-')))
+    const approvals = new ApprovalStore(':memory:')
+    const workspace = new WorkspaceLeaseManager(approvals.rawDb)
+    const sessions = new SessionManager({
+      eventLog: h.log,
+      approvals,
+      allowedRoots: [dir],
+      agentFactories: { codex: new DemoAgent().factory },
+      onEvent: (event) => h.server.broadcastEvent(event),
+      workspace,
+    })
+    h.server.attachSessions(sessions)
+    const killed: number[] = []
+    const external = new ExternalSessions({
+      eventLog: h.log,
+      approvals: new ApprovalStore(':memory:'),
+      onEvent: (event) => h.server.broadcastEvent(event),
+      audience: () => 'connected' as const,
+      isClaudeProcess: () => true,
+      kill: (pid) => killed.push(pid),
+      waitForExit: async () => true,
+      workspace,
+      onEnded: (info) => sessions.adoptEndedSession({
+        sessionId: info.sessionId,
+        agent: info.agent,
+        cwd: info.cwd,
+        title: info.title,
+        origin: info.surface,
+        startedAt: info.startedAt,
+        agentSessionId: info.claudeSessionId,
+      }),
+    })
+    h.server.attachExternal(external, 'hook-secret')
+    external.sessionStart('native-reclaim', dir, join(dir, 'none.jsonl'), 5151, 'codex', 'terminal')
+
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    ws.send(JSON.stringify({ v: 1, type: 'reclaimSession', sessionId: 'ext_native-reclaim' }))
+    await (async () => {
+      const deadline = Date.now() + 4000
+      while (Date.now() < deadline) {
+        const ack = inbox.get(ws)?.find((message) => message.type === 'ack' && message.of === 'reclaimSession')
+        if (ack) {
+          expect(ack.outcome).toBe('phone-ready')
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, 15))
+      }
+      throw new Error('no reclaim ack')
+    })()
+    expect(killed).toEqual([5151])
+    expect(sessions.listSessions().find((session) => session.sessionId === 'ext_native-reclaim'))
+      .toMatchObject({ status: 'waiting', live: false, resumable: true })
+
+    ws.close()
+    external.shutdown()
+    await sessions.shutdown()
+    await h.server.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('stops the terminal process, adopts the conversation, and wakes it with the reply', async () => {
     const h = await startHarness()
     const dir = realpathSync(mkdtempSync(join(tmpdir(), 'll-takeover-')))

@@ -229,6 +229,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     registry: sessionRegistry,
     onEvent: mirror,
     workspace,
+    resolveSessionId: (agentSessionId) => sessions.sessionIdForAgentSession(agentSessionId),
     // A live socket means the app is open and can answer in seconds. A push REGISTRATION is
     // permanent and proves nothing about whether anyone is looking — treating it as presence
     // is what froze the keyboard for two minutes with the phone in a drawer.
@@ -262,7 +263,9 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   // above and are the only valid live owners at this point; unfinished transfer reservations
   // remain valid only while their delegation is durably `starting`.
   workspace.reconcile({
-    activeSessionIds: external.listSessions().map((session) => session.sessionId),
+    activeSessionIds: external.listSessions()
+      .filter((session) => session.control === 'full')
+      .map((session) => session.sessionId),
     validReservationIds: delegationStore
       .list()
       .filter((record) => record.status === 'starting')

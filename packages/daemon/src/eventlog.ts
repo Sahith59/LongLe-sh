@@ -45,7 +45,12 @@ export class EventLog {
         type TEXT NOT NULL,
         payload TEXT NOT NULL,
         PRIMARY KEY (session_id, seq)
-      )
+      );
+      CREATE TABLE IF NOT EXISTS session_aliases (
+        session_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
     `)
     this.now = opts.now ?? Date.now
     this.insertStmt = this.rawDb.prepare(
@@ -121,6 +126,22 @@ export class EventLog {
 
   latestTimestamp(sessionId: string): number {
     return (this.latestTsStmt.get(sessionId) as { ts: number }).ts
+  }
+
+  aliasFor(sessionId: string): string | undefined {
+    const row = this.rawDb
+      .prepare('SELECT title FROM session_aliases WHERE session_id = ?')
+      .get(sessionId) as { title: string } | undefined
+    return row?.title
+  }
+
+  setAlias(sessionId: string, title: string): void {
+    this.rawDb
+      .prepare(
+        `INSERT INTO session_aliases (session_id, title, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at`,
+      )
+      .run(sessionId, title, this.now())
   }
 
   pruneBefore(sessionId: string, uptoExclusive: number): void {

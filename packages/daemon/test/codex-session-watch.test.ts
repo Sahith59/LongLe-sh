@@ -21,6 +21,10 @@ describe('Codex durable-session discovery', () => {
     )
     expect(inspectCodexTranscript(path, [root])).toMatchObject({
       sessionId: 'codex-current', cwd: project, surface: 'vscode', title: 'Fix the session list ordering today',
+      snapshot: [
+        { kind: 'user', text: 'old task' },
+        { kind: 'user', text: 'Fix the session list ordering today' },
+      ],
     })
     expect(inspectCodexTranscript(path, [join(root, 'somewhere-else')])).toBeNull()
     rmSync(root, { recursive: true, force: true })

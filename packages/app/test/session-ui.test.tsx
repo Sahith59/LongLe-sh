@@ -196,6 +196,8 @@ describe('session controls visible on a phone-sized flow', () => {
         onResume={() => {}}
         onSend={() => true}
         onTakeOver={() => true}
+        onReclaim={() => true}
+        onRename={() => true}
         onSetGate={() => {}}
       />,
     )
@@ -204,6 +206,44 @@ describe('session controls visible on a phone-sized flow', () => {
     expect(html).toContain('Copy command')
     expect(html).toContain('Release current run')
     expect(html).toContain('VS Code')
+    expect(html).toContain('Take back')
+    expect(html).toContain('Rename')
+  })
+
+  it('shows observer evidence without presenting a stale writer conflict as its own', () => {
+    const html = renderToStaticMarkup(
+      <DetailScreen
+        session={{
+          sessionId: 'ext_observed', agent: 'codex', live: true, cwd: '/x', title: 'Current work',
+          origin: 'vscode', status: 'running', control: 'observe', controller: 'external',
+          startedAt: Date.now() - 120_000, lastActivityAt: Date.now() - 60_000,
+          blocks: [{ kind: 'user', text: 'current request', firstSeq: 9, lastSeq: 9 }],
+          output: '', activity: [], resumable: false,
+          workspaceConflict: { cwd: '/x', ownerSessionId: 'other', processPaused: false },
+        }}
+        approvals={[]}
+        connected
+        diagnostic={null}
+        error={null}
+        onClearError={() => {}}
+        onDecide={() => {}}
+        onAnswer={() => {}}
+        onLeave={() => {}}
+        onStop={() => {}}
+        onResume={() => {}}
+        onSend={() => true}
+        onTakeOver={() => true}
+        onReclaim={() => true}
+        onRename={() => true}
+        onSetGate={() => {}}
+      />,
+    )
+    expect(html).toContain('Live activity from Codex in VS Code')
+    expect(html).toContain('does not claim the workspace')
+    expect(html).toContain('still controlled in VS Code')
+    expect(html).not.toContain('Conflict detected')
+    expect(html).not.toContain('Take back')
+    expect(html).toContain('updated')
   })
 
   it('offers codex resume after the previous writer has stopped', () => {

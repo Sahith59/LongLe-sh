@@ -43,6 +43,7 @@ function manager(
     pause?: (pid: number) => void
     resume?: (pid: number) => void
     waitForExit?: (pid: number, timeoutMs: number) => Promise<boolean>
+    resolveSessionId?: (agentSessionId: string) => string | undefined
   } = {},
 ): ExternalSessions {
   return new ExternalSessions({
@@ -59,6 +60,7 @@ function manager(
     ...(opts.pause === undefined ? {} : { pause: opts.pause }),
     ...(opts.resume === undefined ? {} : { resume: opts.resume }),
     waitForExit: opts.waitForExit ?? (async () => true),
+    ...(opts.resolveSessionId === undefined ? {} : { resolveSessionId: opts.resolveSessionId }),
   })
 }
 
@@ -97,6 +99,8 @@ describe('terminal sessions, adopted through hooks', () => {
       transcriptPath: transcript,
       surface: 'vscode',
       title: 'Fix the current session list',
+      activityAt: 100,
+      snapshot: [{ kind: 'user', text: 'Fix the current session list' }],
     })
     expect(external.listSessions()[0]).toMatchObject({
       sessionId: 'ext_codex-resumed',
@@ -119,10 +123,78 @@ describe('terminal sessions, adopted through hooks', () => {
       cwd: dir,
       transcriptPath: transcript,
       surface: 'vscode',
+      activityAt: 100,
+      snapshot: [],
     })
     external.sessionStart('codex-promoted', dir, transcript, 4242, 'codex', 'vscode')
     expect(external.listSessions()[0]?.control).toBe('full')
     expect(external.setGate('ext_codex-promoted', 'auto')).toBe(true)
+    external.shutdown()
+  })
+
+  it('keeps observation read-only, replaces stale transcript history, and never claims a writer lease', () => {
+    const transcript = join(dir, 'observer.jsonl')
+    writeFileSync(transcript, '')
+    const workspace = new WorkspaceLeaseManager(approvals.rawDb)
+    workspace.acquire({
+      sessionId: 'real-writer', cwd: dir, ownerKind: 'external', ownerOrigin: 'vscode', actor: 'test',
+    })
+    eventLog.append('ext_observer', { type: 'stream.delta', payload: { kind: 'text', text: 'stale output' } })
+    const external = manager({ workspace })
+    external.observeCodexSession({
+      sessionId: 'observer',
+      cwd: dir,
+      transcriptPath: transcript,
+      surface: 'vscode',
+      title: 'Current work',
+      activityAt: 200,
+      snapshot: [
+        { kind: 'user', text: 'current question' },
+        { kind: 'text', text: 'current answer' },
+      ],
+    })
+    expect(external.listSessions()[0]?.workspaceConflict).toBeUndefined()
+    expect(workspace.getByCwd(dir)?.ownerId).toBe('real-writer')
+    expect(seen.map((event) => event.type)).toContain('session.transcript.reset')
+    external.observeCodexSession({
+      sessionId: 'observer',
+      cwd: dir,
+      transcriptPath: transcript,
+      surface: 'vscode',
+      title: 'Newer provider title',
+      activityAt: 300,
+      snapshot: [{ kind: 'text', text: 'a later full snapshot must not be persisted again' }],
+    })
+    expect(seen.filter((event) => event.type === 'session.transcript.reset')).toHaveLength(1)
+    external.shutdown()
+  })
+
+  it('reuses the stable phone card for its native resume id and preserves a user rename', () => {
+    const transcript = join(dir, 'same-card.jsonl')
+    writeFileSync(transcript, '')
+    const external = manager({ resolveSessionId: (id) => id === 'native-1' ? 'ses_phone' : undefined })
+    external.sessionStart('native-1', dir, transcript, 4242, 'codex', 'terminal')
+    expect(external.listSessions()[0]?.sessionId).toBe('ses_phone')
+    expect(external.renameSession('ses_phone', 'Release audit')).toBe(true)
+    external.observeCodexSession({
+      sessionId: 'native-1', cwd: dir, transcriptPath: transcript, surface: 'vscode',
+      title: 'provider changed this', activityAt: 300, snapshot: [],
+    })
+    expect(external.listSessions()[0]?.title).toBe('Release audit')
+    external.shutdown()
+  })
+
+  it('returns a verified full-control terminal session to the phone but refuses an observer', async () => {
+    const transcript = join(dir, 'reclaim.jsonl')
+    writeFileSync(transcript, '')
+    const external = manager({ isClaude: () => true, waitForExit: async () => true })
+    external.sessionStart('native-full', dir, transcript, 4242, 'codex', 'terminal')
+    await expect(external.reclaimToPhone('ext_native-full', 'dev_phone')).resolves.toBe('reclaimed')
+    external.observeCodexSession({
+      sessionId: 'native-observed', cwd: dir, transcriptPath: transcript, surface: 'vscode',
+      activityAt: 400, snapshot: [],
+    })
+    await expect(external.reclaimToPhone('ext_native-observed', 'dev_phone')).resolves.toBe('observe-only')
     external.shutdown()
   })
 

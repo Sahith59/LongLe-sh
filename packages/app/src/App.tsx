@@ -25,6 +25,8 @@ import {
   Search,
   ArrowUpDown,
   Eye,
+  Pencil,
+  Smartphone,
 } from 'lucide-react'
 import type { DelegationPreview, DelegationReturnPreview, DelegationSummary } from '@longleash/protocol'
 import {
@@ -89,6 +91,7 @@ import {
 import { useAccount } from './lib/account-context.js'
 import { IdentityLegend, ProviderMark, SurfaceMark } from './ui/SessionMarks.js'
 import { availableAppBuild, publishedBuild } from './lib/app-update.js'
+import { activityTime } from './lib/activity-time.js'
 import {
   browseSessions,
   type SessionAgent,
@@ -551,6 +554,8 @@ export default function App() {
               onResume={() => clientRef.current?.resumeSession(openSession.sessionId)}
               onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
               onTakeOver={(text) => clientRef.current?.takeOver(openSession.sessionId, text) ?? false}
+              onReclaim={() => clientRef.current?.reclaimSession(openSession.sessionId) ?? false}
+              onRename={(title) => clientRef.current?.renameSession(openSession.sessionId, title) ?? false}
               onSetGate={(gate) => clientRef.current?.setGate(openSession.sessionId, gate)}
               onTune={() => {
                 setSettingsUpdate(null)
@@ -1562,6 +1567,8 @@ export function DetailScreen({
   onResume,
   onSend,
   onTakeOver,
+  onReclaim,
+  onRename,
   onSetGate,
   onTune,
   onDelegate,
@@ -1583,6 +1590,8 @@ export function DetailScreen({
   onResume: () => void
   onSend: (text: string) => boolean
   onTakeOver: (text: string) => boolean
+  onReclaim?: () => boolean
+  onRename?: (title: string) => boolean
   onSetGate: (gate: 'ask' | 'auto') => void
   onTune?: () => void
   onDelegate?: (sourceSeq?: number) => void
@@ -1593,6 +1602,9 @@ export function DetailScreen({
 }) {
   const [message, setMessage] = useState('')
   const [confirmTakeover, setConfirmTakeover] = useState(false)
+  const [confirmReclaim, setConfirmReclaim] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [name, setName] = useState(session.title)
   const still = useReducedMotion()
   const keyboard = useKeyboardInset(true)
   // A terminal session belongs to the keyboard it was started at — until you type here.
@@ -1606,9 +1618,19 @@ export function DetailScreen({
   // not only to what happens to be running right now.
   const live = session.live && (session.status === 'running' || session.status === 'waiting')
   const observedOnly = session.control === 'observe'
+  const currentSurface = session.surface ?? session.origin
   const canType = !observedOnly && (live || session.resumable) && session.workspaceConflict === undefined
   const readoutRef = useRef<HTMLDivElement | null>(null)
   const followTail = useRef(true)
+  const activity = activityTime(session.lastActivityAt ?? session.startedAt)
+
+  useEffect(() => {
+    if (!renaming) setName(session.title)
+  }, [renaming, session.title])
+
+  useEffect(() => {
+    if (!(externallyDriven && live)) setConfirmReclaim(false)
+  }, [externallyDriven, live])
 
   useEffect(() => {
     const node = readoutRef.current
@@ -1652,6 +1674,26 @@ export function DetailScreen({
                   Delegate
                 </Key>
               ) : null}
+              {onRename ? (
+                <Key
+                  className="sm"
+                  onClick={() => setRenaming((open) => !open)}
+                  label="Rename this conversation"
+                >
+                  <Pencil size={13} strokeWidth={2.2} aria-hidden="true" />
+                  Rename
+                </Key>
+              ) : null}
+              {onReclaim && externallyDriven && live && !observedOnly ? (
+                <Key
+                  className="sm reclaimkey"
+                  onClick={() => setConfirmReclaim(true)}
+                  label="End the native process and return control to this phone"
+                >
+                  <Smartphone size={14} strokeWidth={2.2} aria-hidden="true" />
+                  Take back
+                </Key>
+              ) : null}
               {live && !observedOnly ? (
                 <Key className="sm stopkey" onClick={onStop} label="Stop this agent">
                   <Square size={13} strokeWidth={2.6} fill="currentColor" aria-hidden="true" />
@@ -1677,7 +1719,7 @@ export function DetailScreen({
               </span>
               <span className="identitydivider" aria-hidden="true" />
               <ProviderMark agent={session.agent} />
-              <SurfaceMark origin={session.origin} />
+              <SurfaceMark origin={currentSurface} />
             </span>
             {session.settings?.mode ? (
               <span className="sessiontag modetag">{session.settings.mode}</span>
@@ -1708,7 +1750,35 @@ export function DetailScreen({
               </span>
             ) : null}
             <PathChip text={session.cwd} kind="folder" max={30} expandable />
+            {activity ? (
+              <time className="sessiontime" dateTime={activity.dateTime} title={activity.title}>
+                updated {activity.label}
+              </time>
+            ) : null}
           </p>
+          {renaming && onRename ? (
+            <form
+              className="rename-session"
+              onSubmit={(event) => {
+                event.preventDefault()
+                const title = name.replace(/\s+/g, ' ').trim()
+                if (title !== '' && onRename(title)) setRenaming(false)
+              }}
+            >
+              <label htmlFor={`rename-${session.sessionId}`}>Session name</label>
+              <div>
+                <input
+                  id={`rename-${session.sessionId}`}
+                  value={name}
+                  maxLength={80}
+                  autoFocus
+                  onChange={(event) => setName(event.target.value)}
+                />
+                <Key className="sm primary" type="submit" disabled={name.trim() === ''}>Save</Key>
+                <Key className="sm" type="button" onClick={() => setRenaming(false)}>Cancel</Key>
+              </div>
+            </form>
+          ) : null}
           {externallyDriven && live && !observedOnly ? (
             <GateSwitch
               gate={session.gate ?? 'ask'}
@@ -1722,7 +1792,7 @@ export function DetailScreen({
               resumeId={session.resumeId}
               agent={session.agent}
               live={live}
-              expandedByDefault={session.origin === 'phone' || session.resumeId !== undefined}
+              expandedByDefault={currentSurface === 'phone' || session.resumeId !== undefined}
               onRelease={onStop}
             />
           ) : null}
@@ -1733,12 +1803,12 @@ export function DetailScreen({
             <Eye size={18} strokeWidth={2.1} aria-hidden="true" />
             <div>
               <strong>Live activity from Codex in VS Code</strong>
-              <p>This conversation was already open when LongLeash connected. It stays visible and searchable here; continue or stop it in VS Code until its next lifecycle hook grants full control.</p>
+              <p>LongLeash can read this provider transcript, but VS Code has not supplied a verified process handle. This view does not claim the workspace or create another writer. Continue or stop it in VS Code until the next lifecycle hook grants control.</p>
             </div>
           </div>
         ) : null}
 
-        {session.workspaceConflict ? (
+        {session.workspaceConflict && !observedOnly ? (
           <div className="workspace-conflict" role="alert">
             <ShieldAlert size={18} strokeWidth={2.2} aria-hidden="true" />
             <div>
@@ -1844,7 +1914,7 @@ export function DetailScreen({
           <div className="transfer-confirm" role="alertdialog" aria-label="Transfer session to phone">
             <div>
               <strong>Move this conversation to your phone?</strong>
-              <p>The current {session.origin === 'vscode' ? 'VS Code' : 'terminal'} run will close first. LongLeash waits for it to release the transcript before sending your message.</p>
+              <p>The current {currentSurface === 'vscode' ? 'VS Code' : 'terminal'} run will close first. LongLeash waits for it to release the transcript before sending your message.</p>
             </div>
             <div className="transfer-actions">
               <Key className="sm" onClick={() => setConfirmTakeover(false)}>Keep it there</Key>
@@ -1860,6 +1930,25 @@ export function DetailScreen({
                 disabled={!connected}
               >
                 End there &amp; continue here
+              </Key>
+            </div>
+          </div>
+        ) : confirmReclaim ? (
+          <div className="transfer-confirm" role="alertdialog" aria-label="Return control to phone">
+            <div>
+              <strong>End the {currentSurface === 'vscode' ? 'VS Code' : 'terminal'} run?</strong>
+              <p>LongLeash will stop that exact verified provider process, wait for it to exit, and park this same conversation on your phone. No prompt is sent until you type one.</p>
+            </div>
+            <div className="transfer-actions">
+              <Key className="sm" onClick={() => setConfirmReclaim(false)}>Keep it there</Key>
+              <Key
+                className="sm primary"
+                onClick={() => {
+                  if (onReclaim?.()) setConfirmReclaim(false)
+                }}
+                disabled={!connected}
+              >
+                End there &amp; return here
               </Key>
             </div>
           </div>
@@ -1892,7 +1981,9 @@ export function DetailScreen({
           </div>
         ) : (
           <p className="note">
-            {session.workspaceConflict
+            {observedOnly
+              ? 'This conversation is still controlled in VS Code. LongLeash is observing its provider transcript, but cannot stop or write to that process until a lifecycle hook grants control.'
+              : session.workspaceConflict
               ? 'This checkout is paused while another session owns it. No message or tool is sent from here.'
               : 'This conversation cannot be continued — it has no resume point. Start a new session in the same folder to pick the work back up.'}
           </p>

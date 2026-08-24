@@ -78,6 +78,21 @@ describe('event envelope', () => {
     expect(ev.type).toBe('stream.delta')
   })
 
+  it('validates transcript reset, phone reclaim, and bounded session renaming', () => {
+    expect(parseEvent({
+      ...baseEvent,
+      type: 'session.transcript.reset',
+      payload: { reason: 'provider-snapshot' },
+    }).type).toBe('session.transcript.reset')
+    expect(parseClientMessage({ v: 1, type: 'reclaimSession', sessionId: 'ses_1' }).type)
+      .toBe('reclaimSession')
+    expect(parseClientMessage({ v: 1, type: 'renameSession', sessionId: 'ses_1', title: 'Release audit' }).type)
+      .toBe('renameSession')
+    expect(() => parseClientMessage({
+      v: 1, type: 'renameSession', sessionId: 'ses_1', title: 'x'.repeat(81),
+    })).toThrowError()
+  })
+
   it('carries a live resume id the moment the native agent announces it', () => {
     const ev = parseEvent({
       ...baseEvent,

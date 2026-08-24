@@ -855,6 +855,16 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       send({ v: PROTOCOL_VERSION, type: 'setGate', sessionId, gate }),
     takeOver: (sessionId: string, text: string) =>
       send({ v: PROTOCOL_VERSION, type: 'takeOver', sessionId, text }),
+    reclaimSession: (sessionId: string) => {
+      const sent = send({ v: PROTOCOL_VERSION, type: 'reclaimSession', sessionId })
+      if (!sent) callbacks.onError('Not connected to your laptop — control stayed in the terminal.')
+      return sent
+    },
+    renameSession: (sessionId: string, title: string) => {
+      const sent = send({ v: PROTOCOL_VERSION, type: 'renameSession', sessionId, title })
+      if (!sent) callbacks.onError('Not connected to your laptop — the session name was not changed.')
+      return sent
+    },
     previewDelegation: (input: {
       requestId: string
       sourceSessionId: string

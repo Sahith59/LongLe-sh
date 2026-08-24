@@ -734,6 +734,32 @@ export class SessionManager {
     })
   }
 
+  /** Find the stable LongLeash card that already owns this provider conversation id. */
+  sessionIdForAgentSession(agentSessionId: string): string | undefined {
+    const row = this.approvals.rawDb
+      .prepare('SELECT session_id FROM sessions WHERE agent_session_id = ? ORDER BY started_at DESC LIMIT 1')
+      .get(agentSessionId) as { session_id: string } | undefined
+    return row?.session_id
+  }
+
+  /** Persist a human label independently of whatever title a provider derives later. */
+  renameSession(sessionId: string, title: string, emit = true): boolean {
+    const changed = this.approvals.rawDb
+      .prepare('UPDATE sessions SET title = ? WHERE session_id = ?')
+      .run(title, sessionId).changes
+    if (changed === 0) return false
+    const live = this.sessions.get(sessionId)
+    if (live !== undefined) live.title = title
+    this.eventLog.setAlias(sessionId, title)
+    if (emit) {
+      this.emit(sessionId, {
+        type: 'session.status',
+        payload: { status: live?.status ?? 'waiting', live: live !== undefined, title },
+      })
+    }
+    return true
+  }
+
   /**
    * Adopt a finished TERMINAL session so a phone reply can wake it: the
    * conversation lives in Claude Code's own storage, keyed by its resume id,
