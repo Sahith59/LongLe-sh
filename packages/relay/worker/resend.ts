@@ -110,3 +110,17 @@ export function newFeedbackNotification(id: string, destination: string, created
     html: '<p>A private report is waiting in your LongLeash owner inbox.</p><p><a href="https://app.longleash.dev/owner/feedback">Sign in to review feedback</a></p><p>This notification contains no report content.</p>',
   })
 }
+
+export function deliveryTestNotification(id: string, destination: string, createdAt: number): OutgoingEmail {
+  return outgoingEmail.parse({ id, to: destination, createdAt,
+    subject: 'LongLeash email delivery check',
+    text: 'This controlled message confirms that the LongLeash support outbox can reach your verified owner inbox. No customer data is included.',
+    html: '<p>This controlled message confirms that the LongLeash support outbox can reach your verified owner inbox.</p><p>No customer data is included.</p>',
+  })
+}
+
+export function weeklyDigestEmail(id: string, destination: string, createdAt: number, text: string): OutgoingEmail {
+  const safe = text.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!)
+  return outgoingEmail.parse({ id, to: destination, createdAt, subject: 'LongLeash weekly owner summary', text,
+    html: `<pre style="font:14px/1.55 ui-monospace,monospace;white-space:pre-wrap">${safe}</pre>`, })
+}

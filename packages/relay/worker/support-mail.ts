@@ -6,7 +6,7 @@ export interface SupportMailConfig extends ResendConfig {
   OWNER_NOTIFICATION_EMAIL?: string
 }
 
-type ClaimedJob = { id: string; created_at: number; attempts: number; payload: string | null }
+type ClaimedJob = { id: string; kind: string; created_at: number; attempts: number; payload: string | null }
 const MAX_ATTEMPTS = 8
 const LEASE_MS = 60_000
 
@@ -36,12 +36,14 @@ export async function drainSupportMail(env: SupportMailConfig, network: typeof f
       WHERE id = (SELECT id FROM support_email_outbox WHERE
         ((state = 'pending' AND next_attempt_at <= ?) OR (state = 'sending' AND lease_until <= ?))
         AND attempts < ? AND created_at > ? ORDER BY created_at, id LIMIT 1)
-      RETURNING id, created_at, attempts, payload`)
+      RETURNING id, kind, created_at, attempts, payload`)
       .bind(lease, now + LEASE_MS, now, now, now, MAX_ATTEMPTS, now - EMAIL_RETRY_WINDOW_MS).first<ClaimedJob>()
     if (!job) break
     let raw: unknown
     if (job.payload === null) {
-      raw = newFeedbackNotification(job.id, env.OWNER_NOTIFICATION_EMAIL, job.created_at)
+      raw = job.kind === 'new_feedback'
+        ? newFeedbackNotification(job.id, env.OWNER_NOTIFICATION_EMAIL, job.created_at)
+        : null
       const saved = await db.prepare(`UPDATE support_email_outbox SET payload = ?
         WHERE id = ? AND lease_id = ? AND state = 'sending'`).bind(JSON.stringify(raw), job.id, lease).run()
       if (saved.meta.changes !== 1) continue

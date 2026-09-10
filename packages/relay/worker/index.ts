@@ -23,6 +23,10 @@ import {
 import { isPublicSiteHost, publicRoute } from './public-routing.js'
 import { expireFeedback, handleFeedback, type FeedbackEnv } from './feedback.js'
 import { drainSupportMail, type SupportMailConfig } from './support-mail.js'
+import { handleOwnerAccounts, type OwnerAccountsEnv } from './owner-accounts.js'
+import { expireMeasurement, handleMeasurement, type MeasurementEnv } from './measurement.js'
+import { handleOwnerReporting, scheduleWeeklyDigest, type ReportingEnv } from './reporting.js'
+import { expireWebhookEvidence, handleResendWebhook, type ResendWebhookEnv } from './resend-webhook.js'
 
 /**
  * The relay as a Cloudflare Worker — a managed deployment with no server process to keep alive.
@@ -107,11 +111,14 @@ async function relayTicketResponse(request: Request, env: Env, url: URL): Promis
 export default {
   // The production cron is enabled only after storage, sender verification and release checks.
   // Self-hosted deployments have none of these bindings and never send hosted support mail.
-  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
-    const support = env as Env & FeedbackEnv & SupportMailConfig
+  async scheduled(event: ScheduledController, env: Env): Promise<void> {
+    const support = env as Env & FeedbackEnv & SupportMailConfig & MeasurementEnv & ReportingEnv & ResendWebhookEnv
     if (!support.FEEDBACK_DB || support.FEEDBACK_ENABLED !== 'true') return
     try {
-      await expireFeedback(support)
+      await expireFeedback(support, event.scheduledTime)
+      await expireMeasurement(support, event.scheduledTime)
+      await expireWebhookEvidence(support, event.scheduledTime)
+      await scheduleWeeklyDigest(support, event.scheduledTime)
       await drainSupportMail(support)
     } catch {
       // Preserve scheduler failure visibility without leaking provider or support payloads.
@@ -120,6 +127,22 @@ export default {
   },
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+
+    if (url.pathname === '/api/resend/webhook') {
+      return handleResendWebhook(request, env as Env & ResendWebhookEnv)
+    }
+
+    if (url.pathname === '/api/measurement/consent' || url.pathname === '/api/measurement/events') {
+      return handleMeasurement(request, env as Env & MeasurementEnv)
+    }
+
+    if (url.pathname === '/api/owner/accounts') {
+      return handleOwnerAccounts(request, env as Env & OwnerAccountsEnv)
+    }
+
+    if (url.pathname === '/api/owner/summary' || url.pathname === '/api/owner/email-test') {
+      return handleOwnerReporting(request, env as Env & ReportingEnv)
+    }
 
     if (url.pathname === '/api/feedback' || url.pathname.startsWith('/api/feedback/') ||
       url.pathname === '/api/owner/feedback' || url.pathname.startsWith('/api/owner/feedback/')) {

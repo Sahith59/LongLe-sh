@@ -54,15 +54,21 @@ export async function accountTotals(env: OwnerAccountsEnv, source?: AccountDirec
   const ownerIds = configuredIds(env.OWNER_USER_IDS)
   const testIds = configuredIds(env.TEST_USER_IDS).filter(value => !ownerIds.includes(value))
   const weekStart = now - 7 * 86_400_000
-  const [registered, existingOwners, existingTests, newAccounts, activeAccounts] = await Promise.all([
+  const [registered, existingOwners, existingTests, newAccounts, activeAccounts, newOwners, newTests, activeOwners, activeTests] = await Promise.all([
     api.count(),
     ownerIds.length ? api.count({ userId: ownerIds }) : 0,
     testIds.length ? api.count({ userId: testIds }) : 0,
     api.count({ createdAtAfter: weekStart }),
     api.count({ lastActiveAtAfter: weekStart }),
+    ownerIds.length ? api.count({ userId: ownerIds, createdAtAfter: weekStart }) : 0,
+    testIds.length ? api.count({ userId: testIds, createdAtAfter: weekStart }) : 0,
+    ownerIds.length ? api.count({ userId: ownerIds, lastActiveAtAfter: weekStart }) : 0,
+    testIds.length ? api.count({ userId: testIds, lastActiveAtAfter: weekStart }) : 0,
   ])
   return { registered, owners: existingOwners, tests: existingTests,
-    external: Math.max(0, registered - existingOwners - existingTests), newAccounts, activeAccounts }
+    external: Math.max(0, registered - existingOwners - existingTests), newAccounts, activeAccounts,
+    newExternal: Math.max(0, newAccounts - newOwners - newTests),
+    activeExternal: Math.max(0, activeAccounts - activeOwners - activeTests) }
 }
 
 export async function accountWindowTotals(env: OwnerAccountsEnv, start: number, end: number,
@@ -70,14 +76,21 @@ export async function accountWindowTotals(env: OwnerAccountsEnv, start: number, 
   const api = source ?? accountDirectory(env)
   const ownerIds = configuredIds(env.OWNER_USER_IDS)
   const testIds = configuredIds(env.TEST_USER_IDS).filter(value => !ownerIds.includes(value))
-  const [registered, existingOwners, existingTests, newAccounts, activeAccounts] = await Promise.all([
+  const range = { createdAtAfter: start, createdAtBefore: end }
+  const activeRange = { lastActiveAtAfter: start, lastActiveAtBefore: end }
+  const [registered, existingOwners, existingTests, newAccounts, activeAccounts, newOwners, newTests, activeOwners, activeTests] = await Promise.all([
     api.count(), ownerIds.length ? api.count({ userId: ownerIds }) : 0,
     testIds.length ? api.count({ userId: testIds }) : 0,
-    api.count({ createdAtAfter: start, createdAtBefore: end }),
-    api.count({ lastActiveAtAfter: start, lastActiveAtBefore: end }),
+    api.count(range), api.count(activeRange),
+    ownerIds.length ? api.count({ userId: ownerIds, ...range }) : 0,
+    testIds.length ? api.count({ userId: testIds, ...range }) : 0,
+    ownerIds.length ? api.count({ userId: ownerIds, ...activeRange }) : 0,
+    testIds.length ? api.count({ userId: testIds, ...activeRange }) : 0,
   ])
   return { registered, owners: existingOwners, tests: existingTests,
-    external: Math.max(0, registered - existingOwners - existingTests), newAccounts, activeAccounts }
+    external: Math.max(0, registered - existingOwners - existingTests), newAccounts, activeAccounts,
+    newExternal: Math.max(0, newAccounts - newOwners - newTests),
+    activeExternal: Math.max(0, activeAccounts - activeOwners - activeTests) }
 }
 
 const querySchema = z.string().trim().max(80)

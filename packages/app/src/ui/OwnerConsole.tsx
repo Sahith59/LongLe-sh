@@ -19,7 +19,8 @@ async function ownerApi(getToken: Token, path: string, init: RequestInit = {}) {
 
 type Summary = {
   generatedAt: number
-  accounts: { registered: number; external: number; owners: number; tests: number; newAccounts: number; activeAccounts: number }
+  accounts: { registered: number; external: number; owners: number; tests: number; newAccounts: number; activeAccounts: number;
+    newExternal: number; activeExternal: number }
   measurement: { state: 'not_measured' | 'measured'; consentedAccounts: number; pairedAccounts: number | null;
     activatedAccounts: number | null; weeklyActiveAccounts: number | null; repeatAccounts: number | null;
     outcomes: { success: number; failure: number; unknown: number } | null;
@@ -67,7 +68,8 @@ function OwnerOverview({ getToken }: { getToken: Token }) {
     {summary ? <div className="owner-sections">
       <section className="feedback-panel"><h2>Accounts</h2><p>Read live from Clerk Production. Owner and test accounts are excluded from external adoption.</p>
         <div className="owner-metrics"><Metric label="Registered" value={summary.accounts.registered} /><Metric label="External" value={summary.accounts.external} />
-          <Metric label="New, last 7 days" value={summary.accounts.newAccounts} /><Metric label="Account-active, last 7 days" value={summary.accounts.activeAccounts} /></div></section>
+          <Metric label="New external, 7 days" value={summary.accounts.newExternal} detail={`${summary.accounts.newAccounts} including owner/test`} />
+          <Metric label="Active external, 7 days" value={summary.accounts.activeExternal} detail={`${summary.accounts.activeAccounts} including owner/test`} /></div></section>
       <section className="feedback-panel"><h2>Observed product use</h2><p>Only accounts that explicitly opted in. Browser acknowledgements are operational evidence, not billing records.</p>
         <div className="owner-metrics">{summary.measurement.state === 'not_measured' ? <Metric label="Coverage" value="Not measured" detail="No consenting account has produced an eligible sample" /> : <>
           <Metric label="Consenting" value={summary.measurement.consentedAccounts} /><Metric label="Paired" value={summary.measurement.pairedAccounts ?? 0} />
