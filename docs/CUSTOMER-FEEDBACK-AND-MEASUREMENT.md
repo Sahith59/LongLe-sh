@@ -1,12 +1,14 @@
 # Customer feedback and measurement
 
 **Updated:** 10 September 2026
-**Status:** P0 incoming support mail confirmed by the owner. P1 private web inbox candidate implemented locally, not deployed or accepted. P2–P5 remain pending.
+**Status:** P0 sender/domain prerequisites are owner-confirmed. P1–P4 are implemented as a tested
+release candidate. P5 production deployment and owner-controlled acceptance remain pending.
 
 **Owner decisions, 10 September:** Resend selected for outbound email; explicit Clerk owner ID
 provided; existing support destination and weekly Monday-morning New York digest approved.
-See [Resend setup and release boundaries](RESEND-SETUP.md). These decisions resolve provider and
-owner-identity selection, not Resend domain/key setup or production acceptance.
+See [Resend setup and release boundaries](RESEND-SETUP.md). The owner subsequently confirmed the
+Resend sending domain and restricted API key. A signed webhook and live delivery check are still
+required before delivery is called proven.
 
 **Sequence decision:** finish and verify the support, feedback, account visibility, and measurement
 release in production first. Customer interviews are explicitly deferred until afterward at the
@@ -30,10 +32,10 @@ include individual resource requests, not just page visits. Neither chart proves
 returning product users, or willingness to pay.
 [Cloudflare metric definitions](https://developers.cloudflare.com/analytics/faq/about-analytics/)
 
-The currently deployed implementation has Clerk accounts and public support/security/privacy email links. It has
-no first-party product-analytics integration, private feedback threads, owner reporting dashboard,
-or scheduled customer report. Historical successful pairing and remote-action retention cannot be
-reconstructed from these screenshots. Do not report missing measurements as zero.
+The production implementation before this release has Clerk accounts and public support/security/privacy
+email links. This candidate adds private feedback, live Clerk-backed owner visibility, explicit opt-in
+measurement, and aggregate reporting. Historical successful pairing and remote-action retention cannot
+be reconstructed. Do not report the pre-release gap as zero activity.
 
 ## 1. Establish the account baseline first
 
@@ -64,9 +66,10 @@ avoids publishing customer emails, project details, or accidentally pasted crede
 
 Initial requirements:
 
-- Short subject, category, message, and a reply address when a reply is requested. No attachments
-  initially. Warn against submitting code, transcripts, pairing links, tokens, or credentials.
-- Separate, unchecked permission for a research follow-up. No marketing checkbox preselection.
+- Short subject, category, and message. No attachments or arbitrary email recipients initially.
+  Warn against submitting code, transcripts, pairing links, tokens, or credentials.
+- A random private link is the verified reply channel. Research contact and marketing consent remain
+  deferred instead of being inferred from a support report.
 - Do not require a functioning login to report a login/setup problem. Guest submissions need abuse
   protection and verified reply-address handling before sending email to that address.
 - Do not claim a message was sent until the server has durably accepted it. Handle offline, timeout,
@@ -225,6 +228,26 @@ must stay disabled until delivery and sender authentication pass. Deploying dorm
 meet the owner's requirement that all of P0–P5 be complete and live.
 
 ### Implementation checkpoint: 10 September 2026
+
+Latest candidate evidence:
+
+- P1 now supports idempotent customer follow-ups, complete owner/customer message history, reports
+  retained until closure, and deletion 90 days after closure.
+- P2 reads the paginated account directory directly from Clerk Production, classifies configured
+  owner/test IDs separately, and persists no duplicate email/name table.
+- P3 is off by default. A keyed pseudonymous account reference is derived server-side; strict action
+  acknowledgements aggregate atomically in D1; duplicate events do not inflate results; opting out
+  deletes raw events and per-account daily aggregates.
+- P4 separates provider acceptance from signed delivery evidence, stores no webhook recipient or
+  payload, sends private-content-free notifications, and deduplicates the Monday 09:00 New York
+  aggregate digest for each completed UTC week.
+- Full automated evidence after the dependency refresh: protocol 58 tests, relay 124 tests, app 188
+  tests, VS Code 30 tests, daemon 564 tests, and CLI 36 tests passed. All workspace typechecks and
+  builds passed; the Worker dry-run resolved every binding; three migrations applied successfully to
+  a real local workerd D1. The production dependency audit reports no known moderate-or-higher issue.
+- These facts establish a production candidate, not P5 acceptance. Remote D1 migration, exact live
+  build deployment, signed Resend delivery, owner/ordinary-account denial checks, and the physical
+  iPhone flow remain outstanding until recorded below.
 
 - Incoming support email: **owner-confirmed pass**. The account-level sending-domain list was
   retried and also returned Unauthorized (code 2036); outgoing domain readiness is still unknown.

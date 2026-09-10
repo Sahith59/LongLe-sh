@@ -1033,8 +1033,9 @@ function Privacy() {
         The official hosted app uses Clerk for authentication. You may sign in with Google, an email
         verification code, or email and password. LongLeash never receives or stores your password. The account
         may contain a stable account identifier, name, email address, profile image, sign-in times,
-        and security/session metadata needed to prevent abuse. LongLeash currently has no advertising,
-        mailing-list, payment, or product-analytics integration and does not sell personal information.
+        and security/session metadata needed to prevent abuse. LongLeash has no advertising,
+        mailing-list, or payment integration and does not sell personal information. Optional product
+        measurement is off by default and described separately below.
       </p>
       <h2>Development data stays local</h2>
       <p>
@@ -1061,20 +1062,41 @@ function Privacy() {
         If enabled, push messages contain identifiers needed to wake and route the app, not prompt,
         source code, path, transcript, or approval content. The app fetches the current item after reconnecting.
       </p>
+      <h2>Private support reports</h2>
+      <p>
+        The website can store a category, subject, report text, status, and private reply history in
+        Cloudflare D1. It does not ask for an email address. A randomly generated private link is the
+        authority to read, continue, or delete the report, so anyone holding that link can do those
+        things. Open reports remain until you delete them. Closed reports and their replies are deleted
+        after 90 days. Owner notification emails contain no report text or private link.
+      </p>
+      <h2>Optional product measurement</h2>
+      <p>
+        Signed-in hosted users may explicitly opt in from the account panel. The service then accepts
+        only an opaque keyed account reference, random event ID, build, bounded timestamp, action type,
+        and success, failure, or unknown outcome. It does not accept email, names, paths, prompts, code,
+        transcripts, URLs, rooms, provider conversation IDs, or pairing credentials. Raw events are
+        deleted after 30 days and per-account daily aggregates after 90 days. Turning measurement off
+        deletes that account’s measurement records immediately and never affects product control.
+      </p>
       <h2>Processors and purpose</h2>
       <p>
-        Cloudflare hosts the public site, static app, abuse controls, and encrypted relay; Clerk
+        Cloudflare hosts the public site, static app, abuse controls, encrypted relay, and separate
+        support/measurement storage; Clerk
         provides account, credential, verification, and session management; Google verifies identity
         only when you choose Google sign-in. LongLeash requests only basic OpenID identity scopes:
         name, email, and profile. It does not request Gmail, Drive, source
         repositories, or provider accounts. Each processor may handle ordinary network and security
-        metadata under its own terms and privacy notice.
+        metadata under its own terms and privacy notice. Resend sends fixed-recipient owner notifications
+        and aggregate reports from support@longleash.dev. Signed delivery webhooks store only provider
+        message ID, event type, and timestamps, not recipient or message content.
       </p>
       <h2>Retention, export, and deletion</h2>
       <p>
         Account records remain until you delete the account or they must be retained for security or
         legal obligations. Open the account control in the app header to download the hosted account
-        fields LongLeash exposes or permanently delete the account. Deletion also clears that
+        fields LongLeash exposes or permanently delete the account. Deletion first removes optional
+        measurement records and also clears that
         account’s credentials from the current browser; laptop-local transcripts are outside the
         hosted account and must be managed on the laptop. You may also contact{' '}
         <a href="mailto:privacy@longleash.dev">privacy@longleash.dev</a> for an access, correction,

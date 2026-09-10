@@ -5,8 +5,8 @@ import { handleMeasurement, measurementSummary, type MeasurementEnv } from '../w
 
 function database(sqlite: DatabaseSync): D1Database {
   const prepare = (sql: string) => {
-    const build = (values: unknown[] = []) => ({
-      bind: (...args: unknown[]) => build(args),
+    const build = (values: (string | number | null)[] = []) => ({
+      bind: (...args: (string | number | null)[]) => build(args),
       run: async () => ({ meta: { changes: Number(sqlite.prepare(sql).run(...values).changes) } }),
       first: async () => sqlite.prepare(sql).get(...values) ?? null,
       all: async () => ({ results: sqlite.prepare(sql).all(...values) }),

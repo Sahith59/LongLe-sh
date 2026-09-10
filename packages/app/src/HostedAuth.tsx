@@ -161,6 +161,12 @@ function HostedAccount() {
         createdAt: user.createdAt?.toISOString() ?? null,
         lastSignInAt: user.lastSignInAt?.toISOString() ?? null,
       },
+      productMeasurement: {
+        enabled: measurementEnabled,
+        note: measurementEnabled
+          ? 'Raw outcome events are retained for 30 days and per-account daily aggregates for 90 days.'
+          : 'No opted-in product measurement is associated with this account.',
+      },
       excludedByDesign: [
         'provider credentials',
         'repositories',

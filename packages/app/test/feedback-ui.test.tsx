@@ -17,8 +17,8 @@ describe('feedback initial render', () => {
   })
   it('renders the owner view without claiming a count or exposing a sample customer', () => {
     const html = renderToStaticMarkup(<OwnerFeedback getToken={async () => null} />)
-    expect(html).toContain('Customer inbox.')
+    expect(html).toContain('Customer inbox')
     expect(html).not.toContain('No reports on this page')
-    expect(html).toContain('Back to sessions')
+    expect(html).toContain('Every request is re-authorized on the server')
   })
 })

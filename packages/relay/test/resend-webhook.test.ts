@@ -16,7 +16,7 @@ describe('signed Resend delivery evidence', () => {
     sqlite.exec(readFileSync(new URL('../migrations/0002_email_outbox.sql', import.meta.url), 'utf8'))
     sqlite.prepare(`INSERT INTO support_email_outbox(id, kind, dedupe_key, created_at, next_attempt_at, updated_at, state, provider_id)
       VALUES (?, 'email_test', 'test', 1, 1, 1, 'accepted', ?)`).run('cc661b0a-923e-4c7d-bb09-86ee10ae6c77', provider)
-    db = { prepare(sql: string) { const build = (values: unknown[] = []) => ({ bind: (...args: unknown[]) => build(args),
+    db = { prepare(sql: string) { const build = (values: (string | number | null)[] = []) => ({ bind: (...args: (string | number | null)[]) => build(args),
       run: async () => ({ meta: { changes: Number(sqlite.prepare(sql).run(...values).changes) } }), first: async () => sqlite.prepare(sql).get(...values) ?? null })
       return build() } } as unknown as D1Database
   })

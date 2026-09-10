@@ -331,7 +331,9 @@ export function Landing() {
             <span>
               <a href={siteHref('/docs/troubleshooting')}>Open troubleshooting</a>
               {' · '}
-              <a href={`${REPOSITORY}/issues/new`}>Report on GitHub</a>
+              <a href={siteHref('/feedback')}>Send private feedback</a>
+              {' · '}
+              <a href={`${REPOSITORY}/issues/new`}>Public GitHub issue</a>
             </span>
           </div>
         </section>

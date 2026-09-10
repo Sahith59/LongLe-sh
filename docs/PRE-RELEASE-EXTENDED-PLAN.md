@@ -497,7 +497,10 @@ verified destination were confirmed. On 10 September, the owner confirmed actual
 receipt. Outbound sender readiness (the API returned Unauthorized) and fresh-user signup remain
 open. P1 has a local private-web-inbox candidate on `feat/customer-feedback`, with 63 relay and 188
 app tests passing; it is not deployed or fully accepted. P2–P5 remain pending. The detailed customer
-plan records missing owner configuration and remaining P1 work without marking them complete.
+plan records the original gaps. As of 10 September, P1–P4 have a full tested release candidate with
+private threads, Clerk-backed owner visibility, opt-in outcome measurement, and signed Resend
+delivery/reporting. P5 deployment and owner-controlled live acceptance remain the active gate;
+Workstream D stays parked until that evidence is recorded.
 The paragraph below is the historical lifecycle checkpoint, not a claim about today's live version.
 
 Workstreams A and B are isolated commits, and Workstream C is published as the `rc.4` public

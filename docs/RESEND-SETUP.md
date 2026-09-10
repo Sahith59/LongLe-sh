@@ -1,7 +1,9 @@
 # Resend setup for LongLeash support
 
-Status: provider selected by the owner on 10 September 2026. Sending is **not enabled**.
-Incoming Cloudflare Email Routing stays in place. This runbook does not authorize a paid plan.
+Status: the owner confirmed the Resend sending domain as verified and staged the restricted sending
+API key on 10 September 2026. Incoming Cloudflare Email Routing stays in place. Production sending
+is not called accepted until the controlled delivery matrix passes. This runbook does not authorize
+a paid plan.
 
 ## Owner setup
 
@@ -63,16 +65,25 @@ contain only a generic notification and authenticated owner-inbox link.
 
 ## Required before activation
 
-- Finish P1 private follow-up/history, reply-address verification, consent, and privacy disclosure.
+- Preserve the private-link reply channel; arbitrary customer-address sending remains intentionally
+  disabled. Deploy the reviewed privacy disclosure with the feature.
 - Provision storage, apply reviewed migrations, configure rate limits and sender flags, and verify
   the full owner sign-in flow. Owner access requires recent first- and second-factor verification;
   a valid Google login alone is not treated as proof of MFA.
-- Wire and test delivery/bounce handling, suppression, email-outage visibility, operational outbox
-  review, and scheduler configuration. The scheduler handler exists but no cron is configured yet.
+- Verify delivery/bounce handling, suppression, email-outage visibility, operational outbox review,
+  and the configured hourly scheduler with its Monday New York gate.
 - Send one controlled test; verify From, Reply-To, SPF/DKIM alignment, delivery, and reply receipt.
-- Complete P2 account visibility, P3 optional measurement, P4 digest generation, and P5 production
-  acceptance. None is declared complete by adding the Resend adapter.
+- Complete P5 production acceptance. P1–P4 code and automated evidence do not establish a live pass.
 
 References: [domain verification](https://resend.com/docs/dashboard/domains/introduction),
 [restricted API keys](https://resend.com/docs/dashboard/api-keys/introduction),
 [idempotency window](https://resend.com/docs/dashboard/emails/idempotency-keys).
+
+## Signed delivery webhook
+
+Create one Resend webhook for `https://app.longleash.dev/api/resend/webhook` and select sent,
+delivered, delivery delayed, failed, bounced, complained, and suppressed events. Stage its signing
+secret with `wrangler versions secret put RESEND_WEBHOOK_SECRET`; never put it in Git or chat. The
+handler verifies the raw Svix signature before parsing, rejects replay through the unique event ID,
+and stores only provider message ID, event type, and timestamps. Resend recipient and message content
+are deliberately discarded.
