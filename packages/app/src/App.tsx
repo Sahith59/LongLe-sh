@@ -17,6 +17,7 @@ import {
   SquareTerminal,
   GitBranchPlus,
   ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   LogOut,
   Trash2,
@@ -955,6 +956,9 @@ export function HelpSheet({ connected, via, onClose }: { connected: boolean; via
         >
           Open the full guide
         </a>
+        <a className="help-feedback" href="https://longleash.dev/feedback" target="_blank" rel="noreferrer">
+          Report a bug or request a feature
+        </a>
       </section>
     </div>,
     document.body,
@@ -966,6 +970,7 @@ function AccountSheet({ account, onClose }: { account: ReturnType<typeof useAcco
   const [confirmation, setConfirmation] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [measurementError, setMeasurementError] = useState<string | null>(null)
   const dialogRef = useRef<HTMLElement | null>(null)
   const keyboard = useKeyboardInset(true)
   const viewportHeight = useVisualViewportHeight(true)
@@ -1057,7 +1062,22 @@ function AccountSheet({ account, onClose }: { account: ReturnType<typeof useAcco
           <Key className="wide" {...(account.exportAccount ? { onClick: account.exportAccount } : {})} disabled={!account.exportAccount}>
             <Download size={16} aria-hidden="true" /> Download account data
           </Key>
+          <Key className="wide" {...(account.openSecurity ? { onClick: account.openSecurity } : {})} disabled={!account.openSecurity}>
+            <ShieldCheck size={16} aria-hidden="true" /> Security and multi-factor settings
+          </Key>
         </div>
+        <section className="measurement-choice" aria-labelledby="measurement-title">
+          <div><strong id="measurement-title">Optional product measurement</strong>
+            <p>Share only successful or failed action categories and dates. No prompts, code, paths, transcripts, session IDs, room IDs, or device identifiers.</p></div>
+          <button type="button" className={`measurement-toggle${account.measurementEnabled ? ' on' : ''}`}
+            role="switch" aria-checked={account.measurementEnabled === true} disabled={account.measurementBusy || !account.setMeasurement}
+            onClick={() => { setMeasurementError(null); void account.setMeasurement?.(!account.measurementEnabled).catch(() =>
+              setMeasurementError(account.measurementEnabled ? 'Deletion was not confirmed. Retry before closing this panel.' : 'Opt-in was not saved, so nothing will be collected.')) }}>
+            <span aria-hidden="true" />{account.measurementBusy ? 'Checking…' : account.measurementEnabled ? 'On' : 'Off'}
+          </button>
+          <p className="measurement-fineprint">Off by default. Turning it off deletes your raw events and daily product-use aggregates immediately. It never affects pairing or control.</p>
+          {measurementError ? <p className="err" role="alert">{measurementError}</p> : null}
+        </section>
         <div className="account-data-boundary" id="account-sheet-boundary">
           This account identifies you to the hosted app. Laptop code, transcripts, provider
           credentials, and pairing secrets are outside the account database.

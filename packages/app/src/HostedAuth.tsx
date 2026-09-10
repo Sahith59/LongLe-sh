@@ -11,9 +11,10 @@ import {
 } from '@clerk/react'
 import { ArrowRight, KeyRound, Laptop, LockKeyhole, ShieldCheck, UserRoundCheck } from 'lucide-react'
 import App from './App.js'
-import OwnerFeedback from './ui/OwnerFeedback.js'
+import OwnerConsole from './ui/OwnerConsole.js'
 import { AccountProvider } from './lib/account-context.js'
 import { configureAccountToken, configureCredentialAccount, forgetCredentialsFor } from './lib/client.js'
+import { configureMeasurement, readMeasurementConsent, writeMeasurementConsent } from './lib/measurement-client.js'
 
 export interface HostedAuthConfig {
   required: boolean
@@ -115,11 +116,25 @@ function HostedAccount() {
   const { isLoaded, isSignedIn, userId, getToken } = useAuth()
   const { user } = useUser()
   const clerk = useClerk()
+  const [measurementEnabled, setMeasurementEnabled] = useState(false)
+  const [measurementBusy, setMeasurementBusy] = useState(true)
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) { configureMeasurement(null); setMeasurementEnabled(false); setMeasurementBusy(false); return }
+    let current = true
+    configureMeasurement(() => getToken(), false)
+    setMeasurementBusy(true)
+    void readMeasurementConsent().then(value => { if (current) { setMeasurementEnabled(value); configureMeasurement(() => getToken(), value) } })
+      .catch(() => { if (current) setMeasurementEnabled(false) })
+      .finally(() => { if (current) setMeasurementBusy(false) })
+    return () => { current = false; configureMeasurement(null) }
+  }, [isLoaded, isSignedIn, userId])
 
   if (!isLoaded) return <AccountLoading />
   if (!isSignedIn || userId === undefined || userId === null) {
     configureCredentialAccount(null)
     configureAccountToken(null)
+    configureMeasurement(null)
     return <SignInGate />
   }
 
@@ -131,6 +146,7 @@ function HostedAccount() {
   const signOut = () => {
     configureAccountToken(null)
     configureCredentialAccount(null)
+    configureMeasurement(null)
     void clerk.signOut({ redirectUrl: '/' })
   }
 
@@ -169,12 +185,15 @@ function HostedAccount() {
 
   const deleteAccount = async () => {
     if (!user) throw new Error('The account is not loaded.')
+    // Do not orphan pseudonymous aggregates when the identity mapping is deleted.
+    await writeMeasurementConsent(false)
     await user.delete()
     // The account is gone. Remove its browser-side device credentials by captured user id so a
     // Clerk re-render cannot accidentally redirect cleanup into the unscoped local slot.
     forgetCredentialsFor(user.id)
     configureAccountToken(null)
     configureCredentialAccount(null)
+    configureMeasurement(null)
     try {
       await clerk.signOut({ redirectUrl: '/' })
     } catch {
@@ -182,6 +201,15 @@ function HostedAccount() {
       // misleading failure. A hard navigation makes Clerk re-evaluate the now-deleted identity.
       window.location.assign('/')
     }
+  }
+
+  const setMeasurement = async (next: boolean) => {
+    setMeasurementBusy(true)
+    try {
+      const saved = await writeMeasurementConsent(next)
+      setMeasurementEnabled(saved)
+      configureMeasurement(() => getToken(), saved)
+    } finally { setMeasurementBusy(false) }
   }
 
   return (
@@ -192,10 +220,14 @@ function HostedAccount() {
         signOut,
         exportAccount,
         deleteAccount,
+        measurementEnabled,
+        measurementBusy,
+        setMeasurement,
+        openSecurity: () => clerk.openUserProfile(),
       }}
     >
-      {window.location.pathname === '/owner/feedback'
-        ? <OwnerFeedback key={userId} getToken={() => getToken()} />
+      {window.location.pathname === '/owner' || window.location.pathname.startsWith('/owner/')
+        ? <OwnerConsole key={userId} getToken={() => getToken()} />
         : <App key={userId} />}
     </AccountProvider>
   )

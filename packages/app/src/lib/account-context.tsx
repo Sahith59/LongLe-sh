@@ -6,6 +6,10 @@ export interface AccountView {
   signOut?: () => void
   exportAccount?: () => void
   deleteAccount?: () => Promise<void>
+  measurementEnabled?: boolean
+  measurementBusy?: boolean
+  setMeasurement?: (enabled: boolean) => Promise<void>
+  openSecurity?: () => void
 }
 
 const AccountContext = createContext<AccountView>({ hosted: false })

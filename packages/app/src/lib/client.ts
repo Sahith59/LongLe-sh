@@ -19,6 +19,7 @@ import {
   type WorkspaceMode,
 } from '@longleash/protocol'
 import type { SessionSeed, Store } from './store.js'
+import { recordMeasuredOutcome } from './measurement-client.js'
 
 export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'unauthorized' | 'revoked'
 /** How the phone is currently reaching the laptop. */
@@ -186,6 +187,7 @@ export async function pair(challengeId: string, secret: string): Promise<string>
   // The E2E root for the relay path. Captured now, at the one moment the laptop and phone
   // share a LAN-only channel, so this pairing works remotely without ever re-pairing.
   if (relaySecret) writeCredential(RELAY_SECRET_KEY, relaySecret)
+  recordMeasuredOutcome('paired', 'success')
   return token
 }
 
@@ -251,6 +253,7 @@ async function pairViaRelay(challengeId: string, secret: string): Promise<string
             writeCredential(TOKEN_KEY, reply.token)
             writeCredential(RELAY_SECRET_KEY, reply.relaySecret)
             writeCredential(RELAY_URL_KEY, endpoint)
+            recordMeasuredOutcome('paired', 'success')
             finish({ token: reply.token })
           } else if (reply.type === 'pair-error') {
             finish(new Error(`Pairing refused: ${reply.reason ?? 'unknown'}`))
@@ -525,6 +528,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
   let path: LinkPath = 'lan'
   let relayOrigin = false
   const subscribed = new Set<string>()
+  const pendingDelegationStarts = new Set<string>()
   const pendingSync = new Map<string, string>()
   let syncGeneration = 0
   let hydrationTimer: ReturnType<typeof setTimeout> | null = null
@@ -623,6 +627,18 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       )
       return
     }
+    if (message.type === 'ack' && message.of === 'decision') {
+      recordMeasuredOutcome('approval', message.outcome === 'decided' ? 'success' : message.outcome === 'unknown' ? 'unknown' : 'failure')
+    }
+    if (message.type === 'ack' && message.of === 'sendMessage') {
+      recordMeasuredOutcome('reply', message.outcome === 'sent' ? 'success' : 'failure')
+    }
+    if (message.type === 'ack' && message.of === 'takeOver') {
+      recordMeasuredOutcome('handoff', message.outcome === 'taken-over' ? 'success' : 'failure')
+    }
+    if (message.type === 'ack' && message.of === 'reclaimSession') {
+      recordMeasuredOutcome('handoff', message.outcome === 'phone-ready' ? 'success' : 'failure')
+    }
     if (
       message.type === 'ack' &&
       message.of === 'stopSession' &&
@@ -632,7 +648,11 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       // "not-running" means the requested outcome is already true. Treating it as a no-op
       // left a dead card and dead Stop button on screen forever.
       store.settleSession(message.sessionId)
+      recordMeasuredOutcome('stop', 'success')
       return
+    }
+    if (message.type === 'ack' && message.of === 'stopSession') {
+      recordMeasuredOutcome('stop', 'failure')
     }
     if (
       message.type === 'ack' &&
@@ -646,6 +666,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
         message.sessionId,
         message.outcome,
       )
+      recordMeasuredOutcome('tuning', 'success')
       return
     }
     if (message.type === 'hello') {
@@ -690,6 +711,10 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     if (message.type === 'delegation') {
       const parsed = DelegationUpdateSchema.safeParse(message)
       if (parsed.success) {
+        if (parsed.data.requestId && pendingDelegationStarts.delete(parsed.data.requestId)) {
+          recordMeasuredOutcome('delegation', parsed.data.created === true && parsed.data.delegation.targetSessionId ? 'success' :
+            parsed.data.delegation.status === 'failed' || parsed.data.delegation.status === 'cancelled' ? 'failure' : 'unknown')
+        }
         callbacks.onDelegationUpdate?.(
           parsed.data.delegation,
           parsed.data.requestId,
@@ -709,8 +734,10 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
         message.of === 'updateSessionSettings' &&
         typeof message.requestId === 'string'
       ) {
+        recordMeasuredOutcome('tuning', 'failure')
         callbacks.onSessionSettingsError?.(message.requestId, detail)
       } else if (typeof message.requestId === 'string' && callbacks.onDelegationError) {
+        if (pendingDelegationStarts.delete(message.requestId)) recordMeasuredOutcome('delegation', 'failure')
         callbacks.onDelegationError(message.requestId, detail)
       } else callbacks.onError(detail)
       return
@@ -903,7 +930,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
         const detail = 'Not connected to your laptop — no child session was started.'
         if (callbacks.onDelegationError) callbacks.onDelegationError(input.requestId, detail)
         else callbacks.onError(detail)
-      }
+      } else pendingDelegationStarts.add(input.requestId)
       return sent
     },
     updateSessionSettings: (input: {
