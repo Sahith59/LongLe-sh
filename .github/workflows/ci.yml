@@ -87,6 +87,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Apply additive customer-data migrations
+        run: pnpm --dir packages/relay exec wrangler d1 migrations apply longleash-customer-data --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy the exact tested commit
         run: pnpm --dir packages/relay exec wrangler deploy
         env:

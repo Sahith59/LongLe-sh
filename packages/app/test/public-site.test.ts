@@ -36,6 +36,7 @@ describe('first-party public site', () => {
       '/docs/faq',
       '/roadmap',
       '/privacy',
+      '/feedback',
       '/terms',
       '/license',
     ]) {

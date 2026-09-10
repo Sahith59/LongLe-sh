@@ -15,7 +15,8 @@ describe('public Worker configuration', () => {
   })
 
   it('requires every account secret without committing a value', () => {
-    for (const secret of ['CLERK_PUBLISHABLE_KEY', 'CLERK_SECRET_KEY', 'RELAY_TICKET_SECRET']) {
+    for (const secret of ['CLERK_PUBLISHABLE_KEY', 'CLERK_SECRET_KEY', 'RELAY_TICKET_SECRET',
+      'OWNER_USER_IDS', 'MEASUREMENT_SECRET', 'RESEND_API_KEY', 'RESEND_WEBHOOK_SECRET']) {
       expect(config).toContain(`"${secret}"`)
       expect(config).not.toMatch(new RegExp(`"${secret}"\\s*:\\s*".+"`))
     }
@@ -25,6 +26,16 @@ describe('public Worker configuration', () => {
     expect(config).toContain('"ACCOUNT_API_RATE"')
     expect(config).toContain('"RELAY_GUEST_RATE"')
     expect(config).toContain('"RELAY_HOST_RATE"')
+    expect(config).toContain('"FEEDBACK_RATE"')
+    expect(config).toContain('"MEASUREMENT_RATE"')
+  })
+
+  it('keeps customer storage separate and schedules bounded maintenance', () => {
+    expect(config).toContain('"binding": "FEEDBACK_DB"')
+    expect(config).toContain('"database_name": "longleash-customer-data"')
+    expect(config).toContain('"5 * * * *"')
+    expect(config).toContain('"FEEDBACK_ENABLED": "true"')
+    expect(config).toContain('"MEASUREMENT_ENABLED": "true"')
   })
 })
 

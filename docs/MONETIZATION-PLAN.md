@@ -1,6 +1,6 @@
 # LongLeash monetization plan
 
-**Decision date:** 2026-08-15
+**Decision date:** 2026-08-15; customer-learning update 2026-09-09
 
 **Status:** commercial source of truth; hypotheses remain gated by external usage and interviews
 
@@ -8,9 +8,19 @@
 [`PHASE2A-CHECKPOINT.md`](PHASE2A-CHECKPOINT.md).
 
 LongLeash has a credible problem and a plausible business, but neither revenue nor product-market
-fit has been proved. The project has no meaningful external adoption baseline yet. **$5,000 MRR is
+fit has been proved. There is now a screenshot-based traffic baseline, but external activation and
+product retention remain unmeasured. **$5,000 MRR is
 a target, not a result that engineering can guarantee.** This document turns that target into
 measurable customer, product, and reliability gates.
+
+**9 September update:** the owner reports successful phone acceptance and shared Cloudflare charts
+showing 68.09k requests and 1.96k reported unique visitors over the Previous 30 days view. Those are
+network metrics, not registered customers or verified human usage. The next proposed step before
+Workstream D is [customer feedback and measurement](CUSTOMER-FEEDBACK-AND-MEASUREMENT.md). The owner
+has since confirmed that Clerk Production contains only the founder: **0 external registered users**
+in the supplied account view. Build and production-verify private feedback, owner account visibility,
+optional product measurement, and reporting before interviews, as requested by the owner. No product
+tracking or automatic reporting has been enabled by this update.
 
 ## Executive decision
 
@@ -229,7 +239,7 @@ baseline is longer—often 6–12 months or more. Missing a monthly number does 
 security or shipping unbuilt team promises; it means revisit acquisition, activation, retention,
 or the offer using evidence.
 
-## Accounts: yes for commerce, no for using LongLeash
+## Accounts: required for official hosting, not local/self-hosted use
 
 A paid operated service needs recoverable identity for subscriptions, invoices, cancellations,
 refunds, team seats, roles, and entitlement recovery. That does **not** justify forcing an account
@@ -237,7 +247,7 @@ into local pairing.
 
 ```mermaid
 flowchart LR
-    U[Optional commercial account] --> B[Billing customer]
+    U[Existing hosted account] --> B[Optional future billing customer]
     B --> O[Organization and subscription]
     O --> E[Entitlement service]
     E -->|short-lived signed token| D[Laptop daemon]
@@ -277,16 +287,11 @@ This is a direction for implementation planning, not permission to create vendor
 
 ### Identity
 
-Prefer a managed, passwordless/OAuth identity provider for the optional account plane. Clerk's
-published free tier is sufficient for an early beta and avoids inventing password storage and
-recovery. Better Auth with Cloudflare D1 is a credible self-hosted alternative, but it transfers
-more authentication security and availability responsibility to LongLeash.
-[Clerk pricing](https://clerk.com/pricing),
-[Better Auth Cloudflare support](https://better-auth.com/blog/1-5)
-
-**Provisional choice:** Clerk for the fastest safer commercial pilot, behind an internal auth
-interface so it can be replaced. Re-evaluate data residency, pricing, export, deletion, and vendor
-lock-in before implementation.
+Clerk is already the official hosted identity system, supporting Google and verified email flows.
+It is the authoritative registered-user source; local/LAN and self-hosted use remain accountless.
+Future billing attaches to this identity rather than introducing a second login. See
+[the account strategy](PUBLIC-ACCOUNT-STRATEGY.md) for the shipped boundary. Re-evaluate current
+vendor cost, data residency, export, deletion, and lock-in before expanding collection or billing.
 
 ### Billing and tax
 
@@ -364,7 +369,7 @@ Supporting metrics:
 
 ### Gate 1 — validate the individual product
 
-Before building general billing/account UI, require:
+Before building general billing UI (hosted account UI already exists), require:
 
 - 100 activated external users;
 - at least 30 weekly active users;
@@ -471,12 +476,16 @@ source project while another commercial wedge is found.
 
 ## Next execution order
 
-1. Finish the remaining public-preview gates and branded domain.
-2. Resume Phase 2A exactly from authenticated daemon-to-extension snapshot sync.
-3. Instrument the privacy-safe activation and reliability funnel.
-4. Recruit ten observed testers, then reach 100 activated users.
-5. Run customer/team interviews and test the price offers manually—no billing code yet.
-6. Build the optional account/entitlement plane only after Gate 1.
+1. Establish the Clerk account baseline and a tested private customer-feedback channel.
+2. Add disclosed, optional product-outcome measurement and owner reporting using the
+   [customer-learning plan](CUSTOMER-FEEDBACK-AND-MEASUREMENT.md); do not silently enable tracking.
+3. Deploy and pass the feedback/reporting production matrix before customer interviews. Verify
+   signup using owner-controlled test identities without counting them as external adoption.
+4. After owner acceptance, continue at Workstream D and begin discovery with willing users when
+   available; preserve the separate Phase 2A checkpoint. Test price offers without building billing
+   or treating positive interview answers as purchases.
+5. Recruit ten observed testers, then pursue Gate 1 with measured activation and mature cohorts.
+6. Build optional billing/entitlements only after the demand and commerce gates pass.
 7. Build and sell the team pilot only after its actual governance features and security gates exist.
 
 This order keeps LongLeash useful and trustworthy even if the monetization hypothesis changes.

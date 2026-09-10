@@ -5,10 +5,15 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "longleash-relay",
   "main": "worker/index.ts",
-  "compatibility_date": "2026-08-14",
+  "compatibility_date": "2026-09-10",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
-  "observability": { "enabled": true },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": true },
+    "traces": { "enabled": true, "head_sampling_rate": 0.02 }
+  },
 
   // Cloudflare owns DNS and certificates for these exact hosts. workers.dev stays enabled for old
   // laptop relay sockets and rollback; browser traffic is moved to the account-gated app host.
@@ -24,13 +29,19 @@
     "PUBLIC_SITE_HOST": "longleash.dev",
     "PUBLIC_WWW_HOST": "www.longleash.dev",
     "PUBLIC_APP_HOST": "app.longleash.dev",
-    "PUBLIC_LEGACY_APP_HOST": "longleash-relay.tsahith59.workers.dev"
+    "PUBLIC_LEGACY_APP_HOST": "longleash-relay.tsahith59.workers.dev",
+    "FEEDBACK_ENABLED": "true",
+    "MEASUREMENT_ENABLED": "true",
+    "SUPPORT_EMAIL_ENABLED": "true",
+    "REPORTING_ENABLED": "true",
+    "OWNER_NOTIFICATION_EMAIL": "support@longleash.dev"
   },
 
   // Never put these values in this file, .env, chat, screenshots, or Git. Set them with
   // `wrangler secret put` after creating the production Clerk instance.
   "secrets": {
-    "required": ["CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY", "RELAY_TICKET_SECRET"]
+    "required": ["CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY", "RELAY_TICKET_SECRET",
+      "OWNER_USER_IDS", "MEASUREMENT_SECRET", "RESEND_API_KEY", "RESEND_WEBHOOK_SECRET"]
   },
 
   // The authenticated account API is keyed by Clerk subject; guest upgrades use a one-way account
@@ -38,8 +49,21 @@
   "ratelimits": [
     { "name": "ACCOUNT_API_RATE", "namespace_id": "811501", "simple": { "limit": 30, "period": 60 } },
     { "name": "RELAY_GUEST_RATE", "namespace_id": "811502", "simple": { "limit": 120, "period": 60 } },
-    { "name": "RELAY_HOST_RATE", "namespace_id": "811503", "simple": { "limit": 60, "period": 60 } }
+    { "name": "RELAY_HOST_RATE", "namespace_id": "811503", "simple": { "limit": 60, "period": 60 } },
+    { "name": "FEEDBACK_RATE", "namespace_id": "811504", "simple": { "limit": 10, "period": 60 } },
+    { "name": "MEASUREMENT_RATE", "namespace_id": "811505", "simple": { "limit": 120, "period": 60 } }
   ],
+
+  "d1_databases": [{
+    "binding": "FEEDBACK_DB",
+    "database_name": "longleash-customer-data",
+    "database_id": "2a8cc698-31ed-4d84-80ce-5f3698486ce0",
+    "migrations_dir": "migrations"
+  }],
+
+  // Hourly scheduling keeps 09:00 America/New_York correct across daylight-saving changes.
+  // The handler gates on Monday morning and deduplicates each completed UTC reporting week.
+  "triggers": { "crons": ["5 * * * *"] },
 
   // The built app shell. Requests for it never reach the Worker, so they cost nothing.
   "assets": {

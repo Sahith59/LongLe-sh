@@ -11,6 +11,22 @@ This document is the durable checkpoint for the work required before LongLeash i
 finished public product. It separates user-facing promises from internal engineering slices and
 records the security boundaries that implementation work must preserve.
 
+**Customer-learning checkpoint, 9 September 2026:** the owner reports that the latest phone fixes
+pass their tests. Before starting D, the owner has requested
+[private customer feedback and measurement](CUSTOMER-FEEDBACK-AND-MEASUREMENT.md), packages P0–P5,
+with a production acceptance gate before customer interviews. The supplied Clerk account view shows
+only the founder (0 external registered users); traffic must not be presented as adoption. Clerk
+remains the account source; new product tracking, reporting, and a feedback inbox are planned, not shipped.
+This records owner acceptance, not a new independent production matrix or a waiver of remaining
+release gates. The original implementation/evidence entries below retain their historical dates.
+
+**Customer-support update, 10 September:** the owner chose Resend, supplied the explicit Clerk owner
+ID, and approved the existing support inbox and a weekly Monday-morning New York digest. P1 now has
+a local Resend/outbox candidate and strict owner MFA checks; 114 relay and 188 app tests pass,
+including local workerd-D1 coverage. This is not a P0–P5 completion or production-deployment claim.
+The [Resend setup runbook](RESEND-SETUP.md) records the remaining domain/key steps and staged owner
+secret. Production sending, account reporting, product measurement and scheduled digests remain off.
+
 ## Outcome
 
 A new user should be able to discover LongLeash, understand it in 30 seconds, install it without a
@@ -472,6 +488,20 @@ plan, applies approved changes, starts or verifies the service, and returns a re
 | 20 Aug 2026 | Workstream C public candidate | Protected PR #8 merged as `9ad3409`; CI, production deployment, and the independent branded-route/security/auth matrix passed on that exact commit. `@longleash/cli@0.1.0-rc.4` passed clean Linux and macOS tarball jobs and was published through npm trusted publishing with an npm signature and SLSA provenance. The public `rc` channel, fresh install, CLI entry point, registry signatures, attestations, and prerelease update-channel behavior were verified. Physical iPhone, macOS login and sleep/wake, and real systemd-user acceptance remain open. |
 
 ## Next implementation checkpoint
+
+**Current override, 9 September 2026:** complete customer-feedback/measurement packages P0–P5 and
+their production acceptance before starting D. Interviews are deferred until that release is live.
+See the linked customer plan above for scope, owner email dependencies, and per-package gates.
+P0's read-only live checks passed against `380508d`, and the existing support forwarding rule plus
+verified destination were confirmed. On 10 September, the owner confirmed actual incoming-mail
+receipt. Outbound sender readiness (the API returned Unauthorized) and fresh-user signup remain
+open. P1 has a local private-web-inbox candidate on `feat/customer-feedback`, with 63 relay and 188
+app tests passing; it is not deployed or fully accepted. P2–P5 remain pending. The detailed customer
+plan records the original gaps. As of 10 September, P1–P4 have a full tested release candidate with
+private threads, Clerk-backed owner visibility, opt-in outcome measurement, and signed Resend
+delivery/reporting. P5 deployment and owner-controlled live acceptance remain the active gate;
+Workstream D stays parked until that evidence is recorded.
+The paragraph below is the historical lifecycle checkpoint, not a claim about today's live version.
 
 Workstreams A and B are isolated commits, and Workstream C is published as the `rc.4` public
 candidate. The next product workstream is D, human-verifiable pairing, but Workstream C's physical

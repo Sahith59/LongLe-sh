@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@clerk/backend": "3.16.6",
+    "svix": "^2.4.0",
     "tsx": "^4.23.1",
     "ws": "^8.21.1",
     "zod": "^3.24.0"
@@ -23,6 +24,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
+    "miniflare": "5.20260811.1-alpha",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0",
     "wrangler": "^4.123.0"

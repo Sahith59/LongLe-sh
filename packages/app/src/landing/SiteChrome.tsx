@@ -91,6 +91,7 @@ export function SiteHeader() {
         <a href={siteHref('/docs/connectivity')}>Connectivity</a>
         <a href={siteHref('/docs/self-hosting')}>Self-hosting</a>
         <a href={siteHref('/roadmap')}>Roadmap</a>
+        <a href={siteHref('/feedback')}>Feedback</a>
       </nav>
       <div className="land-actions">
         <a className="land-icon-link" href={REPOSITORY} aria-label="View source on GitHub">
@@ -121,6 +122,7 @@ export function SiteFooter({ children }: { children?: ReactNode }) {
         <a href={siteHref('/license')}>License</a>
         <a href={siteHref('/privacy')}>Privacy</a>
         <a href={siteHref('/terms')}>Terms</a>
+        <a href={siteHref('/feedback')}>Talk to the founder</a>
         <a href={REPOSITORY}>Source on GitHub</a>
         <span className="mono">build {__BUILD__}</span>
       </nav>

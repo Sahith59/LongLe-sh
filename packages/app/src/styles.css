@@ -3626,6 +3626,16 @@ body {
   text-decoration: none;
 }
 .help-docs:active { transform: translateY(1px); box-shadow: var(--pressed); }
+.help-feedback {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+  align-items: center;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 @media (max-width: 520px) {
   .account-sheet-scrim {
