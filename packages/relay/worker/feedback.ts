@@ -22,13 +22,27 @@ export const feedbackInput = z.object({
   message: text(4000),
 }).strict()
 const replyInput = z.object({
+  messageId: id,
   reply: text(4000),
   revision: z.number().int().min(0),
   status: z.enum(['received', 'needs_information', 'planned', 'resolved', 'not_planned']),
 }).strict()
+const followUpInput = z.object({ id, accessToken: token, message: text(4000) }).strict()
 const RETENTION_MS = 90 * 86_400_000
 const MAX_BODY_BYTES = 24_000
-const columns = 'id, category, subject, message, reply, status, created_at, updated_at, expires_at, revision'
+const columns = 'id, category, subject, message, reply, status, created_at, updated_at, closed_at, expires_at, revision'
+
+async function ticketWithMessages(db: D1Database, ticketId: string, proofHash: string | null,
+  now: number): Promise<Record<string, unknown> | null> {
+  const proof = proofHash === null ? '' : ' AND access_hash = ?'
+  const binds: (string | number)[] = proofHash === null ? [ticketId, now] : [ticketId, proofHash, now]
+  const ticket = await db.prepare(`SELECT ${columns} FROM feedback WHERE id = ?${proof}
+    AND (expires_at IS NULL OR expires_at > ?)`).bind(...binds).first<Record<string, unknown>>()
+  if (!ticket) return null
+  const messages = await db.prepare(`SELECT id, author, body, status_snapshot, created_at
+    FROM feedback_messages WHERE feedback_id = ? ORDER BY created_at, id`).bind(ticketId).all()
+  return { ...ticket, messages: messages.results }
+}
 
 export function feedbackJson(body: unknown, status = 200): Response {
   return Response.json(body, { status, headers: {
@@ -67,7 +81,7 @@ async function digest(value: string): Promise<string> {
 export async function handleFeedback(request: Request, env: FeedbackEnv,
   authenticate = authenticateOwner, now = Date.now()): Promise<Response> {
   const url = new URL(request.url)
-  if (!/^\/api\/(feedback(?:\/config)?|(?:owner\/)?feedback\/[a-f0-9-]{36}|owner\/feedback)$/.test(url.pathname)) {
+  if (!/^\/api\/(feedback(?:\/config)?|feedback\/[a-f0-9-]{36}(?:\/messages)?|owner\/feedback(?:\/[a-f0-9-]{36})?)$/.test(url.pathname)) {
     return feedbackJson({ error: 'Not found' }, 404)
   }
   const hosted = url.protocol === 'https:' && [env.PUBLIC_SITE_HOST, env.PUBLIC_APP_HOST].includes(url.hostname)
@@ -102,11 +116,10 @@ export async function handleFeedback(request: Request, env: FeedbackEnv,
       // A retry is idempotent only when possession and submitted content match. Never return a
       // different person's report, including when an attacker deliberately reuses its public ID.
       await db.prepare(`INSERT INTO feedback (id, access_hash, category, subject, message, created_at, updated_at, expires_at)
-        SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM feedback WHERE created_at >= ?) < 500
+        SELECT ?, ?, ?, ?, ?, ?, ?, NULL WHERE (SELECT COUNT(*) FROM feedback WHERE created_at >= ?) < 500
         ON CONFLICT(id) DO NOTHING`).bind(input.id, hash, input.category, input.subject, input.message,
-          now, now, now + RETENTION_MS, now - 86_400_000).run()
-      const existing = await db.prepare(`SELECT ${columns} FROM feedback WHERE id = ? AND access_hash = ? AND expires_at > ?`)
-        .bind(input.id, hash, now).first<Record<string, unknown>>()
+          now, now, now - 86_400_000).run()
+      const existing = await ticketWithMessages(db, input.id, hash, now)
       if (!existing) return feedbackJson({ error: 'Unable to accept this report. Retry later or email support@longleash.dev.' }, 409)
       if (existing.subject !== input.subject || existing.message !== input.message || existing.category !== input.category) {
         return feedbackJson({ error: 'This report was already received with different content. Start a new report.' }, 409)
@@ -116,32 +129,72 @@ export async function handleFeedback(request: Request, env: FeedbackEnv,
     if (url.pathname === '/api/owner/feedback' && request.method === 'GET') {
       const page = z.coerce.number().int().min(0).max(1000).safeParse(url.searchParams.get('page') ?? 0)
       if (!page.success) return feedbackJson({ error: 'Invalid page' }, 400)
-      const rows = await db.prepare(`SELECT ${columns} FROM feedback WHERE expires_at > ? ORDER BY created_at DESC, id DESC LIMIT 26 OFFSET ?`)
+      const rows = await db.prepare(`SELECT ${columns} FROM feedback WHERE expires_at IS NULL OR expires_at > ? ORDER BY created_at DESC, id DESC LIMIT 26 OFFSET ?`)
         .bind(now, page.data * 25).all()
       return feedbackJson({ tickets: rows.results.slice(0, 25), hasMore: rows.results.length > 25 })
     }
-    const ticketId = id.safeParse(url.pathname.split('/').at(-1))
+    const parts = url.pathname.split('/').filter(Boolean)
+    const candidateId = parts.at(-1) === 'messages' ? parts.at(-2) : parts.at(-1)
+    const ticketId = id.safeParse(candidateId)
     if (!ticketId.success) return feedbackJson({ error: 'Not found' }, 404)
     if (!ownerRoute) {
       const access = token.safeParse(request.headers.get('Authorization')?.replace(/^Bearer /, ''))
       if (!access.success) return feedbackJson({ error: 'Not found' }, 404)
       const hash = await digest(access.data)
       if (request.method === 'GET') {
-        const ticket = await db.prepare(`SELECT ${columns} FROM feedback WHERE id = ? AND access_hash = ? AND expires_at > ?`)
-          .bind(ticketId.data, hash, now).first()
+        const ticket = await ticketWithMessages(db, ticketId.data, hash, now)
         return ticket ? feedbackJson({ ticket }) : feedbackJson({ error: 'Not found' }, 404)
+      }
+      if (request.method === 'POST' && parts.at(-1) === 'messages') {
+        let input: z.infer<typeof followUpInput>
+        try { input = followUpInput.parse(await boundedJson(request)) }
+        catch { return feedbackJson({ error: 'Use a message up to 4,000 characters.' }, 400) }
+        if (input.accessToken !== access.data) return feedbackJson({ error: 'Not found' }, 404)
+        if (!await ticketWithMessages(db, ticketId.data, hash, now)) return feedbackJson({ error: 'Not found' }, 404)
+        const inserted = await db.prepare(`INSERT INTO feedback_messages(id, feedback_id, author, body, status_snapshot, created_at)
+          VALUES (?, ?, 'customer', ?, 'received', ?) ON CONFLICT(id) DO NOTHING`)
+          .bind(input.id, ticketId.data, input.message, now).run()
+        if (inserted.meta.changes === 0) {
+          const existing = await db.prepare(`SELECT feedback_id, author, body FROM feedback_messages WHERE id = ?`)
+            .bind(input.id).first<Record<string, unknown>>()
+          if (existing?.feedback_id !== ticketId.data || existing.author !== 'customer' || existing.body !== input.message) {
+            return feedbackJson({ error: 'This follow-up identifier was already used. Retry with a new message.' }, 409)
+          }
+        }
+        if (inserted.meta.changes === 1) {
+          await db.prepare(`UPDATE feedback SET status = 'received', closed_at = NULL, expires_at = NULL,
+            updated_at = ?, revision = revision + 1 WHERE id = ? AND access_hash = ?`)
+            .bind(now, ticketId.data, hash).run()
+        }
+        return feedbackJson({ ticket: await ticketWithMessages(db, ticketId.data, hash, now) })
       }
       if (request.method === 'DELETE') {
         await db.prepare('DELETE FROM feedback WHERE id = ? AND access_hash = ?').bind(ticketId.data, hash).run()
         return feedbackJson({ deleted: true })
       }
+    } else if (request.method === 'GET') {
+      const ticket = await ticketWithMessages(db, ticketId.data, null, now)
+      return ticket ? feedbackJson({ ticket }) : feedbackJson({ error: 'Not found' }, 404)
     } else if (request.method === 'PATCH') {
       let input: z.infer<typeof replyInput>
       try { input = replyInput.parse(await boundedJson(request)) }
       catch { return feedbackJson({ error: 'Invalid reply' }, 400) }
-      const updated = await db.prepare(`UPDATE feedback SET reply = ?, status = ?, updated_at = ?, revision = revision + 1
-        WHERE id = ? AND revision = ? AND expires_at > ?`).bind(input.reply, input.status, now, ticketId.data, input.revision, now).run()
-      return updated.meta.changes === 1 ? feedbackJson({ saved: true }) : feedbackJson({ error: 'Report changed or expired. Refresh before replying.' }, 409)
+      const duplicate = await db.prepare('SELECT feedback_id, author, body FROM feedback_messages WHERE id = ?')
+        .bind(input.messageId).first<Record<string, unknown>>()
+      if (duplicate && (duplicate.feedback_id !== ticketId.data || duplicate.author !== 'owner' || duplicate.body !== input.reply)) {
+        return feedbackJson({ error: 'This reply identifier was already used. Refresh before replying.' }, 409)
+      }
+      const closed = input.status === 'resolved' || input.status === 'not_planned'
+      const updated = await db.prepare(`UPDATE feedback SET reply = ?, status = ?, updated_at = ?,
+        closed_at = ?, expires_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?
+        AND (expires_at IS NULL OR expires_at > ?)`)
+        .bind(input.reply, input.status, now, closed ? now : null, closed ? now + RETENTION_MS : null,
+          ticketId.data, input.revision, now).run()
+      if (updated.meta.changes !== 1) return feedbackJson({ error: 'Report changed or expired. Refresh before replying.' }, 409)
+      await db.prepare(`INSERT INTO feedback_messages(id, feedback_id, author, body, status_snapshot, created_at)
+        VALUES (?, ?, 'owner', ?, ?, ?) ON CONFLICT(id) DO NOTHING`)
+        .bind(input.messageId, ticketId.data, input.reply, input.status, now).run()
+      return feedbackJson({ saved: true, ticket: await ticketWithMessages(db, ticketId.data, null, now) })
     }
     return feedbackJson({ error: 'Method not allowed' }, 405)
   } catch {
@@ -151,5 +204,5 @@ export async function handleFeedback(request: Request, env: FeedbackEnv,
 }
 
 export async function expireFeedback(env: FeedbackEnv, now = Date.now()): Promise<void> {
-  if (env.FEEDBACK_DB) await env.FEEDBACK_DB.prepare('DELETE FROM feedback WHERE expires_at <= ?').bind(now).run()
+  if (env.FEEDBACK_DB) await env.FEEDBACK_DB.prepare('DELETE FROM feedback WHERE expires_at IS NOT NULL AND expires_at <= ?').bind(now).run()
 }

@@ -87,16 +87,39 @@ describe('private feedback authority and storage', () => {
     await call()
     const req = () => new Request(`https://app.longleash.dev/api/owner/feedback/${input.id}`, { method: 'PATCH', headers: {
       Origin: 'https://app.longleash.dev', Authorization: 'Bearer signed', 'Content-Type': 'application/json',
-    }, body: JSON.stringify({ reply: 'Investigating', status: 'received', revision: 0 }) })
+    }, body: JSON.stringify({ messageId: '9ff1189d-60e8-4b42-b4b3-1729af25bf49', reply: 'Investigating', status: 'received', revision: 0 }) })
     expect((await handleFeedback(req(), env, auth, now)).status).toBe(200)
     expect((await handleFeedback(req(), env, auth, now)).status).toBe(409)
   })
   it('expires access and removes retained content', async () => {
     await call()
+    const close = new Request(`https://app.longleash.dev/api/owner/feedback/${input.id}`, { method: 'PATCH', headers: {
+      Origin: 'https://app.longleash.dev', Authorization: 'Bearer signed', 'Content-Type': 'application/json',
+    }, body: JSON.stringify({ messageId: '9ff1189d-60e8-4b42-b4b3-1729af25bf49', reply: 'Resolved', status: 'resolved', revision: 0 }) })
+    expect((await handleFeedback(close, env, auth, now)).status).toBe(200)
     const later = now + 91 * 86_400_000
     expect((await handleFeedback(request(`/api/feedback/${input.id}`, 'GET', null, { Authorization: `Bearer ${input.accessToken}` }), env, auth, later)).status).toBe(404)
     await expireFeedback(env, later)
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM feedback').get()?.n).toBe(0)
+  })
+  it('keeps open reports until the customer deletes them and preserves a private thread', async () => {
+    await call()
+    const later = now + 365 * 86_400_000
+    const response = await handleFeedback(request(`/api/feedback/${input.id}`, 'GET', null, { Authorization: `Bearer ${input.accessToken}` }), env, auth, later)
+    expect(response.status).toBe(200)
+    const ticket = (await response.json() as { ticket: { messages: unknown[] } }).ticket
+    expect(ticket.messages).toHaveLength(1)
+    await expireFeedback(env, later)
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM feedback').get()?.n).toBe(1)
+  })
+  it('accepts idempotent customer follow-ups without exposing the proof in storage', async () => {
+    await call()
+    const body = { id: '2c409d6d-319b-4a73-a389-c94699395698', accessToken: input.accessToken, message: 'One more reproducible detail.' }
+    const follow = () => request(`/api/feedback/${input.id}/messages`, 'POST', body, { Authorization: `Bearer ${input.accessToken}` })
+    expect((await call(follow())).status).toBe(200)
+    expect((await call(follow())).status).toBe(200)
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM feedback_messages').get()?.n).toBe(2)
+    expect(JSON.stringify(sqlite.prepare('SELECT * FROM feedback_messages').all())).not.toContain(input.accessToken)
   })
   it('allows deletion only with the ticket proof', async () => {
     await call()

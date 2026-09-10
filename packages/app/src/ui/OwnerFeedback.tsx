@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Inbox, RefreshCw } from 'lucide-react'
+import { Inbox, RefreshCw } from 'lucide-react'
 import '../landing/feedback.css'
 
-type Ticket = { id: string; subject: string; message: string; category: string; status: string; reply: string; revision: number; created_at: number }
+type ThreadMessage = { id: string; author: 'customer' | 'owner'; body: string; status_snapshot: string; created_at: number }
+type Ticket = { id: string; subject: string; message: string; category: string; status: string; reply: string;
+  revision: number; created_at: number; messages?: ThreadMessage[] }
 
 export default function OwnerFeedback({ getToken }: { getToken: () => Promise<string | null> }) {
   const [tickets, setTickets] = useState<Ticket[]>([])
@@ -40,34 +42,44 @@ export default function OwnerFeedback({ getToken }: { getToken: () => Promise<st
     if (!selected) return
     setBusy(true); setError(''); setNotice('')
     try {
-      await api(`/api/owner/feedback/${selected.id}`, { method: 'PATCH', body: JSON.stringify({ reply, status, revision: selected.revision }) })
-      await load(page); setNotice('Reply saved to the private report. No email was sent.')
+      const data = await api(`/api/owner/feedback/${selected.id}`, { method: 'PATCH', body: JSON.stringify({
+        messageId: crypto.randomUUID(), reply, status, revision: selected.revision,
+      }) }) as { ticket: Ticket }
+      setSelected(data.ticket); setReply(''); setStatus(data.ticket.status); setNotice('Reply saved to the private report.')
     } catch (err) { setError(err instanceof Error ? err.message : 'Reply was not saved.') }
     finally { setBusy(false) }
   }
-  return <main className="feedback-page">
-    <a className="feedback-back" href="/"><ArrowLeft size={16} aria-hidden="true" /> Back to sessions</a>
-    <header className="feedback-heading"><p className="eyebrow">Owner workspace</p><h1>Customer inbox.</h1><p>Private reports, direct replies. Access is checked on the server for every request and requires recent multi-factor verification.</p></header>
+  return <section className="owner-feedback-view" aria-labelledby="owner-feedback-title">
+    <header className="owner-section-heading"><h2 id="owner-feedback-title">Customer inbox</h2><p>Private reports and direct replies. Every request is re-authorized on the server.</p></header>
     <button className="key" onClick={() => void load(page)} disabled={busy}><RefreshCw size={16} aria-hidden="true" /> Refresh inbox</button>
     {error && <p className="feedback-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {busy && <p role="status">Loading…</p>}
     {loaded && tickets.length === 0 && <section className="feedback-panel"><Inbox size={24} aria-hidden="true" /><h2>No reports on this page.</h2><p>New feedback will appear here. This is not a measure of registered users.</p></section>}
     <div className="feedback-layout" style={{ marginTop: 24 }}>
-      <section aria-label="Reports">{tickets.map(ticket => <button key={ticket.id} className="feedback-ticket key" disabled={busy} onClick={() => { setSelected(ticket); setReply(ticket.reply); setStatus(ticket.status); setNotice('') }}>
+      <section aria-label="Reports">{tickets.map(ticket => <button key={ticket.id} className="feedback-ticket key" disabled={busy} onClick={() => { void (async () => {
+        setBusy(true); setError(''); setNotice('')
+        try { const data = await api(`/api/owner/feedback/${ticket.id}`) as { ticket: Ticket }; setSelected(data.ticket); setReply(''); setStatus(data.ticket.status) }
+        catch (err) { setError(err instanceof Error ? err.message : 'Unable to open the report.') }
+        finally { setBusy(false) }
+      })() }}>
         <strong>{ticket.subject}</strong><small>{ticket.category} · {ticket.status.replaceAll('_', ' ')} · {new Date(ticket.created_at).toLocaleDateString()}</small>
       </button>)}
       {loaded && <div className="feedback-actions"><button className="key sm" disabled={busy || page === 0} onClick={() => void load(page - 1)}>Previous</button><span>Page {page + 1}</span><button className="key sm" disabled={busy || !hasMore} onClick={() => void load(page + 1)}>Next</button></div>}
       </section>
       {selected && <form className="feedback-panel" onSubmit={event => { event.preventDefault(); void save() }}>
-        <h2>{selected.subject}</h2><p className="feedback-message">{selected.message}</p>
+        <h2>{selected.subject}</h2>
+        <div className="feedback-thread" aria-label="Private conversation">{(selected.messages ?? []).map(item =>
+          <article className={`feedback-message-card ${item.author}`} key={item.id}><header><strong>{item.author === 'owner' ? 'You' : 'Customer'}</strong>
+            <time dateTime={new Date(item.created_at).toISOString()}>{new Date(item.created_at).toLocaleString()}</time></header>
+            <p>{item.body}</p><small>{item.status_snapshot.replaceAll('_', ' ')}</small></article>)}</div>
         <label htmlFor="owner-status">Status</label><select id="owner-status" value={status} onChange={event => setStatus(event.target.value)} disabled={busy}>
           {['received', 'needs_information', 'planned', 'resolved', 'not_planned'].map(value => <option value={value} key={value}>{value.replaceAll('_', ' ')}</option>)}
         </select>
-        <label htmlFor="owner-reply">Reply on the private report</label><textarea id="owner-reply" maxLength={4000} required value={reply} rows={6} disabled={busy} onChange={event => setReply(event.target.value)} />
-        <p className="feedback-meta">The user can read this at their private link. Email notifications are not enabled.</p>
+        <label htmlFor="owner-reply">Add a reply</label><textarea id="owner-reply" maxLength={4000} required value={reply} rows={6} disabled={busy} onChange={event => setReply(event.target.value)} />
+        <p className="feedback-meta">The customer reads this at their private link. The notification email never includes their report text.</p>
         <button className="key" type="submit" disabled={busy || !reply.trim()}>Save reply</button>
       </form>}
     </div>
-  </main>
+  </section>
 }

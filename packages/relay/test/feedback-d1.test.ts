@@ -37,6 +37,8 @@ describe('feedback migrations and outbox against local workerd D1', () => {
     expect(await db.prepare('SELECT state FROM support_email_outbox').first('state')).toBe('accepted')
     const read = await handleFeedback(new Request(`https://longleash.dev/api/feedback/${input.id}`, { headers: { Authorization: `Bearer ${input.accessToken}` } }), env, async () => null, now)
     expect(read.status).toBe(200)
+    await db.prepare("UPDATE feedback SET status = 'resolved', closed_at = ?, expires_at = ? WHERE id = ?")
+      .bind(now, now + 90 * 86400_000, input.id).run()
     await expireFeedback(env, now + 91 * 86400_000)
     expect(await db.prepare('SELECT COUNT(*) AS n FROM feedback').first('n')).toBe(0)
     expect(await db.prepare('SELECT COUNT(*) AS n FROM support_email_outbox').first('n')).toBe(0)

@@ -4,7 +4,9 @@ import { siteHref } from './SiteChrome.js'
 import './feedback.css'
 
 type Draft = { id: string; accessToken: string; category: string; subject: string; message: string }
-type Ticket = { id: string; category: string; subject: string; message: string; reply: string; status: string; updated_at: number; expires_at: number }
+type ThreadMessage = { id: string; author: 'customer' | 'owner'; body: string; status_snapshot: string; created_at: number }
+type Ticket = { id: string; category: string; subject: string; message: string; reply: string; status: string;
+  updated_at: number; expires_at: number | null; messages: ThreadMessage[] }
 const DRAFT_KEY = 'longleash.support-draft.v1'
 
 function fresh(): Draft {
@@ -33,6 +35,7 @@ export function Feedback() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [storageUnavailable, setStorageUnavailable] = useState(false)
+  const [followUp, setFollowUp] = useState({ id: crypto.randomUUID(), message: '' })
 
   async function readTicket() {
     setBusy(true); setError('')
@@ -94,6 +97,20 @@ export function Feedback() {
     finally { setBusy(false) }
   }
 
+  async function sendFollowUp(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('')
+    try {
+      const response = await fetch(`/api/feedback/${draft.id}/messages`, { method: 'POST',
+        headers: { Authorization: `Bearer ${draft.accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...followUp, accessToken: draft.accessToken }), signal: AbortSignal.timeout(15_000) })
+      const data = await response.json() as { ticket?: Ticket; error?: string }
+      if (!response.ok || !data.ticket) throw new Error(data.error ?? 'Your follow-up was not accepted.')
+      setTicket(data.ticket); setFollowUp({ id: crypto.randomUUID(), message: '' }); setNotice('Follow-up received.')
+    } catch (err) { setError(err instanceof Error && err.name !== 'TimeoutError' ? err.message :
+      'No confirmation received. Retry without changing this message; the same follow-up will not be duplicated.') }
+    finally { setBusy(false) }
+  }
+
   return <main id="main" className="feedback-page">
     <a className="feedback-back" href={siteHref('/')}><ArrowLeft size={16} aria-hidden="true" /> Back to LongLeash</a>
     <header className="feedback-heading">
@@ -107,9 +124,23 @@ export function Feedback() {
           <p className="feedback-received"><CheckCircle2 size={20} aria-hidden="true" /> Report received</p>
           <h2>{ticket.subject}</h2>
           <p className="feedback-meta">{ticket.status.replaceAll('_', ' ')} · Updated {new Date(ticket.updated_at).toLocaleString()}</p>
-          <p className="feedback-message">{ticket.message}</p>
-          <div className="feedback-reply"><h3>Founder reply</h3><p className="feedback-message">{ticket.reply || 'No reply yet. Save your private link and check back here. Email notifications are not enabled.'}</p></div>
-          <p className="feedback-meta">Available until {new Date(ticket.expires_at).toLocaleDateString()}. Keep your link private.</p>
+          <div className="feedback-thread" aria-label="Private conversation">
+            {(ticket.messages ?? []).map(item => <article className={`feedback-message-card ${item.author}`} key={item.id}>
+              <header><strong>{item.author === 'owner' ? 'LongLeash' : 'You'}</strong><time dateTime={new Date(item.created_at).toISOString()}>{new Date(item.created_at).toLocaleString()}</time></header>
+              <p>{item.body}</p><small>{item.status_snapshot.replaceAll('_', ' ')}</small>
+            </article>)}
+            {(ticket.messages ?? []).every(item => item.author !== 'owner') && <p className="feedback-meta">No reply yet. Save your private link and check back here.</p>}
+          </div>
+          <form className="feedback-followup" onSubmit={event => void sendFollowUp(event)}>
+            <label htmlFor="feedback-followup">Add a follow-up</label>
+            <textarea id="feedback-followup" required maxLength={4000} rows={4} disabled={busy}
+              value={followUp.message} onChange={event => setFollowUp({ ...followUp, message: event.target.value })}
+              placeholder="Add context or answer a question. Leave out code, credentials, and private project details." />
+            <button className="key sm" type="submit" disabled={busy || !followUp.message.trim()}><Send size={16} aria-hidden="true" /> Send follow-up</button>
+          </form>
+          <p className="feedback-meta">{ticket.expires_at === null
+            ? 'This report remains available until you delete it or for 90 days after it is closed.'
+            : `This closed report is available until ${new Date(ticket.expires_at).toLocaleDateString()}.`} Keep your link private.</p>
           <div className="feedback-actions">
             <button className="key" disabled={busy} onClick={() => void copyLink()}><Copy size={16} aria-hidden="true" /> Copy private link</button>
             <button className="key" disabled={busy} onClick={() => void readTicket()}><RefreshCw size={16} aria-hidden="true" /> Refresh</button>
@@ -129,7 +160,7 @@ export function Feedback() {
           <label htmlFor="feedback-message">Details</label>
           <textarea id="feedback-message" required maxLength={4000} rows={8} disabled={busy} value={draft.message} onChange={event => setDraft({ ...draft, message: event.target.value })} aria-describedby="feedback-safety" placeholder="What happened, and what did you expect? Please leave out private project details." />
           <p id="feedback-safety" className="feedback-meta">Do not paste code, transcripts, passwords, or pairing links. {draft.message.length.toLocaleString()} / 4,000 characters.</p>
-          <p className="feedback-meta">{storageUnavailable ? 'Browser draft storage is unavailable. Keep this page open.' : 'Your draft stays in this browser tab until you send it.'} Reports are private, retained for 90 days, and deletable using your private link.</p>
+          <p className="feedback-meta">{storageUnavailable ? 'Browser draft storage is unavailable. Keep this page open.' : 'Your draft stays in this browser tab until you send it.'} Reports are private, deletable using your private link, and retained until closure plus 90 days.</p>
           <button className="key feedback-submit" disabled={busy || ready !== true || !draft.subject.trim() || !draft.message.trim()} type="submit"><Send size={18} aria-hidden="true" /> {busy ? 'Waiting for confirmation…' : 'Send private report'}</button>
         </form>}
         {error && <p className="feedback-error" role="alert">{error}</p>}

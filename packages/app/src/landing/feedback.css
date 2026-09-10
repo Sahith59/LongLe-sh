@@ -24,10 +24,61 @@
 .feedback-page :focus-visible { outline: 2px solid var(--sage, #abc5b4); outline-offset: 4px; }
 .feedback-ticket.key { width: 100%; display: flex; flex-direction: column; align-items: start; text-align: left; gap: 8px; margin-bottom: 12px; padding: 20px; overflow-wrap: anywhere; }
 .feedback-ticket small { font-size: 12px; font-weight: normal; color: var(--ink-2); }
+.feedback-thread { display: grid; gap: 12px; margin: 20px 0 28px; max-height: 460px; overflow: auto; overscroll-behavior: contain; }
+.feedback-message-card { padding: 16px; border: 1px solid var(--hair); border-radius: 16px; background: var(--recess); overflow-wrap: anywhere; }
+.feedback-message-card.owner { margin-left: clamp(0px, 8vw, 56px); border-color: color-mix(in srgb, var(--sage, #abc5b4) 38%, var(--hair)); }
+.feedback-message-card.customer { margin-right: clamp(0px, 8vw, 56px); }
+.feedback-message-card header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.feedback-message-card time, .feedback-message-card small { color: var(--ink-2); font-size: 11px; }
+.feedback-message-card p { white-space: pre-wrap; line-height: 1.6; }
+.owner-console { max-width: 1180px; }
+.owner-nav { display: flex; gap: 8px; padding: 6px; margin: 0 0 28px; width: fit-content; max-width: 100%; overflow-x: auto; border: 1px solid var(--hair); border-radius: 16px; background: var(--recess); }
+.owner-nav a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: 11px; color: var(--ink-2); white-space: nowrap; }
+.owner-nav a.active { color: var(--ink); background: var(--panel-hi); box-shadow: inset 0 0 0 1px var(--hair); }
+.owner-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+.owner-sections { display: grid; gap: 20px; }
+.owner-section-heading { margin: 0 0 18px; }
+.owner-section-heading h2 { margin-bottom: 8px; }
+.owner-section-heading p, .owner-account-heading p { color: var(--ink-2); }
+.owner-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 18px; }
+.owner-metric { display: grid; align-content: start; gap: 7px; min-height: 118px; padding: 18px; border: 1px solid var(--hair); border-radius: 16px; background: var(--recess); }
+.owner-metric > span { color: var(--ink-2); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.owner-metric strong { font-size: clamp(24px, 4vw, 34px); line-height: 1.05; overflow-wrap: anywhere; }
+.owner-metric small { color: var(--ink-2); line-height: 1.45; }
+.owner-account-heading { display: flex; justify-content: space-between; gap: 24px; align-items: end; }
+.owner-search { display: flex; align-items: center; gap: 8px; min-width: min(100%, 340px); padding-left: 12px; border: 1px solid var(--hair); border-radius: 14px; background: var(--recess); }
+.owner-search input { margin: 0; padding: 11px 4px; border: 0; background: transparent; min-width: 80px; }
+.owner-account-list { margin-top: 20px; border: 1px solid var(--hair); border-radius: 16px; overflow: hidden; }
+.owner-account-row { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(100px, .8fr) minmax(110px, .8fr) minmax(150px, 1.2fr); gap: 12px; align-items: center; padding: 15px 18px; border-bottom: 1px solid var(--hair); }
+.owner-account-row:last-child { border-bottom: 0; }
+.owner-account-row.heading { color: var(--ink-2); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.owner-account-row strong, .owner-account-row small { display: block; overflow-wrap: anywhere; }
+.owner-account-row small { color: var(--ink-2); margin-top: 5px; }
+.owner-class { padding: 4px 8px; border-radius: 999px; background: var(--panel-hi); color: inherit; }
+.owner-class.external { color: var(--sage, #abc5b4); }
+.owner-action-grid { margin-top: 18px; border: 1px solid var(--hair); border-radius: 14px; overflow: hidden; }
+.owner-action-grid > div { display: grid; grid-template-columns: minmax(100px, 1fr) repeat(3, minmax(64px, .55fr)); gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--hair); }
+.owner-action-grid > div:last-child { border-bottom: 0; }
+.owner-action-grid .heading { color: var(--ink-2); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.measurement-choice { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 18px; align-items: center; padding: 18px; border: 1px solid var(--hair); border-radius: 18px; background: var(--recess); }
+.measurement-choice p { margin: 6px 0 0; color: var(--ink-2); line-height: 1.5; }
+.measurement-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--hair); border-radius: 999px; color: var(--ink-2); background: var(--panel-lo); }
+.measurement-toggle span { width: 22px; height: 22px; border-radius: 50%; background: var(--ink-2); transition: transform .18s ease, background .18s ease; }
+.measurement-toggle.on { color: var(--sage, #abc5b4); border-color: color-mix(in srgb, var(--sage, #abc5b4) 45%, var(--hair)); }
+.measurement-toggle.on span { background: var(--sage, #abc5b4); transform: translateX(3px); }
+.measurement-fineprint, .measurement-choice .err { grid-column: 1 / -1; }
 @media (max-width: 680px) {
   .feedback-page { padding: 20px 16px max(48px, env(safe-area-inset-bottom)); }
   .feedback-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .feedback-heading { margin: 24px 0; }
   .feedback-aside { padding: 12px 8px; }
   .feedback-actions > button { flex: 1 1 auto; }
+  .owner-account-heading { align-items: stretch; flex-direction: column; }
+  .owner-search { min-width: 0; width: 100%; }
+  .owner-account-list { border: 0; overflow: visible; }
+  .owner-account-row.heading { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .owner-account-row { grid-template-columns: 1fr; gap: 9px; margin-bottom: 12px; border: 1px solid var(--hair); border-radius: 14px; }
+  .measurement-choice { grid-template-columns: minmax(0, 1fr); }
+  .measurement-toggle { justify-self: start; }
 }
+@media (prefers-reduced-motion: reduce) { .measurement-toggle span { transition: none; } }
