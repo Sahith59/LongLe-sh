@@ -79,6 +79,7 @@ async function main() {
     '/docs/background-service',
     '/docs/self-hosting',
     '/connectivity',
+    '/feedback',
     '/privacy',
     '/terms',
   ]) {
@@ -105,6 +106,17 @@ async function main() {
   assert(auth.required === true && auth.ready === true, 'production authentication is not ready')
   assert(typeof auth.publishableKey === 'string' && auth.publishableKey.startsWith('pk_live_'), 'production Clerk key is not live')
 
+  const feedback = await (await expectStatus(`${apex}/api/feedback/config`, 200)).json()
+  assert(feedback.enabled === true && feedback.retentionDays === 90, 'private feedback is not ready')
+  await expectStatus(`${app}/api/measurement/consent`, 401)
+  await expectStatus(`${app}/api/owner/accounts`, 403)
+  await expectStatus(`${app}/api/owner/summary`, 403)
+  await expectStatus(`${app}/api/resend/webhook`, 400, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  })
+
   await expectStatus(`${app}/api/relay-ticket`, 403, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -127,7 +139,7 @@ async function main() {
   await expectTlsReachable('https://accounts.longleash.dev/')
 
   console.log(`Production matrix passed for build ${build}.`)
-  console.log('Verified: branded routes, legacy compatibility, TLS, security headers, auth readiness, and unauthenticated API boundaries.')
+  console.log('Verified: branded routes, legacy compatibility, TLS, security headers, auth readiness, feedback readiness, and unauthenticated API boundaries.')
 }
 
 main().catch((error) => {
