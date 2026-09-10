@@ -52,8 +52,11 @@ export async function handleResendWebhook(request: Request, env: ResendWebhookEn
   const id = request.headers.get('svix-id')
   const timestamp = request.headers.get('svix-timestamp')
   const signature = request.headers.get('svix-signature')
-  if (!env.FEEDBACK_DB || !secret || !id || !timestamp || !signature || !/^[A-Za-z0-9_-]{8,200}$/.test(id)) {
+  if (!env.FEEDBACK_DB || !secret) {
     return feedbackJson({ error: 'Webhook unavailable' }, 503)
+  }
+  if (!id || !timestamp || !signature || !/^[A-Za-z0-9_-]{8,200}$/.test(id)) {
+    return feedbackJson({ error: 'Invalid webhook' }, 400)
   }
   try {
     const raw = await boundedRaw(request)

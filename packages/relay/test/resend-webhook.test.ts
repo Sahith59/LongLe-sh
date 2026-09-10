@@ -40,4 +40,9 @@ describe('signed Resend delivery evidence', () => {
     const forged = signed(); forged.headers.set('svix-signature', 'v1,bad')
     expect((await handleResendWebhook(forged, { FEEDBACK_DB: db, PUBLIC_APP_HOST: 'app.longleash.dev', RESEND_WEBHOOK_SECRET: secret })).status).toBe(400)
   })
+  it('distinguishes invalid requests from an unavailable server configuration', async () => {
+    const unsigned = new Request('https://app.longleash.dev/api/resend/webhook', { method: 'POST', body: '{}' })
+    expect((await handleResendWebhook(unsigned, { FEEDBACK_DB: db, PUBLIC_APP_HOST: 'app.longleash.dev', RESEND_WEBHOOK_SECRET: secret })).status).toBe(400)
+    expect((await handleResendWebhook(unsigned, { FEEDBACK_DB: db, PUBLIC_APP_HOST: 'app.longleash.dev' })).status).toBe(503)
+  })
 })
