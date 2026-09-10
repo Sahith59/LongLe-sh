@@ -1,0 +1,33 @@
+.feedback-page { max-width: 1080px; margin: 0 auto; padding: 40px 24px max(64px, env(safe-area-inset-bottom)); }
+.feedback-back { display: inline-flex; align-items: center; gap: 8px; padding: 12px 0; }
+.feedback-heading { max-width: 740px; margin: 32px 0 40px; }
+.feedback-heading h1 { font: inherit; font-size: clamp(32px, 5vw, 56px); line-height: 1.1; letter-spacing: -.04em; margin: 16px 0; }
+.feedback-heading p, .feedback-aside p { color: var(--ink-2); line-height: 1.7; }
+.feedback-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 36px; align-items: start; }
+.feedback-panel { min-width: 0; padding: clamp(20px, 4vw, 36px); background: linear-gradient(var(--panel-hi), var(--panel-lo)); border: 1px solid var(--hair); border-radius: 24px; }
+.feedback-panel label { display: block; font-weight: 600; margin: 0 0 10px; }
+.feedback-panel input, .feedback-panel textarea, .feedback-panel select { display: block; width: 100%; box-sizing: border-box; margin: 0 0 24px; padding: 14px; font: inherit; font-size: 16px; color: inherit; background: var(--recess); border: 1px solid var(--hair); border-radius: 12px; }
+.feedback-panel textarea { resize: vertical; min-height: 160px; }
+.feedback-panel h2, .feedback-panel h3 { overflow-wrap: anywhere; margin: 12px 0; }
+.feedback-meta { color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+.feedback-message { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.feedback-reply { border-top: 1px solid var(--hair); margin-top: 28px; padding-top: 20px; }
+.feedback-received { display: flex; align-items: center; gap: 10px; color: var(--sage, #abc5b4); }
+.feedback-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+.feedback-actions button, .feedback-submit { min-height: 44px; }
+.feedback-submit { margin-top: 16px; width: 100%; }
+.feedback-error { color: var(--clay); overflow-wrap: anywhere; }
+.feedback-aside { padding: 20px 0; min-width: 0; overflow-wrap: anywhere; }
+.feedback-aside h2 { font-size: 22px; line-height: 1.3; }
+.feedback-aside h3 { margin-top: 12px; }
+.feedback-aside svg { margin-top: 20px; color: var(--sage, #abc5b4); }
+.feedback-page :focus-visible { outline: 2px solid var(--sage, #abc5b4); outline-offset: 4px; }
+.feedback-ticket.key { width: 100%; display: flex; flex-direction: column; align-items: start; text-align: left; gap: 8px; margin-bottom: 12px; padding: 20px; overflow-wrap: anywhere; }
+.feedback-ticket small { font-size: 12px; font-weight: normal; color: var(--ink-2); }
+@media (max-width: 680px) {
+  .feedback-page { padding: 20px 16px max(48px, env(safe-area-inset-bottom)); }
+  .feedback-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .feedback-heading { margin: 24px 0; }
+  .feedback-aside { padding: 12px 8px; }
+  .feedback-actions > button { flex: 1 1 auto; }
+}

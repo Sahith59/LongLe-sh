@@ -23,6 +23,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
+    "miniflare": "5.20260811.1-alpha",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0",
     "wrangler": "^4.123.0"

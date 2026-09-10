@@ -11,6 +11,7 @@ import {
 } from '@clerk/react'
 import { ArrowRight, KeyRound, Laptop, LockKeyhole, ShieldCheck, UserRoundCheck } from 'lucide-react'
 import App from './App.js'
+import OwnerFeedback from './ui/OwnerFeedback.js'
 import { AccountProvider } from './lib/account-context.js'
 import { configureAccountToken, configureCredentialAccount, forgetCredentialsFor } from './lib/client.js'
 
@@ -193,7 +194,9 @@ function HostedAccount() {
         deleteAccount,
       }}
     >
-      <App key={userId} />
+      {window.location.pathname === '/owner/feedback'
+        ? <OwnerFeedback key={userId} getToken={() => getToken()} />
+        : <App key={userId} />}
     </AccountProvider>
   )
 }

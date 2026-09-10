@@ -21,6 +21,8 @@ import {
   websocketRoleForRequest,
 } from './auth.js'
 import { isPublicSiteHost, publicRoute } from './public-routing.js'
+import { expireFeedback, handleFeedback, type FeedbackEnv } from './feedback.js'
+import { drainSupportMail, type SupportMailConfig } from './support-mail.js'
 
 /**
  * The relay as a Cloudflare Worker — a managed deployment with no server process to keep alive.
@@ -103,8 +105,26 @@ async function relayTicketResponse(request: Request, env: Env, url: URL): Promis
 }
 
 export default {
+  // The production cron is enabled only after storage, sender verification and release checks.
+  // Self-hosted deployments have none of these bindings and never send hosted support mail.
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    const support = env as Env & FeedbackEnv & SupportMailConfig
+    if (!support.FEEDBACK_DB || support.FEEDBACK_ENABLED !== 'true') return
+    try {
+      await expireFeedback(support)
+      await drainSupportMail(support)
+    } catch {
+      // Preserve scheduler failure visibility without leaking provider or support payloads.
+      throw new Error('Support maintenance failed; check the private outbox and configuration.')
+    }
+  },
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+
+    if (url.pathname === '/api/feedback' || url.pathname.startsWith('/api/feedback/') ||
+      url.pathname === '/api/owner/feedback' || url.pathname.startsWith('/api/owner/feedback/')) {
+      return handleFeedback(request, env as Env & FeedbackEnv)
+    }
 
     const publicDecision = publicRoute(url, env)
     if (publicDecision.kind === 'redirect') {

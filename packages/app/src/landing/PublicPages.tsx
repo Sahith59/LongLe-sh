@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { Feedback } from './Feedback.js'
 import {
   ArrowRight,
   BellRing,
@@ -92,6 +93,7 @@ const guides: PageMeta[] = [
 ]
 
 const titles: Record<string, string> = {
+  '/feedback': 'Talk to the founder',
   '/docs': 'Documentation',
   '/docs/getting-started': 'Getting started',
   '/docs/connectivity': 'Connectivity choices',
@@ -182,6 +184,9 @@ export function PublicPageRouter({ path }: { path: string }) {
       break
     case '/terms':
       page = <Terms />
+      break
+    case '/feedback':
+      page = <Feedback />
       break
     default:
       page = <NotFound />
