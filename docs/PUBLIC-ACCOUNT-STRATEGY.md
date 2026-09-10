@@ -44,6 +44,11 @@ user identifier, name, email, profile image, sign-in timestamps, and session/sec
 LongLeash does not duplicate this into D1 merely to count users. Add D1 only when first-party plan,
 entitlement, organization, consent, or audit state genuinely exists.
 
+The [9 September customer-feedback and measurement proposal](CUSTOMER-FEEDBACK-AND-MEASUREMENT.md)
+adds an explicit design gate before any new support-message or optional product-event collection.
+It does not enable tracking. Clerk account activity must be reported separately from successful
+remote-agent use, and local/self-hosted users must not be forced into hosted measurement.
+
 Browser pairing credentials are scoped by Clerk user ID in local storage. They are not uploaded.
 Existing unscoped credentials are intentionally not auto-migrated: the first account-enabled launch
 requires a fresh QR rather than silently assigning an old paired device to whoever signs in first.
