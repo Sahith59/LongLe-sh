@@ -1,10 +1,37 @@
 import { describe, it, expect } from 'vitest'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import WebSocket from 'ws'
 import { EventLog } from '../src/eventlog.js'
 import { DeviceRegistry } from '../src/auth.js'
 import { LongLeashServer } from '../src/server.js'
+import { startDaemon } from '../src/daemon.js'
 
 describe('following the machine onto a new network', () => {
+  it('republishes the authenticated local hook endpoint when the service changes address', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'll-rebind-hook-'))
+    const project = join(root, 'project')
+    mkdirSync(project)
+    const dataDir = join(root, 'data')
+    const daemon = await startDaemon({ allowedRoots: [project], host: '127.0.0.1', port: 0, dataDir })
+    try {
+      const endpointPath = join(dataDir, 'hook-endpoint.json')
+      const initial = JSON.parse(readFileSync(endpointPath, 'utf8')) as { url: string; secret: string }
+      const reboundPort = await daemon.rebindLocal('localhost')
+      const current = JSON.parse(readFileSync(endpointPath, 'utf8')) as { url: string; secret: string }
+      expect(new URL(current.url).hostname).toBe('localhost')
+      expect(new URL(current.url).port).toBe(String(reboundPort))
+      expect(current.secret).toBe(initial.secret)
+      expect(statSync(endpointPath).mode & 0o777).toBe(0o600)
+      const health = await fetch(current.url.replace(/\/hook$/, '/health'), { headers: { 'x-longleash-hook': current.secret } })
+      expect(health.ok).toBe(true)
+    } finally {
+      await daemon.stop()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('rebinds without losing the event log, the pairing registry, or its routes', async () => {
     const log = new EventLog(':memory:')
     const registry = new DeviceRegistry(':memory:')

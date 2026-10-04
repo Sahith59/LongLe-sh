@@ -101,6 +101,9 @@ import {
   type SessionSurface,
 } from './lib/session-browser.js'
 
+import { PairingVerification } from './ui/PairingVerification.js'
+import type { PairingProgress, PairingControl } from './lib/verified-pairing.js'
+
 export default function App() {
   const store = useMemo(() => createStore(), [])
   const [, forceRender] = useState(0)
@@ -108,6 +111,9 @@ export default function App() {
   const [hydrating, setHydrating] = useState(false)
   const [linkPath, setLinkPath] = useState<LinkPath>('lan')
   const [token, setToken] = useState<string | null>(() => storedToken())
+  const [pairProgress, setPairProgress] = useState<PairingProgress | null>(null)
+  const pairControl = useRef<PairingControl | null>(null)
+  const pairActive = useRef<AbortController | null>(null)
   const [pairError, setPairError] = useState<string | null>(null)
   const [diagnostic, setDiagnostic] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -212,18 +218,44 @@ export default function App() {
     return store.subscribe(() => forceRender((n) => n + 1))
   }, [store])
 
-  // Pair from the QR link on first open, then clean the secret out of the URL.
-  useEffect(() => {
-    if (token) return
-    const pairing = parsePairingLink(location.href)
-    if (pairing === null) return
-    pair(pairing.challengeId, pairing.secret)
-      .then((issued) => {
-        setToken(issued)
-        history.replaceState(null, '', location.pathname)
+  const startPairing = useCallback((challengeId: string, secret: string, version?: number) => {
+    if (pairActive.current) return
+    const controller = new AbortController()
+    pairActive.current = controller
+    setPairError(null)
+    setPairProgress({ state: 'connecting' })
+    history.replaceState(null, '', location.pathname)
+    try { sessionStorage.removeItem('longleash.pending-pairing') } catch { /* storage may be disabled */ }
+    void pair(challengeId, secret, {
+      ...(version !== undefined ? { version } : {}), signal: controller.signal,
+      onProgress: (progress, control) => { if (!controller.signal.aborted) { setPairProgress(progress); pairControl.current = control } },
+    }).then((issued) => { if (!controller.signal.aborted) setToken(issued) })
+      .catch((err: Error) => { if (!controller.signal.aborted) setPairError(err.message) })
+      .finally(() => {
+        if (pairActive.current === controller) { pairActive.current = null; pairControl.current = null; setPairProgress(null) }
       })
-      .catch((err: Error) => setPairError(err.message))
-  }, [token])
+  }, [])
+
+  // Defer one task so React StrictMode's setup/cleanup rehearsal cannot consume a QR.
+  // A fresh fragment can also arrive in an already-open tab after a cancelled attempt.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const readLink = () => {
+      clearTimeout(timer)
+      const pairing = parsePairingLink(location.href)
+      if (pairing === null) return
+      if (token) {
+        history.replaceState(null, '', location.pathname)
+        try { sessionStorage.removeItem('longleash.pending-pairing') } catch { /* storage may be disabled */ }
+        return
+      }
+      timer = setTimeout(() => startPairing(pairing.challengeId, pairing.secret, pairing.version), 0)
+    }
+    readLink()
+    window.addEventListener('hashchange', readLink)
+    return () => { clearTimeout(timer); window.removeEventListener('hashchange', readLink) }
+  }, [token, startPairing])
+  useEffect(() => () => { pairActive.current?.abort() }, [])
 
   useEffect(() => {
     if (!token) return
@@ -459,14 +491,13 @@ export default function App() {
     return (
       <PairGate
         error={pairError}
-        onPair={(challengeId, secret) =>
-          pair(challengeId, secret)
-            .then((issued) => {
-              setToken(issued)
-              history.replaceState(null, '', location.pathname)
-            })
-            .catch((err: Error) => setPairError(err.message))
-        }
+        progress={pairProgress}
+        control={pairControl.current}
+        onCancel={() => {
+          pairActive.current?.abort(); pairActive.current = null; pairControl.current = null
+          setPairProgress(null); setPairError('Pairing cancelled. Generate a fresh QR. If both devices were already confirmed, check longleash devices before retrying.')
+        }}
+        onPair={startPairing}
       />
     )
   }
@@ -1127,10 +1158,13 @@ function AccountSheet({ account, onClose }: { account: ReturnType<typeof useAcco
  */
 function PairGate({
   error,
-  onPair,
+  onPair, progress, control, onCancel,
 }: {
+  progress: PairingProgress | null
+  control: PairingControl | null
+  onCancel: () => void
   error: string | null
-  onPair: (challengeId: string, secret: string) => void
+  onPair: (challengeId: string, secret: string, version?: number) => void
 }) {
   const [link, setLink] = useState('')
   const [scanning, setScanning] = useState(false)
@@ -1142,11 +1176,14 @@ function PairGate({
       const found = parsePairingLink(text)
       if (found === null) return false
       setScanning(false)
-      onPair(found.challengeId, found.secret)
+      setLink('')
+      onPair(found.challengeId, found.secret, found.version)
       return true
     },
     [onPair],
   )
+
+  if (progress) return <PairingVerification progress={progress} control={control} onCancel={onCancel} />
 
   return (
     <main className="gate">
@@ -1174,7 +1211,7 @@ function PairGate({
         {parsed !== null ? (
           <Key
             className="wide"
-            onClick={() => onPair(parsed.challengeId, parsed.secret)}
+            onClick={() => { setLink(''); onPair(parsed.challengeId, parsed.secret, parsed.version) }}
           >
             Pair this device
           </Key>
@@ -1182,10 +1219,10 @@ function PairGate({
       </div>
       {error ? (
         <p className="err">
-          Pairing failed: {error}. Pairing links are single-use — press n in the laptop terminal
-          for a fresh one, then try again.
+          Pairing failed: {error}
         </p>
       ) : null}
+      <p>Keep pairing links private. Do not share screenshots of the QR or save the link in browser bookmarks.</p>
       <p className="buildtag mono">build {__BUILD__}</p>
       <AnimatePresence>
         {scanning ? <QrScanner onCode={onScanned} onClose={() => setScanning(false)} /> : null}
@@ -1199,7 +1236,7 @@ function PairGate({
  * Fragment credentials never leave the browser in an HTTP request; query support remains only so
  * an already-printed single-use QR from an older daemon does not become mysteriously unreadable.
  */
-export function parsePairingLink(raw: string): { challengeId: string; secret: string } | null {
+export function parsePairingLink(raw: string): { challengeId: string; secret: string; version?: number } | null {
   const text = raw.trim()
   if (text.length === 0) return null
 
@@ -1217,7 +1254,7 @@ export function parsePairingLink(raw: string): { challengeId: string; secret: st
     const params = new URLSearchParams(candidate)
     const challengeId = params.get('c')
     const secret = params.get('s')
-    if (challengeId && secret) return { challengeId, secret }
+    if (challengeId && secret) return { challengeId, secret, ...(params.has('v') ? { version: Number(params.get('v')) } : {}) }
   }
   return null
 }

@@ -2,11 +2,13 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { z } from 'zod'
 import { ensureColumns } from './migrate.js'
+import { deriveVerifiedPairing, PairingNonce, PairingDeviceName, type PairingTranscript } from '@longleash/protocol'
 
 const PAIRING_QR_VERSION = 1
 const DEFAULT_CHALLENGE_TTL_MS = 5 * 60_000
 
 export type PairingFailure = 'invalid-input' | 'unknown-challenge' | 'expired' | 'bad-secret'
+  | 'verification-required' | 'update-required' | 'competing-attempt' | 'pending-limit' | 'unknown-attempt' | 'local-confirmation-required'
 
 export class PairingError extends Error {
   constructor(
@@ -42,6 +44,21 @@ const completePairingInput = z.object({
 })
 export type CompletePairingInput = z.infer<typeof completePairingInput>
 
+const beginVerifiedInput = z.object({
+  v: z.literal(2),
+  challengeId: z.string().min(1).max(128),
+  secret: PairingNonce,
+  deviceName: PairingDeviceName,
+  phoneNonce: PairingNonce,
+}).strict()
+
+interface ChallengeRecord {
+  secretHash: string
+  expiresAt: number
+  version: 1 | 2
+  pending?: { transcript: PairingTranscript; code: string; localConfirmed: boolean; owner?: string }
+}
+
 interface DeviceRow {
   device_id: string
   name: string
@@ -62,7 +79,8 @@ export class DeviceRegistry {
   private readonly now: () => number
   private readonly challengeTtlMs: number
   // Ephemeral by design: a daemon restart voids pending pairing QR codes.
-  private readonly challenges = new Map<string, { secretHash: string; expiresAt: number }>()
+  private readonly challenges = new Map<string, ChallengeRecord>()
+  private readonly pairingResults = new Map<string, { deviceId: string; expiresAt: number }>()
   private readonly revokedListeners = new Set<(deviceId: string) => void>()
   private readonly pairedListeners = new Set<(device: Device, relaySecret: string) => void>()
 
@@ -88,17 +106,22 @@ export class DeviceRegistry {
     this.challengeTtlMs = opts.challengeTtlMs ?? DEFAULT_CHALLENGE_TTL_MS
   }
 
-  createPairingChallenge(): PairingChallenge {
+  createPairingChallenge(opts: { version?: 1 | 2 } = {}): PairingChallenge {
     this.sweepExpiredChallenges()
+    const version = opts.version ?? PAIRING_QR_VERSION
+    if (version !== 1 && version !== 2) throw new PairingError('invalid-input', 'Unsupported pairing version')
+    if (version === 2 && [...this.challenges.values()].filter((c) => c.version === 2).length >= 8) {
+      throw new PairingError('pending-limit', 'Too many pending verifications — finish or wait for expiry')
+    }
     const challengeId = id('chl')
     const secret = randomBytes(32).toString('base64url')
     const expiresAt = this.now() + this.challengeTtlMs
-    this.challenges.set(challengeId, { secretHash: sha256Hex(secret), expiresAt })
+    this.challenges.set(challengeId, { secretHash: sha256Hex(secret), expiresAt, version })
     return {
       challengeId,
       secret,
       expiresAt,
-      qrPayload: JSON.stringify({ v: PAIRING_QR_VERSION, challengeId, secret }),
+      qrPayload: JSON.stringify({ v: version, challengeId, secret }),
     }
   }
 
@@ -109,21 +132,118 @@ export class DeviceRegistry {
     }
     const input = parsed.data
 
-    const challenge = this.challenges.get(input.challengeId)
-    if (!challenge) {
-      throw new PairingError('unknown-challenge', 'Unknown or already-used pairing challenge')
-    }
-    if (this.now() > challenge.expiresAt) {
-      this.challenges.delete(input.challengeId)
-      throw new PairingError('expired', 'Pairing challenge expired — generate a new QR code')
-    }
-    // A wrong guess does not burn the challenge: the 256-bit secret is unguessable,
-    // and burning it would let an attacker deny the legitimate pairing.
-    if (!hashesMatch(sha256Hex(input.secret), challenge.secretHash)) {
-      throw new PairingError('bad-secret', 'Wrong pairing secret')
+    const challenge = this.authorizeChallenge(input.challengeId, input.secret)
+    if (challenge.version !== 1) {
+      throw new PairingError('verification-required', 'This QR requires verification on the phone and laptop')
     }
     this.challenges.delete(input.challengeId)
+    return this.commitDevice(input.deviceName, input.publicKey)
+  }
 
+  /** Foundation only: transport adapters must authenticate/decrypt BEFORE calling this. */
+  beginVerifiedPairing(raw: unknown, owner?: string): PairingTranscript {
+    const parsed = beginVerifiedInput.safeParse(raw)
+    if (!parsed.success) throw new PairingError('invalid-input', 'Invalid v2 pairing request')
+    const input = parsed.data
+    const challenge = this.authorizeChallenge(input.challengeId, input.secret)
+    if (challenge.version !== 2) {
+      throw new PairingError('update-required', 'Update LongLeash and generate a new verified QR code')
+    }
+    if (challenge.pending) {
+      const previous = challenge.pending.transcript
+      if (challenge.pending.owner === owner && previous.phoneNonce === input.phoneNonce && previous.deviceName === input.deviceName) {
+        return { ...previous }
+      }
+      this.challenges.delete(input.challengeId)
+      throw new PairingError('competing-attempt', 'A competing pairing attempt was detected — generate a new QR code')
+    }
+    const transcript: PairingTranscript = {
+      v: 2, challengeId: input.challengeId,
+      attemptId: randomBytes(32).toString('base64url'),
+      phoneNonce: input.phoneNonce, daemonNonce: randomBytes(32).toString('base64url'),
+      deviceName: input.deviceName, expiresAt: challenge.expiresAt,
+    }
+    const { code } = deriveVerifiedPairing(input.secret, transcript)
+    challenge.pending = { transcript, code, localConfirmed: false, ...(owner ? { owner } : {}) }
+    return { ...transcript }
+  }
+
+  getPairingResult(challengeId: string): { deviceId: string } | null {
+    this.sweepExpiredChallenges()
+    const result = this.pairingResults.get(challengeId)
+    return result ? { deviceId: result.deviceId } : null
+  }
+
+  hasPairingChallenge(challengeId: string): boolean {
+    this.sweepExpiredChallenges()
+    return this.challenges.has(challengeId)
+  }
+
+  /** Local operator cancellation also works before a phone has connected. */
+  cancelPairingChallenge(challengeId: string): void {
+    this.challenges.delete(challengeId)
+  }
+
+  /** LOCAL ONLY. Never expose the laptop display code through a phone-facing route. */
+  getPairingVerification(challengeId: string): { attemptId: string; code: string; deviceName: string; expiresAt: number } | null {
+    this.sweepExpiredChallenges()
+    const pending = this.challenges.get(challengeId)?.pending
+    if (!pending) return null
+    const { attemptId, deviceName, expiresAt } = pending.transcript
+    return { attemptId, code: pending.code, deviceName, expiresAt }
+  }
+
+  /** LOCAL ONLY: a secret-authenticated loopback/CLI action, never a remote message. */
+  confirmPairingLocally(challengeId: string, attemptId: string): void {
+    this.requireAttempt(challengeId, attemptId).localConfirmed = true
+  }
+
+  /** Call only for an explicit phone 'Codes match' on this attempt's encrypted channel. */
+  finishVerifiedPairing(challengeId: string, attemptId: string): { device: Device; token: string; relaySecret: string } {
+    const pending = this.requireAttempt(challengeId, attemptId)
+    if (!pending.localConfirmed) {
+      throw new PairingError('local-confirmation-required', 'Compare and confirm the code on your laptop first')
+    }
+    // Burn before persistence/listeners: reentrancy and retries cannot mint a second device.
+    this.challenges.delete(challengeId)
+    const result = this.commitDevice(pending.transcript.deviceName)
+    this.pairingResults.set(challengeId, { deviceId: result.device.deviceId, expiresAt: this.now() + 60_000 })
+    return result
+  }
+
+  /** Rejection and transport disconnect share the same terminal transition. */
+  cancelVerifiedPairing(challengeId: string, attemptId: string): void {
+    this.requireAttempt(challengeId, attemptId)
+    this.challenges.delete(challengeId)
+  }
+
+  private requireAttempt(challengeId: string, attemptId: string): NonNullable<ChallengeRecord['pending']> {
+    const challenge = this.requireChallenge(challengeId)
+    if (!challenge.pending || challenge.pending.transcript.attemptId !== attemptId) {
+      throw new PairingError('unknown-attempt', 'Unknown pairing attempt')
+    }
+    return challenge.pending
+  }
+
+  private requireChallenge(challengeId: string): ChallengeRecord {
+    const challenge = this.challenges.get(challengeId)
+    if (!challenge) throw new PairingError('unknown-challenge', 'Unknown or already-used pairing challenge')
+    if (this.now() >= challenge.expiresAt) {
+      this.challenges.delete(challengeId)
+      throw new PairingError('expired', 'Pairing challenge expired — generate a new QR code')
+    }
+    return challenge
+  }
+
+  private authorizeChallenge(challengeId: string, secret: string): ChallengeRecord {
+    const challenge = this.requireChallenge(challengeId)
+    if (!hashesMatch(sha256Hex(secret), challenge.secretHash)) {
+      throw new PairingError('bad-secret', 'Wrong pairing secret')
+    }
+    return challenge
+  }
+
+  private commitDevice(deviceName: string, publicKey?: string): { device: Device; token: string; relaySecret: string } {
     const token = `llt_${randomBytes(32).toString('base64url')}`
     // The E2E root for this device: both sides derive the relay room and frame key from it.
     // It is exchanged here — over the LAN pairing channel — and never travels via the relay.
@@ -132,8 +252,8 @@ export class DeviceRegistry {
     const relaySecret = randomBytes(32).toString('base64url')
     const device: Device = {
       deviceId: id('dev'),
-      name: input.deviceName,
-      publicKey: input.publicKey ?? null,
+      name: deviceName,
+      publicKey: publicKey ?? null,
       createdAt: this.now(),
       lastSeenAt: null,
       revokedAt: null,
@@ -217,13 +337,16 @@ export class DeviceRegistry {
   }
 
   close(): void {
+    this.challenges.clear()
+    this.pairingResults.clear()
     this.rawDb.close()
   }
 
   private sweepExpiredChallenges(): void {
     const now = this.now()
+    for (const [id, result] of this.pairingResults) if (now >= result.expiresAt) this.pairingResults.delete(id)
     for (const [challengeId, challenge] of this.challenges) {
-      if (now > challenge.expiresAt) this.challenges.delete(challengeId)
+      if (now >= challenge.expiresAt) this.challenges.delete(challengeId)
     }
   }
 

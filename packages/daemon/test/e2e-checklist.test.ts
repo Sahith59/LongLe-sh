@@ -96,7 +96,9 @@ async function hookPost(body: Record<string, unknown>): Promise<Response> {
 const send = (message: Record<string, unknown>) => ws.send(JSON.stringify({ v: 1, ...message }))
 
 describe('CHECKLIST end to end — a real daemon, a real socket', () => {
-  it('a terminal session started by a hook reaches the phone, tagged with its agent and surface', async () => {
+  it.each([
+    ['claude', 'terminal'], ['claude', 'vscode'], ['codex', 'terminal'], ['codex', 'vscode'],
+  ])('%s in %s reaches the phone and survives a phone reconnect without duplicates', async (agent, surface) => {
     await connectPhone()
     const transcript = join(dir, 'work', 't.jsonl')
     writeFileSync(transcript, '')
@@ -106,8 +108,8 @@ describe('CHECKLIST end to end — a real daemon, a real socket', () => {
       session_id: 'sess-a',
       cwd: join(dir, 'work'),
       transcript_path: transcript,
-      ll_agent: 'codex',
-      ll_surface: 'vscode',
+      ll_agent: agent,
+      ll_surface: surface,
       ll_pid: process.pid,
     })
 
@@ -116,8 +118,13 @@ describe('CHECKLIST end to end — a real daemon, a real socket', () => {
       payload: { agent: string; origin: string }
     }
     // Checklist 3 and 5: the phone must be able to tell WHICH agent and WHERE.
-    expect(started.payload.agent).toBe('codex')
-    expect(started.payload.origin).toBe('vscode')
+    expect(started.payload.agent).toBe(agent)
+    expect(started.payload.origin).toBe(surface)
+    ws.close()
+    await new Promise<void>(resolve => ws.once('close', () => resolve()))
+    await connectPhone()
+    const matches = hello().sessions.filter(session => session.agent === agent && session.origin === surface)
+    expect(matches).toHaveLength(1)
   })
 
   it('an approval reaches the phone and the verdict reaches the hook', async () => {

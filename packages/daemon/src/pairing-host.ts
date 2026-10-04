@@ -4,6 +4,7 @@ import { DeviceRegistry, PairingError } from './auth.js'
 import { withRoom } from './relay-link.js'
 import { derivePairingIdentity, open, seal, type RelayIdentity } from '@longleash/protocol'
 import WebSocket from 'ws'
+import { hostVerifiedPairing } from './pairing-relay-v2.js'
 
 const CompletePairing = z.object({
   v: z.literal(1),
@@ -31,6 +32,7 @@ export interface PairingHostOptions {
  * room and wrong for an ephemeral pairing window.
  */
 export function hostPairing(opts: PairingHostOptions): () => void {
+  if (JSON.parse(opts.challenge.qrPayload).v === 2) return hostVerifiedPairing(opts)
   const log = opts.log ?? (() => {})
   let socket: WebSocket | null = null
   let disposed = false

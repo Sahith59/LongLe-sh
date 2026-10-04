@@ -1,5 +1,8 @@
 # LongLeash monetization plan
 
+
+> **Owner target update — 4 October 2026:** at least 14–16 development hours/week, aiming for $7–8k MRR with $6k/month acceptable after sustained 6–7+ month work. Sales/support time beyond development is unknown. Earlier $5k models below remain historical scenarios, not forecasts. Two GPT-6 Sol agents recommend a six-to-eight-week demand/payment validation checkpoint; see [research](MARKET-VIABILITY-2026-10.md) and [independent critique](MARKET-VIABILITY-CRITIQUE-2026-10.md). No pricing, billing, team-scope or adoption gate is waived by the revised target.
+
 **Decision date:** 2026-08-15; customer-learning update 2026-09-09
 
 **Status:** commercial source of truth; hypotheses remain gated by external usage and interviews

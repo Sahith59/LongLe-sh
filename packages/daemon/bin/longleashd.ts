@@ -175,23 +175,48 @@ function relayAppOrigin(wsUrl: string): string {
  * completes through a sealed room, and the same address then works from anywhere in the
  * world. Without a relay it points at this laptop's LAN address, as always.
  */
-function freshPairingUrl(): string {
-  const challenge = daemon.registry.createPairingChallenge()
+let foregroundChallenge: string | null = null
+let displayedAttempt: string | null = null
+const relayPairings = new Set<() => void>()
+function freshPairingUrl(foreground = false): string {
+  if (foreground && foregroundChallenge) daemon.registry.cancelPairingChallenge(foregroundChallenge)
+  const challenge = daemon.registry.createPairingChallenge({ version: 2 })
+  daemon.server.registerPairingChallenge(challenge)
+  if (foreground) { foregroundChallenge = challenge.challengeId; displayedAttempt = null }
   if (relay !== null) {
-    hostPairing({ registry: daemon.registry, relayUrl: relay.url, challenge, log: (line) => daemonLog(`[pair] ${line}`) })
+    const dispose = hostPairing({ registry: daemon.registry, relayUrl: relay.url, challenge })
+    relayPairings.add(dispose)
+    setTimeout(() => { dispose(); relayPairings.delete(dispose) }, Math.max(0, challenge.expiresAt - Date.now())).unref?.()
     // The secret belongs in the fragment, never the query. Browsers do not send fragments in an
     // HTTP request, so neither the relay Worker nor edge request logs receive the pairing key.
-    return pairingUrl(relayAppOrigin(relay.url), challenge.challengeId, challenge.secret)
+    return pairingUrl(relayAppOrigin(relay.url), challenge.challengeId, challenge.secret, 2)
   }
   return pairingUrl(
     `http://${servingHost}:${servingPort}/`,
     challenge.challengeId,
     challenge.secret,
+    2,
   )
 }
 
-daemon.server.attachLocalPairing(freshPairingUrl)
-const url = serviceMode ? null : freshPairingUrl()
+daemon.server.attachLocalPairing(() => freshPairingUrl())
+const interactivePairing = !serviceMode && Boolean(process.stdin.isTTY && process.stdout.isTTY)
+const url = interactivePairing ? freshPairingUrl(true) : null
+const pairingWatch = setInterval(() => {
+  if (!foregroundChallenge) return
+  const result = daemon.registry.getPairingResult(foregroundChallenge)
+  if (result) { console.log(`Paired ${result.deviceId}. Keep the QR private.`); foregroundChallenge = null; displayedAttempt = null; return }
+  if (!daemon.registry.hasPairingChallenge(foregroundChallenge)) {
+    console.log('Pairing ended. Press n + Enter for a fresh QR.')
+    foregroundChallenge = null; displayedAttempt = null; return
+  }
+  const verification = daemon.registry.getPairingVerification(foregroundChallenge)
+  if (verification && verification.attemptId !== displayedAttempt) {
+    displayedAttempt = verification.attemptId
+    console.log(`\nCompare with your phone:  ${verification.code}\nType y + Enter only if every digit matches, or x + Enter to reject.\n`)
+  }
+}, 250)
+pairingWatch.unref?.()
 
 console.log('\n=== LongLeash ===\n')
 const warn = vpnWarning()
@@ -238,12 +263,14 @@ if (serviceMode) {
       ? `Relay: ${relay.url} — your phone can reach this laptop from anywhere.`
       : 'Relay: not configured (LAN only). Set LONGLEASH_RELAY_URL once to enable remote access — it is remembered.',
   )
-  console.log('\nScan this with your phone, then add it to your home screen:\n')
+  if (url) {
+  console.log('\nScan this with your phone, then compare both verification codes. Keep this terminal open:\n')
   console.log(terminalQr(url!))
   console.log(`\n  ${url}\n`)
   if (relay !== null && servedOnLan) {
-    console.log(`(LAN fallback for pairing at home: http://${servedHost}:${daemon.port}/#c=…&s=… — same code)`)
+    console.log('Use this same QR for the encrypted relay pairing flow.')
   }
+  } else console.log('Run longleash pair in an interactive terminal to pair. No QR is printed to redirected output.')
 }
 /**
  * Follow the machine onto whatever network it lands on.
@@ -255,15 +282,18 @@ if (serviceMode) {
  * alive across the move. The relay never needed this; it dials out and reconnects itself.
  */
 const NETWORK_WATCH_MS = 5000
+let networkRebindInFlight = false
 const networkWatch = setInterval(() => {
+  if (networkRebindInFlight) return
   const nextBest = findCandidates()[0]
   const nextHost = nextBest?.address ?? '127.0.0.1'
   if (nextHost === servingHost) return
   const was = servingHost
-  servingHost = nextHost
-  void daemon.server
-    .rebind(nextHost)
+  networkRebindInFlight = true
+  void daemon
+    .rebindLocal(nextHost)
     .then((port) => {
+      servingHost = nextHost
       servingPort = port
       console.log(serviceMode ? '\nNetwork changed; the local listener recovered.' : `\nNetwork changed: ${was} -> ${nextHost}. Now serving ${nextHost}:${port}.`)
       console.log(
@@ -276,6 +306,7 @@ const networkWatch = setInterval(() => {
       console.log(serviceMode ? '\nNetwork changed but local listener recovery failed; details omitted.' : `\nNetwork changed but rebinding failed (${String(err)}).`)
       console.log(relay !== null ? 'The relay is unaffected.' : 'Restart the daemon to recover.')
     })
+    .finally(() => { networkRebindInFlight = false })
 }, NETWORK_WATCH_MS)
 networkWatch.unref?.()
 
@@ -284,11 +315,18 @@ if (!serviceMode) console.log('Press n + Enter for a fresh pairing QR, r + Enter
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk: string) => {
   const key = chunk.trim().toLowerCase()
-  if (key === 'n' && !serviceMode) {
-    const next = freshPairingUrl()
+  if (key === 'n' && interactivePairing) {
+    let next: string
+    try { next = freshPairingUrl(true) } catch { console.log('Too many pending QRs. Wait for expiry before trying again.'); return }
     console.log('\nScan this with your phone:\n')
     console.log(terminalQr(next))
     console.log(`\n  ${next}\n`)
+  }
+  if ((key === 'y' || key === 'x') && foregroundChallenge && displayedAttempt && interactivePairing) {
+    try {
+      if (key === 'y') { daemon.registry.confirmPairingLocally(foregroundChallenge, displayedAttempt); console.log('Laptop confirmed. Choose Codes match on your phone to finish.') }
+      else daemon.registry.cancelPairingChallenge(foregroundChallenge)
+    } catch { console.log('That pairing ended. Press n + Enter for a fresh QR.') }
   }
   if (key === 'r') {
     const active = daemon.registry.listDevices().filter((d) => d.revokedAt === null)
@@ -296,12 +334,16 @@ process.stdin.on('data', (chunk: string) => {
     console.log(`>>> revoked ${active.length} device(s); their live connections are cut`)
   }
   if (key === 'q') {
+    clearInterval(pairingWatch)
+    for (const dispose of relayPairings) dispose()
     clearInterval(networkWatch)
     void daemon.stop().then(() => { instanceLock.release(); process.exit(0) })
   }
 })
 
 const shutdown = () => {
+  clearInterval(pairingWatch)
+  for (const dispose of relayPairings) dispose()
   clearInterval(networkWatch)
   void daemon.stop().then(() => { instanceLock.release(); process.exit(0) })
 }

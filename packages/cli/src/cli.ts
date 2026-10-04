@@ -27,7 +27,9 @@ import {
   stopService,
   uninstallService,
 } from './service.js'
+import { runVerifiedPairing } from './pairing.js'
 import { terminalQr } from './terminal-qr.js'
+import { compareBuilds, inspectHooks, readBuild } from './diagnostics.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const packageRoot = resolve(here, '..')
@@ -319,14 +321,25 @@ function printServiceState(state: ReturnType<typeof serviceState>, healthy: bool
 }
 
 async function pair(): Promise<number> {
-  const response = await localDaemonRequest('/local/pairing', { method: 'POST' })
-  if (!response.ok) throw new Error(`The running daemon could not create a pairing challenge (${response.status}).`)
-  const body = await response.json() as { url?: unknown }
-  if (typeof body.url !== 'string' || !/^https?:\/\//.test(body.url)) throw new Error('The daemon returned an invalid pairing challenge.')
-  console.log('\nScan this with your phone. The link is single-use and expires:\n')
-  console.log(terminalQr(body.url))
-  console.log(`\n  ${body.url}\n`)
-  return 0
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  process.once('SIGINT', cancel)
+  process.once('SIGTERM', cancel)
+  const terminal = input.isTTY && output.isTTY ? createInterface({ input, output }) : null
+  terminal?.on('SIGINT', cancel)
+  terminal?.on('close', cancel)
+  try {
+    await runVerifiedPairing({
+      interactive: Boolean(terminal), request: localDaemonRequest, signal: controller.signal,
+      showQr: (url) => { console.log('\nScan this with your phone:\n'); console.log(terminalQr(url)); console.log(`\n  ${url}\n`) },
+      print: (text) => console.log(text),
+      ask: (prompt, signal) => terminal!.question(prompt, { signal }),
+    })
+    return 0
+  } finally {
+    terminal?.close()
+    process.off('SIGINT', cancel); process.off('SIGTERM', cancel)
+  }
 }
 
 async function runDaemon(explicitRoots: string[]): Promise<number> {
@@ -355,21 +368,29 @@ async function doctor(json: boolean): Promise<number> {
   let config: ReturnType<typeof loadConfig> = {}
   let configError: string | null = null
   try { config = loadConfig() } catch (error) { configError = message(error) }
-  const endpointPath = join(process.env.LONGLEASH_DATA ?? join(homedir(), '.longleash'), 'hook-endpoint.json')
-  let daemon: { reachable: boolean; build?: string } = { reachable: false }
+  let daemon: { reachable: boolean; build?: string; pairingVersion?: number } = { reachable: false }
   try {
-    const endpoint = JSON.parse(readFileSync(endpointPath, 'utf8')) as { url?: string; secret?: string }
-    if (endpoint.url && endpoint.secret) {
-      const response = await fetch(endpoint.url.replace(/\/hook$/, '/health'), {
-        headers: { 'x-longleash-hook': endpoint.secret },
-        signal: AbortSignal.timeout(1500),
-      })
+      const response = await localDaemonRequest('/health', { method: 'GET' }, 1500)
       if (response.ok) {
-        const health = await response.json() as { build?: string }
-        daemon = { reachable: true, ...(health.build ? { build: health.build } : {}) }
+        const health = await response.json() as { name?: string; build?: string; pairingVersion?: number }
+        daemon = { reachable: health.name === 'longleash', ...(health.build ? { build: health.build } : {}), ...(health.pairingVersion ? { pairingVersion: health.pairingVersion } : {}) }
       }
-    }
   } catch { /* absence or refusal is a health result, not a crash */ }
+
+  const localBuild = readBuild(join(packageRoot, 'runtime', 'app', 'dist', 'build.json'))
+  let relayBuild: string | null = null
+  if (typeof config.relayUrl === 'string') {
+    try {
+      const url = new URL(config.relayUrl)
+      url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
+      url.pathname = '/build.json'; url.search = ''; url.hash = ''
+      const response = await fetch(url, { signal: AbortSignal.timeout(3000), headers: { 'cache-control': 'no-cache' } })
+      const value = response.ok ? await response.json() as { build?: unknown } : null
+      if (typeof value?.build === 'string') relayBuild = value.build
+    } catch { /* diagnostic unavailable */ }
+  }
+  const builds = { local: localBuild, daemon: compareBuilds(localBuild, daemon.build ?? null), relay: typeof config.relayUrl === 'string' ? compareBuilds(localBuild, relayBuild) : 'off', relayBuild }
+  const hookConfig = inspectHooks(homedir(), process.env.CODEX_HOME || join(homedir(), '.codex'), hooks)
 
   const report = {
     package: { name: '@longleash/cli', version: VERSION, root: packageRoot },
@@ -382,6 +403,8 @@ async function doctor(json: boolean): Promise<number> {
       relay: typeof config.relayUrl === 'string' ? config.relayUrl : 'off',
     },
     daemon,
+    builds,
+    hooks: hookConfig,
   }
   if (json) console.log(JSON.stringify(report, null, 2))
   else {
@@ -391,6 +414,11 @@ async function doctor(json: boolean): Promise<number> {
     console.log(`  config       ${configError ?? (configuredRoots(config).length > 0 ? 'valid' : 'not configured')}`)
     console.log(`  relay        ${report.config.relay}`)
     console.log(`  daemon       ${daemon.reachable ? `reachable · build ${daemon.build ?? 'unknown'}` : 'not running'}`)
+    console.log(`  code builds  ${builds.daemon} · packaged ${localBuild ?? 'unknown'}`)
+    console.log(`  app builds   ${builds.relay} · relay ${relayBuild ?? 'unavailable'}`)
+    console.log(`  pairing      ${daemon.pairingVersion === 2 ? 'verified v2' : 'unavailable/old — update and restart the daemon'}`)
+    for (const agent of ['claude', 'codex'] as const) console.log(`  ${agent} hooks ${hookConfig[agent] ? 'configured for this runtime' : 'missing/stale — run longleash hooks'}`)
+    console.log('  Hook configuration does not prove provider trust. Restart agents after updates and test one new session.')
     console.log('')
   }
   return configError === null ? 0 : 1

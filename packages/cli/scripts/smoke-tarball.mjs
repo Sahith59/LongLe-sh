@@ -107,7 +107,6 @@ async function exercisePackagedDaemon(executable, root, baseEnv) {
       const poll = setInterval(() => {
         if (output.includes('Press n + Enter')) {
           clearInterval(poll)
-          child.stdin.write('q\n')
           resolveReady()
         }
       }, 50)
@@ -119,6 +118,22 @@ async function exercisePackagedDaemon(executable, root, baseEnv) {
         }
       })
     })
+    const endpoint = JSON.parse(readFileSync(join(baseEnv.LONGLEASH_DATA, 'hook-endpoint.json'), 'utf8'))
+    const origin = new URL(endpoint.url).origin
+    const request = (path, body) => fetch(`${origin}${path}`, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'x-longleash-hook': endpoint.secret, 'content-type': 'application/json' },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+      signal: AbortSignal.timeout(3000),
+    })
+    const health = await (await request('/health')).json()
+    if (health.name !== 'longleash' || health.pairingVersion !== 2) throw new Error('Packaged daemon lacks verified pairing v2.')
+    if (/[#&]s=/.test(output)) throw new Error('Non-interactive startup leaked a pairing credential.')
+    const pairing = await (await request('/local/pairing', {})).json()
+    if (pairing.version !== 2 || !pairing.challengeId) throw new Error('Packaged local pairing API did not create a v2 challenge.')
+    const cancelled = await request('/local/pairing/cancel', { challengeId: pairing.challengeId })
+    if (!cancelled.ok) throw new Error('Packaged pairing cancellation failed.')
+    child.stdin.write('q\n')
     const code = await exited
     if (code !== 0) throw new Error(`Packaged daemon did not stop cleanly (code ${code}). Output withheld because it contains a pairing secret.`)
   } finally {

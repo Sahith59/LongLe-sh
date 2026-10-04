@@ -2,7 +2,29 @@
 
 Update this file at the end of any session that changes project state. Newest entries first in the log.
 
-## Where we are
+## Current checkpoint — 2026-10-04 (D3 release-readiness work)
+
+- Owner requested D3, correction of missing terminal/VS Code sessions, and an end-to-end laptop/phone walkthrough. Subsequent instruction **authorizes committing, pushing, publishing and deploying a controlled rc.12 candidate** for physical phone testing. D remains open until that acceptance passes.
+- D3 remains open: fixed newly created Codex VS Code transcript discovery and custom Codex home; added packaged doctor build/pairing/hook evidence, four-origin socket/reconnect coverage and packaged pairing smoke. Updated vulnerable production dependencies and npm shrinkwrap.
+- Found a live cause of missing sessions on the owner's laptop: rc.11 daemon listener had moved to `10.66.62.167`, but its hook endpoint file still pointed to `192.168.1.71`. Candidate now updates that file atomically after listener rebind; the old running service must be updated/restarted for the fix to take effect.
+- Evidence: **1,070 automated tests**, typechecks/builds/package verification, clean isolated macOS tarball lifecycle, zero known vulnerabilities in both production dependency graphs. **11 real Claude/Codex contract tests passed** before dependency refresh. Read-only production matrix passes for deployed 7266155. Remote migrations now list successfully with none pending; the previous 7403 did not recur.
+- Published rc.11 → candidate → rc.11 paired-device data continuity passed using isolated real packaged daemons and authenticated WebSockets on macOS. Added the upgrade/rollback check to the non-publishing Linux/macOS candidate CI matrix.
+- **HOLD:** physical iPhone, supported-platform candidate CI/service lifecycle and authenticated P5 owner/account/feedback/email evidence remain unverified. Separate VS Code companion sidebar live sync is still unimplemented. No substitute of browser/unit results for those gates.
+- [D3 evidence](../docs/D3-RELEASE-READINESS.md) and [detailed walkthrough](../docs/PHONE-LAPTOP-WALKTHROUGH.md) are the next-session entry points. Continue D before E/F. Preserve the owner target and market recommendations below.
+
+## Prior checkpoint — 2026-10-04 (D2 and market validation)
+
+- Owner requested D2 end-to-end implementation, next-phase clarity, and two **GPT-6 Sol** agents for market research and independent critique. Both agents completed reports and reviewed the revised economics.
+- **D2 is implemented and locally validated**, including v2 QR producers, encrypted LAN/reference/Worker pairing, local CLI/foreground confirmation, phone match/mismatch/waiting/recovery, legacy update guidance, capacity/rate bounds and account-scoped credential timing. **D3 is next**; no claim of release or physical iPhone acceptance. Existing paired-device credentials remain usable.
+- Evidence: 1,064 automated tests; all package typechecks/workspace builds; CLI package verification; actual workerd hosted-ticket and accountless pairing; Chrome 375px/landscape QA. [Exact D checkpoint and remaining gates](../docs/WORKSTREAM-D-VERIFIED-PAIRING.md).
+- Found/fixed during D2: new QR fragment after cancellation did not restart in an existing tab; OAuth fallback URLs could include the pairing fragment. The candidate now handles fresh hashes and strips pairing data from auth redirects.
+- **Revenue objective:** owner can commit **at least 14–16 hours/week to development**; wants **$7–8k MRR**, with **$6k/month acceptable**, after roughly 6–7+ months. This is a development commitment, not a known total work cap; extra sales/support hours are unknown. Gross MRR is not take-home income.
+- [Market research](../docs/MARKET-VIABILITY-2026-10.md) and [critic](../docs/MARKET-VIABILITY-CRITIQUE-2026-10.md): conditional go for a six-to-eight-week external-use and price-commitment test; do not assume six months of coding produces revenue. At $10, $6–8k requires 600–800 paying individuals. Team arithmetic assumes a future genuinely useful/sold team product. Zero verified external hosted users is the recorded baseline; accountless adoption is unknown.
+- Release blockers: D3 physical-device/clean-install/upgrade matrix and P5 production evidence. Base main/remote HEAD `7266155`; public app was observed at that build while the CI customer-data migration failed with Cloudflare 7403. Production schema/mail/account acceptance remains unproven. CLI npm rc remains `0.1.0-rc.11`; these working-tree changes are not published.
+- Standing queue after acceptance: E local MCP, F desktop dashboard, VS Code authenticated snapshot sync. Research recommends validation before broad expansion; it does not authorize outreach, billing or team scope. Commercial source remains `docs/MONETIZATION-PLAN.md` with its gates.
+- Requested design skills informed the existing Matte Graphite comparison UI. Only isolated test servers were started/stopped; real daemon, production and the user's untracked `.claude/settings.json` were left alone. No commit was made.
+
+## Historical checkpoints (superseded where the current checkpoint differs)
 
 - **Field correction (2026-08-10): WORKSPACE FIXED AND GATED; NOT RELEASED.** The eight-item
   terminal/VS Code/Codex/mobile report is implemented on top of `4159900`: 570 automated tests,

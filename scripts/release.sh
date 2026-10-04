@@ -23,8 +23,8 @@ die()  { printf '\n\033[31m✗ %s\033[0m\n\n' "$1" >&2; exit 1; }
 
 BUILD="$(git rev-parse --short HEAD)"
 
-if [ -n "$(git status --porcelain -- packages scripts)" ]; then
-  die "There are uncommitted changes under packages/ or scripts/.
+if [ -n "$(git status --porcelain -- packages scripts package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json .github/workflows)" ]; then
+  die "There are uncommitted changes in release source, dependencies, or workflows.
   The build is stamped with the git commit, so an uncommitted release would claim to be
   something it is not. Commit first, then release."
 fi

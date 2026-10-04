@@ -3,7 +3,6 @@ import {
   DelegationReturnPreviewSchema,
   DelegationUpdateSchema,
   PROTOCOL_VERSION,
-  derivePairingIdentity,
   deriveRelayIdentity,
   open as openEnvelope,
   seal,
@@ -19,6 +18,7 @@ import {
   type WorkspaceMode,
 } from '@longleash/protocol'
 import type { SessionSeed, Store } from './store.js'
+import { verifiedPairing, type PairingProgress, type PairingControl } from './verified-pairing.js'
 import { recordMeasuredOutcome } from './measurement-client.js'
 
 export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'unauthorized' | 'revoked'
@@ -173,95 +173,34 @@ async function guestSocket(endpoint: string, room: string): Promise<WebSocket> {
   return protocols === undefined ? new WebSocket(url) : new WebSocket(url, protocols)
 }
 
-export async function pair(challengeId: string, secret: string): Promise<string> {
-  if ((await detectOrigin()) === 'relay') return pairViaRelay(challengeId, secret)
-  const res = await fetch(`/pair?c=${encodeURIComponent(challengeId)}&s=${encodeURIComponent(secret)}`, {
-    method: 'POST',
-  })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { reason?: string }
-    throw new Error(body.reason ?? 'pairing rejected')
+export async function pair(challengeId: string, secret: string, options: {
+  version?: number; onProgress: (progress: PairingProgress, control: PairingControl) => void; signal: AbortSignal;
+}): Promise<string> {
+  if (options.version !== 2) throw new Error('This QR uses an older pairing protocol. Update LongLeash on your laptop, restart it, then run longleash pair for a new QR.')
+  const account = credentialAccount
+  const origin = await detectOrigin()
+  if (origin === 'unknown') throw new Error('Cannot reach LongLeash. Check your connection and try a fresh QR.')
+  const relay = origin === 'relay'
+  if (!relay) {
+    const health = await fetch('/health', { cache: 'no-store', signal: options.signal })
+    const body = await health.json() as { pairingVersion?: number }
+    if (body.pairingVersion !== 2) throw new Error('Update and restart the laptop daemon: verified pairing requires protocol v2.')
   }
-  const { token, relaySecret } = (await res.json()) as { token: string; relaySecret?: string }
-  writeCredential(TOKEN_KEY, token)
-  // The E2E root for the relay path. Captured now, at the one moment the laptop and phone
-  // share a LAN-only channel, so this pairing works remotely without ever re-pairing.
-  if (relaySecret) writeCredential(RELAY_SECRET_KEY, relaySecret)
-  recordMeasuredOutcome('paired', 'success')
-  return token
-}
-
-/**
- * Pairing when the phone can only see the relay: both sides derive a short-lived room and
- * key from the QR's challenge secret, and the whole exchange travels sealed. The relay sees
- * a room open, two joins, two envelopes, a room close — nothing else.
- */
-async function pairViaRelay(challengeId: string, secret: string): Promise<string> {
-  const identity = await derivePairingIdentity(secret)
-  const endpoint = ownRelayEndpoint()
-  const socket = await guestSocket(endpoint, identity.roomTag)
-
-  return new Promise<string>((resolve, reject) => {
-    let settled = false
-    const finish = (result: { token: string } | Error): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(deadline)
-      socket.close()
-      if (result instanceof Error) reject(result)
-      else resolve(result.token)
-    }
-    const deadline = setTimeout(
-      () => finish(new Error('Your laptop did not answer — is longleashd running with the relay configured?')),
-      15_000,
-    )
-
-    socket.onopen = () => {
-      socket.send(JSON.stringify({ v: 1, type: 'join', room: identity.roomTag, role: 'guest' }))
-    }
-    socket.onerror = () => finish(new Error('Could not reach the relay.'))
-    socket.onmessage = (raw) => {
-      let message: { type?: unknown; payload?: unknown; role?: unknown; event?: unknown; host?: unknown }
-      try {
-        message = JSON.parse(String(raw.data)) as typeof message
-      } catch {
-        return
-      }
-      const sendRequest = (): void => {
-        void seal(
-          identity,
-          JSON.stringify({
-            v: 1,
-            type: 'completePairing',
-            challengeId,
-            secret,
-            deviceName: navigator.userAgent.slice(0, 64),
-          }),
-        ).then((payload) => {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ v: 1, type: 'frame', payload }))
-          }
-        })
-      }
-      if (message.type === 'joined' && message.host === true) sendRequest()
-      if (message.type === 'peer' && message.role === 'host' && message.event === 'joined') sendRequest()
-      if (message.type === 'frame' && typeof message.payload === 'string') {
-        void openEnvelope(identity, message.payload).then((text) => {
-          if (text === null) return
-          const reply = JSON.parse(text) as { type?: string; token?: string; relaySecret?: string; reason?: string }
-          if (reply.type === 'paired' && reply.token && reply.relaySecret) {
-            writeCredential(TOKEN_KEY, reply.token)
-            writeCredential(RELAY_SECRET_KEY, reply.relaySecret)
-            writeCredential(RELAY_URL_KEY, endpoint)
-            recordMeasuredOutcome('paired', 'success')
-            finish({ token: reply.token })
-          } else if (reply.type === 'pair-error') {
-            finish(new Error(`Pairing refused: ${reply.reason ?? 'unknown'}`))
-          }
-        })
-      }
-    }
+  const endpoint = relay ? ownRelayEndpoint() : ''
+  const result = await verifiedPairing({ challengeId, secret, relay, signal: options.signal, onProgress: options.onProgress,
+    socket: async (room) => relay ? guestSocket(endpoint, room) : new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/pair/v2?c=${encodeURIComponent(challengeId)}`),
   })
+  if (options.signal.aborted || credentialAccount !== account) throw new Error('Account changed during pairing. Revoke the incomplete device on your laptop, then pair again.')
+  try {
+    writeCredential(RELAY_SECRET_KEY, result.relaySecret)
+    if (relay) writeCredential(RELAY_URL_KEY, endpoint)
+    writeCredential(TOKEN_KEY, result.token) // token last: a partial write never grants app entry
+  } catch {
+    forgetToken()
+    throw new Error('This browser could not save pairing. Allow browser storage, revoke the incomplete device with longleash devices/revoke, then pair again.')
+  }
+  recordMeasuredOutcome('paired', 'success')
+  return result.token
 }
 
 export function forgetToken(): void {

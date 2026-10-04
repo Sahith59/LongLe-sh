@@ -42,3 +42,14 @@ See the [first-party setup guide](https://longleash.dev/docs/getting-started),
 - npm provenance is required for public releases from the official repository workflow.
 
 LongLeash is licensed under the MIT License.
+
+
+### Verified pairing
+
+Run `longleash pair` in an interactive terminal and keep it open. Compare all eight digits
+with the phone, type `yes` on the laptop, and choose **Codes match** on the phone. Both
+confirmations are required. A mismatch, cancellation, disconnect or expiry requires a new QR.
+Redirected input/output is refused so QR secrets cannot be written to service logs. Existing
+paired devices continue working; older daemons must be updated and restarted before creating
+new verified pairings. If a connection fails after both confirmations, use `longleash devices`
+and revoke any incomplete device before pairing again.

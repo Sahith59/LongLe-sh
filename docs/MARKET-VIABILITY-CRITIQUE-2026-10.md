@@ -1,0 +1,74 @@
+# LongLeash market viability: independent critique
+
+**As of:** 4 October 2026
+**Question:** Can another six to seven months with **at least 14–16 hours per week committed to development** realistically reach **$7,000–$8,000 gross MRR**, with **$6,000/month acceptable**, while avoiding a product with no buyers? Available time for sales and support beyond development is unknown.
+
+## Verdict
+
+**Conditional go for a short customer and payment test; no go for six to seven months of feature-led development on the present evidence.** The $6,000 acceptable floor and $7,000–$8,000 goal are possible outcomes, but neither is a credible base forecast merely because at least 14–16 development hours are available weekly. The project's own [monetization plan](MONETIZATION-PLAN.md) and [measurement baseline](CUSTOMER-FEEDBACK-AND-MEASUREMENT.md) report **zero external hosted-account registrations**, no verified external activation or retention, and no payments. Accountless external use is unknown. Reported Cloudflare requests and unique visitors cannot fill those gaps. An unknown conversion rate applied to unverified traffic is not a business model.
+
+The likely viable wedge, if one exists, is a repeated, costly coordination problem for a specific AI-heavy team or professional that current tools handle poorly. That must be discovered and sold. “Remote Claude/Codex from a phone,” safe worktrees, and a generic cross-provider control plane are already crowded. The default outcome after prolonged building without outside learning is an open-source utility with little income. That is an inference from the lack of observed demand and the strength of substitutes, not a measured probability.
+
+## Strongest disconfirming evidence
+
+1. **Provider-native substitution is accelerating.** [Anthropic Remote Control](https://code.claude.com/docs/en/remote-control) is available on Pro, Max, Team, and Enterprise plans. Its documentation now covers local sessions visible on phone and browser, terminal/phone messages in sync, VS Code entry, concurrent session spawning into worktrees, mobile push, and Team/Enterprise administration. [OpenAI Codex Remote](https://developers.openai.com/blog/mastering-codex-remote-for-engineering) covers connected hosts, workspace selection, worktrees, queued/steering prompts, goals, side chats, review, and security controls in the ChatGPT mobile app. Vendor clients have built-in distribution to existing subscribers. LongLeash may have different security and ownership semantics, but those need a measured buyer outcome, not a feature comparison alone.
+
+2. **The closest free substitute overlaps the proposed wedge.** [Happier's current repository](https://github.com/happier-dev/happier) advertises cross-provider Claude/Codex/other-agent sessions, mobile/desktop/web control, delegation across agents, local and remote switching, encrypted hosted or self-hosted relay, and a free open-source product. These are vendor claims, not independently verified reliability results. Even allowing for bugs or differences, they weaken the assumption that cross-provider access or delegation alone creates a paid moat. [Happy](https://github.com/slopus/happy) offers a free MIT-licensed mobile/web client for Claude and Codex with encryption and notifications. LongLeash must win a narrower job and show it in repeated use.
+
+3. **Broad AI-agent adoption is a poor proxy for this purchase.** The [2025 Stack Overflow Developer Survey](https://survey.stackoverflow.co/2025/ai) says a majority of respondents either do not use agents or use simpler AI tools; only 17% of agent users agreed agents improved team collaboration. The same survey reports substantial accuracy and privacy/security concern. These findings can motivate interviews about coordination and trust, but they do not imply budget for an additional remote-control product. Survey samples and wording are not LongLeash's addressable market.
+
+4. **Competitor pricing establishes a category, not this product's willingness to pay.** [Conductor lists $50/month Pro and $60/user/month Teams](https://www.conductor.build/pricing), but those packages include cloud workspaces, multiplayer, collaboration, and administration. Its price cannot validate LongLeash's $10 personal or $30/team-seat offers. Low-price relays and free first-party/independent products increase the burden of proof for managed connectivity as a paid benefit. A written “I would pay” statement is weaker than a paid pilot or a card-backed preorder with an explicit cancellation/refund path.
+
+5. **The revenue clock in the plan is conditional and optimistic.** Its six-month scenario begins only *after* public-preview Gate 0, then assumes 100 activated people in month two, 50 paid personal users plus two paid team pilots by month four, and 200 paid personal users plus ten ten-seat teams by month six. The team product, team pipeline, individual funnel, and repeat acquisition channel have yet to be established. It is an upside sequence, not evidence that seven more calendar months of engineering will earn $5,000 monthly recurring revenue.
+
+## Economics that need explicit accounting
+
+The existing [plan](MONETIZATION-PLAN.md#the-5000-mrr-model) models $5,000 gross MRR. The user's revised $6,000–$8,000 target raises every acquisition and operating requirement. At the plan's hypothetical $10 personal price and $300 per ten-seat team price:
+
+| Gross MRR target | Personal only | $300 teams only | Mixed example |
+| --- | ---: | ---: | --- |
+| $6,000 acceptable floor | 600 personal subscribers | 20 teams | 200 personal + 14 teams = $6,200 |
+| $7,000 goal | 700 personal subscribers | 24 teams = $7,200 | 200 personal + 17 teams = $7,100 |
+| $8,000 goal | 800 personal subscribers | 27 teams = $8,100 | 200 personal + 20 teams = $8,000 |
+
+Team-only and mixed examples round up because whole organizations buy. These are arithmetic targets, not acquisition forecasts. The team product and sales process do not exist yet. The arithmetic also assumes all ten seats remain billable in each organization; a $300 founding pilot is not evidence a team will renew at $300 or move to $30 per seat later.
+
+If an illustrative 5% of **activated** external users convert to personal subscriptions, 600–800 paid individuals require **12,000–16,000 activated people**; at 3%, they require **20,000–26,667**. Those rates come from general freemium ranges cited in the plan and are not LongLeash measurements. Traffic, signups, installs, and even pairings are earlier funnel stages, so the needed qualified reach is higher. A 5% monthly paying-customer churn rate would require **30–40 new personal payers each month just to hold** a 600–800-person base. At 5% activated-to-paid conversion, that replacement alone requires 600–800 newly activated people per month. These are illustrations; actual acquisition and churn are unknown.
+
+Under the listed [Lemon Squeezy base fee of 5% + $0.50 per transaction](https://www.lemonsqueezy.com/pricing), a monthly $10 sale yields about **$9 before hosting, refunds, support, and tax**; a $300 team sale yields about **$284.50**. Some payment types incur extra fees. As a rough side-income scale, **112 personal subscribers** or **four $300 team organizations** clear $1,000 after the base processing fee, before other costs. Annual plans change cash timing and fee incidence; cash collected upfront should not be counted as recurring monthly income.
+
+For clarity, **600 personal subscribers produce $6,000 gross MRR but about $5,400 after only the base payment fee**. Twenty $300 teams produce $6,000 gross and about $5,690 after that fee. If the user's $6,000 minimum means money available after fees and operating costs, all customer counts above are underestimates. The present evidence does not establish hosting, support, refund, or tax costs precisely enough to translate the target into take-home income.
+
+Founder time is the major hidden cost. The stated development commitment of 14–16 hours per week equals roughly **61–69 development hours per average month** (52 weeks ÷ 12), or **425–485 development hours across seven months**. The owner did **not** state a hard total-work ceiling; extra time available for sales and support is unknown. As an illustrative assumption, if the founder values an hour at $50, ten minutes of monthly support per personal subscriber costs $8.33 in time, leaving about $0.67 of that $9 after-fee revenue before hosting and development. At 600 subscribers, that support rate alone is **100 additional hours/month**. Even five minutes each consumes **50 additional hours/month** at 600 subscribers; at 800 subscribers, it consumes about **67 additional hours/month**. If the owner *also* chooses to limit all work to 14–16 hours weekly, those support loads leave little or no development capacity. That is a conservative stress test, not a stated constraint. The true support time and available total work hours must be measured.
+
+Team pilots can raise revenue per buying account but add onboarding, access-control, incident, and procurement work. If 20 paying teams each require two support/account-management hours monthly, they consume 40 hours/month **in addition to development and new sales**. This two-hour figure is an explicit scenario assumption, not observed evidence. High-touch support may close initial pilots but could consume substantial founder time unless price or process changes.
+
+Retention also changes the acquisition burden. A stable 100-subscriber base with 5% monthly logo churn needs five new paid customers each month merely to remain flat; 10% churn needs ten. Those churn rates are illustrations, not observed LongLeash results. The plan's D30 activated retention hypothesis of 25% would still mean most activated users are gone by day 30. Ask whether the product solves an infrequent but high-value event or whether weak repeat use means weak need. For the former, renewal/payment evidence matters more than weekly activity alone.
+
+## The few hypotheses worth testing
+
+| Hypothesis | Cheapest credible test | Evidence that changes the decision |
+| --- | --- | --- |
+| Remote intervention is a repeated, expensive problem for an identifiable segment | Observe ten qualified developers using their own workflows; record their recent off-desk interruption, workaround, and cost | At least five show a recent, concrete incident and independently repeat use; polite enthusiasm or hypothetical future use does not count |
+| LongLeash beats included/free substitutes for that job | Ask testers to run the same task with their current provider client or free tool and LongLeash, then choose without prompting | Clear preference tied to saved time, fewer failed interventions, or an auditable handoff, with the alternative named |
+| Managed Personal Cloud is worth a second subscription | Show an exact $8–$10 monthly offer after use; collect price-specific written commitments before commerce is ready, then offer real checkout only after billing and release gates pass | At least five non-founder users make price-specific commitments in the short test; actual paying and renewal are required before scaling, because written intent alone remains exploratory |
+| Team control is a budgeted pain | Interview the person who can authorize spend at AI-heavy teams; walk through one real ownership/approval/audit incident | At least two unrelated teams commit to a scoped paid pilot with price, buyer, start date, and success condition |
+| Acquisition and support are repeatable | Track qualified source → install → pair → first intervention → D7/D30 → paid; log onboarding/support minutes and incidents | A second channel brings qualified users, users activate without founder rescue, and contribution after support remains positive |
+
+The numerical thresholds above are proposed decision rules, not industry benchmarks or claims that these sample sizes prove product-market fit. Record nonresponse and refusals; otherwise a small founder-selected group can overstate demand.
+
+## Time-boxed decision
+
+For the next **six to eight weeks**, use a meaningful portion of the weekly development commitment for the minimum reliability fixes needed for a fair external test, and separately plan time for customer learning. The evidence plan is a recommendation, not authorization to contact prospects. Do not use Cloudflare “uniques,” GitHub stars, or signups as substitutes for successful interventions. Avoid building general billing or Team Control in anticipation of demand. The existing [monetization gates](MONETIZATION-PLAN.md#release-and-revenue-gates) remain useful for eventual release, but paid validation should come before a large team-governance build.
+
+At that checkpoint:
+
+- **Continue toward a paid personal preview** if independent users repeat the key action, choose LongLeash over the tools they already have, and at least five make price-specific written commitments. Treat actual payment and renewal as a later, stronger gate before scaling. Measure churn and support.
+- **Focus on a team-only pilot** if individual use is sporadic but two unrelated budget owners agree to paid trials for one concrete governance problem. Build only the minimum team capability required for that promise.
+- **Pivot the commercial wedge or stop commercial investment** if testers do not activate without handholding, revert to native/free substitutes, or refuse an exact-price purchase. Keep the open-source utility if it has value, but do not treat more engineering as a substitute for demand.
+
+By the user's six-to-seven-month horizon, the sensible success criterion is **some repeatable paid income with documented acquisition and support costs**. The requested $6,000 floor would require a step change from today's zero verified external hosted-account baseline and a low-touch personal service or a proved team sales motion. Committing 14–16 weekly development hours is useful but does not establish either path, and the separate sales/support capacity is unknown. Neither path is a responsible base case today. If there are still no non-founder paying customers and no concrete team purchase commitments after a fair test, the evidence supports stopping revenue-directed development. Reaching $6,000–$8,000 should remain a later conditional scaling goal, revised from real funnel, renewal, and time-cost data.
+
+## Evidence limits
+
+This critique uses the repository's reported account and traffic baseline, not direct access to Clerk, Cloudflare, invoices, interviews, or product analytics. Competitor pages document advertised capabilities and prices as of this review; no hands-on benchmark establishes relative reliability. There is no measured LongLeash conversion, churn, customer acquisition cost, support time, or willingness to pay. Those unknowns are exactly why the recommendation is conditional.

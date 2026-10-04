@@ -10,6 +10,18 @@ Opened 2026-08-09 after the first real field-test round on a phone.
 
 ---
 
+## Current priority — 2026-10-04
+
+**D3 update:** local hardening and release checks advanced; **D remains open**. Fixes include new Codex VS Code transcript discovery, CLI diagnostics, production dependency advisories and packaged pairing checks. See [D3 readiness](../docs/D3-RELEASE-READINESS.md) for 1,070 tests, real-provider evidence and remaining physical/platform/production gates. Remote migration listing now succeeds with none pending; old 7403 records below are historical. The owner subsequently authorized committing, pushing, publishing and deploying rc.12 for physical testing. [Setup walkthrough](../docs/PHONE-LAPTOP-WALKTHROUGH.md) now pins that candidate and requires live release verification before use.
+
+The owner requested continuation of the pre-release extension plan's **Workstream D**, one phase at a time. **D2 phone/CLI/transport integration is locally implemented and validated; D3 device, packaged-install and production acceptance is next.** See [the exact checkpoint](../docs/WORKSTREAM-D-VERIFIED-PAIRING.md).
+
+P5 customer-feedback production acceptance remains a launch blocker, including the failed remote migration (Cloudflare 7403). D development does not waive it. Keep E/F, VS Code snapshot sync and broader features queued while this phase is being completed. [Competitive research](../docs/COMPETITIVE-LANDSCAPE-2026-10.md) informs the trust/recovery work; it does not establish superiority.
+
+The owner now targets $7–8k MRR ($6k acceptable) and at least 14–16 development hours/week. The two GPT-6 Sol market reports recommend an external-use and exact-price validation checkpoint within six to eight weeks before broad feature expansion. See `docs/MARKET-VIABILITY-2026-10.md` and its independent critique; these are recommendations, not validated revenue forecasts.
+
+The dated roadmap below is historical evidence, not the current ordering. `docs/MONETIZATION-PLAN.md` supersedes BUSINESS.md/PRICING.md for commercial decisions.
+
 ## 0. Where the product actually stands (2026-08-09)
 
 | Agent | Status |

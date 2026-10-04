@@ -314,14 +314,13 @@ function GettingStarted() {
         <a href={`${REPOSITORY}/blob/main/docs/NPM-RELEASE.md`}>release controls</a> before running it.
       </p>
 
-      <h2 id="start">2. Configure the laptop service</h2>
-      <CodeBlock command="longleash setup" />
+      <h2 id="start">2. Verify the laptop service</h2>
+      <CodeBlock command={'longleash service status\nlongleash doctor'} />
       <p>
-        Review the allowed folders, connectivity choice, and login-start behavior before accepting.
-        At the folder question, press Enter to accept the displayed folder or type an existing
-        directory path; answer <code>y</code> only when the prompt explicitly shows a yes/no choice.
+        Setup already reviewed your allowed folders, connectivity and login-start behavior.
+        Require a reachable daemon, matching builds, and verified pairing v2 before scanning.
         The recommended per-user service keeps the laptop reachable after this terminal closes.
-        Use <code>longleash run</code> only when you deliberately want foreground diagnosis.
+        If you deliberately chose foreground mode, keep <code>longleash run</code> open instead.
       </p>
 
       <h2 id="pair">3. Install, sign in, then pair the phone app</h2>
@@ -332,7 +331,8 @@ function GettingStarted() {
         </li>
         <li>Sign in inside that installed app with Google, an email code, or email and password.</li>
         <li>Choose <b>Scan the QR</b> inside the installed app, not from the iPhone Camera app.</li>
-        <li>Scan the fresh QR shown by the daemon. Keep its entire quiet border in view.</li>
+        <li>In a laptop terminal, run <code>longleash pair</code> and keep it open. Scan its fresh QR inside the installed app, keeping the entire quiet border in view.</li>
+        <li>Compare all eight digits on the phone and laptop. Type <code>yes</code> at the laptop prompt (or <code>y</code> then Enter in foreground mode), then choose <b>Codes match</b> on the phone. If any digit differs, choose <b>They do not match</b> and generate a fresh QR.</li>
         <li>Require the header to show <code>linked · relay</code> or <code>linked · direct</code>.</li>
       </ol>
       <p>
@@ -360,6 +360,10 @@ function GettingStarted() {
         <li>Stop it, reveal the handoff, and copy the native resume command.</li>
         <li>Resume at the laptop and confirm the same conversation is present.</li>
       </ol>
+      <p>
+        For the full phone and laptop test, including VS Code session labels, Wi-Fi and cellular,
+        follow the <a href={`${REPOSITORY}/blob/main/docs/PHONE-LAPTOP-WALKTHROUGH.md`}>release walkthrough</a>.
+      </p>
       <p>
         If any step is ambiguous, stop there and use <a href={siteHref('/docs/troubleshooting')}>Troubleshooting</a>.
       </p>
@@ -751,9 +755,9 @@ function Troubleshooting() {
 
       <h2 id="pairing">Pairing says the laptop did not answer</h2>
       <ol>
-        <li>Leave the terminal running <code>longleash</code> open.</li>
-        <li>Run <code>longleash doctor</code> in a second terminal and require <b>reachable</b>.</li>
-        <li>Press <code>n</code> then Enter in the daemon terminal for a new single-use QR.</li>
+        <li>Keep <code>longleash pair</code> open until both devices confirm; run <code>longleash service status</code> in a second terminal.</li>
+        <li>Run <code>longleash doctor</code> and require <b>reachable</b>, matching builds and pairing v2.</li>
+        <li>Run <code>longleash pair</code> again for a fresh QR. In foreground mode, press <code>n</code> then Enter in the daemon terminal.</li>
         <li>Scan from inside the installed PWA; Safari and the home-screen app have separate storage on iPhone.</li>
         <li>If scanning remains unreliable, paste the complete fresh link into the app.</li>
       </ol>
