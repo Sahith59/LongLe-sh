@@ -6,17 +6,17 @@ Standalone, end-to-end, open-source product: control the AI-agent sessions, term
 
 ## Status
 
-Plan v2 written (2026-07-29). Machine readiness half done. Coding not started — Phase A gated on spike S0 (Agent SDK under subscription OAuth). Read `context/STATE.md` first; update it at the end of any session that changes project state.
+Updated 2026-10-04: the product has six implemented packages and a deployed preview. Workstream D remains open: D2 is locally tested; D3 hardening includes session discovery, packaged diagnostics and dependency updates, with physical-device/platform/production acceptance still pending. Remote migration listing now succeeds with none pending; historical 7403 is not the current result. No new release was deployed. Read `context/STATE.md`, `docs/D3-RELEASE-READINESS.md` and `docs/WORKSTREAM-D-VERIFIED-PAIRING.md` first. The owner requested a stop before production push/deploy. Update durable context after each phase; older dated entries are historical evidence.
 
 ## Architecture in one breath
 
-Phone (Expo app: Inbox / Sessions / Activity) ⇄ E2E encrypted channel (LAN direct or `longleash-relay`, ciphertext-only) ⇄ `longleashd` on the laptop (Fastify+WS, SQLite event log with cursor replay, typed API only) → adapters: Claude via Agent SDK (canUseTool approvals, streaming), other agents via ACP, terminals via tmux control mode → push via Expo→APNs/FCM, IDs only. Full plan: `PLAN.md`.
+Phone (React/Vite PWA) ⇄ LAN or E2E relay ⇄ laptop daemon (Fastify/WS, SQLite, typed operations) → Claude Agent SDK / Codex app-server and structured external hooks/transcript sources. Web Push carries IDs only. CLI manages per-user installation/service; VS Code companion still needs authenticated live snapshot sync. Hosted Clerk identity and D1 support/measurement are a separate data plane from encrypted session routing. See `docs/MONETIZATION-PLAN.md` for current commercial policy; retired Expo/fork/tmux plans are not the implementation source.
 
 ## Invariants — never violate these
 
-- Never scrape a TUI to detect prompts — structured channels only (Agent SDK / ACP). This is why Omnara died; it must not be why we die.
+- Never scrape a TUI to detect prompts — use structured provider SDK/app-server/hooks. Historical competitor failure claims are not current evidence; see the dated competitive research.
 - Never resize an agent TUI/PTY to phone width — Claude Code's ink UI corrupts on resize. Phone renders at laptop-side size with pan/zoom; `window-size largest` in tmux.
-- The relay never stores credentials or plaintext — ciphertext routing only (the Happy #680 lesson as a design rule).
+- Session relay rooms route ciphertext only. Hosted account identity and explicitly submitted support/measurement data belong to a separate documented data plane; never put session content or pairing secrets there.
 - Push payloads carry IDs only, never content. The in-app inbox is the source of truth, not the notification.
 - Typed API operations only — never a generic exec endpoint. Remote start only into allowlisted project roots. Audit-log every mutating call.
 - One writer per Claude session: exclusive attach, defer-based release before `claude --resume` handoff.

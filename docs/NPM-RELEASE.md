@@ -40,11 +40,18 @@ pnpm --filter @longleash/cli shrinkwrap:check
 pnpm --filter @longleash/cli build
 pnpm --filter @longleash/cli pack:verify
 node packages/cli/scripts/smoke-tarball.mjs packages/cli/dist-pack/*.tgz
+node packages/cli/scripts/verify-upgrade.mjs packages/cli/dist-pack/*.tgz
 ```
 
-The last command installs the real tarball under a temporary HOME and exercises setup twice,
+The smoke command installs the real tarball under an isolated home and exercises setup twice,
 doctor, the managed wrapper, and uninstall. It does not start the daemon or touch the operator's
 real configuration.
+
+Set `LONGLEASH_SMOKE_DAEMON=1` for packaged startup, v2 pairing endpoint and non-interactive
+secret-output checks. The upgrade command installs published rc.11 and the candidate in isolated
+directories, pairs a synthetic device and checks its authentication across upgrade and rollback.
+It starts disposable daemons, never the operator's service. Both scripts keep credentials out of
+their output. Linux/macOS candidate CI executes both checks before publishing.
 
 ## Bootstrap the first package once
 

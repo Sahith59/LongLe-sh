@@ -386,3 +386,33 @@ Sources: [Claude Code Remote Control docs](https://code.claude.com/docs/en/remot
 [Best Mobile Apps for Claude Code 2026](https://nimbalyst.com/blog/best-mobile-apps-for-claude-code-2026/) ·
 [Happy](https://happy.engineering/) · [Omnara](https://www.omnara.com/pricing) ·
 [Product Hunt alternatives](https://www.producthunt.com/products/claude-code-remote-access/alternatives)
+
+
+## 2026-10-04 — continue Workstream D in explicit slices
+
+**Decision:** the owner requested product hardening and polish for everyday developer use, starting with Workstream D and progressing one phase at a time. Implement D1 (shared verification contract and registry gate), then D2 (phone/CLI/transport), then D3 (end-to-end/device acceptance). Preserve P5 as a separate release gate. The registry's v2 support is opt-in until the whole user flow is ready; no verified-pairing marketing claim yet.
+
+**Why:** device trust must be enforced before the UI can accurately promise it. The current competition already includes encrypted/cross-provider mobile tools and provider-native remote control. LongLeash must earn differentiation through reliability, explicit ownership and reviewed handoffs; mobile access alone is insufficient.
+
+**Evidence and continuation:** `docs/WORKSTREAM-D-VERIFIED-PAIRING.md`, `docs/COMPETITIVE-LANDSCAPE-2026-10.md`. Preserve the existing Matte Graphite identity and use the requested design/accessibility/motion skills for D2. Do not treat tests as physical-device acceptance or a visible production build as proof of completed migrations. Public outreach/publication was not performed.
+
+
+## 2026-10-04 — D2 candidate and explicit commercial target
+
+**User instruction:** implement D2 end to end and commission research plus critic, both GPT-6 Sol. Owner can spend at least 14–16 development hours/week; $7–8k MRR is desirable and $6k/month acceptable after sustained 6–7+ month development. Additional support/sales capacity is unknown; do not turn a minimum development commitment into a hard total-hours cap.
+
+**Implementation decision:** v2 now powers foreground/background QR creation and the phone. Require explicit local consent plus encrypted phone consent, expire lost connections, keep existing paired devices, and reject old new-pairing flows with update guidance. D2 is locally validated; D3 and P5 are still release gates. Preserve the code while waiting so users can compare in either order. Strip secrets from OAuth redirect URLs and consume pending QR storage.
+
+**Commercial evidence:** the agents agree that native/free substitutes substantially overlap the product. $6–8k MRR is an aggressive unvalidated upside, not earned by coding time alone. Recommendation: a six-to-eight-week external-use/price validation window, with repeat interventions and real willingness to pay. The reports do not authorize outreach, publication, billing or team development. Existing monetization gates remain authoritative. See the two MARKET-VIABILITY reports and the D checkpoint.
+
+## 2026-10-04 — D3 readiness boundary and session visibility
+
+The owner requested D3 plus correction of missing terminal/VS Code sessions before live phone testing, a detailed setup walkthrough, and a final stop before production push/deployment. Treat the final stop instruction as controlling; no automatic deployment or publication. D3 cannot close before its physical-device and platform/production evidence exists.
+
+**Later owner update:** The owner explicitly authorized committing, pushing and making the candidate live for physical testing. This supersedes the earlier release stop. D3 still cannot be called complete until real-device acceptance. Release rc.12 through the protected CI/publish path and verify the live app/laptop before asking the owner to test.
+
+Fixed a concrete Codex VS Code watcher gap (new files after startup waited for a second write), aligned its custom Codex home, added packaged doctor build/protocol/hook diagnostics, and expanded wire discovery across both agents and both surfaces. The separate companion sidebar remains a Phase 2A live-sync gap; do not conflate it with phone visibility of VS Code-origin sessions. Asked which surface previously failed; awaiting specificity.
+
+Release preflight found the owner's real rc.11 daemon bound to `10.66.62.167` while the hook discovery file still named `192.168.1.71`. This stale endpoint explains hooks and CLI doctor failing after network movement. Candidate atomically republishes the local endpoint after rebind and serializes attempts; a real-daemon test pins it. The fix must be installed on the laptop, not merely deployed to the phone app.
+
+Production dependency audits identified new advisories, so patched locked dependencies and regenerated/audited the independent npm shrinkwrap before release. Remote Cloudflare migration listing now succeeds with no pending migrations; retain earlier 7403 evidence as historical. Current public readiness checks prove the old deployed build only. See `docs/D3-RELEASE-READINESS.md` and `docs/PHONE-LAPTOP-WALKTHROUGH.md` for exact evidence and remaining gates.

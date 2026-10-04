@@ -55,6 +55,9 @@ jobs:
       - name: Install and exercise the actual tarball
         shell: bash
         run: LONGLEASH_SMOKE_DAEMON=1 node packages/cli/scripts/smoke-tarball.mjs packages/cli/dist-pack/*.tgz
+      - name: Preserve paired devices through upgrade and rollback
+        shell: bash
+        run: node packages/cli/scripts/verify-upgrade.mjs packages/cli/dist-pack/*.tgz
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: matrix.os == 'ubuntu-latest'
         with:

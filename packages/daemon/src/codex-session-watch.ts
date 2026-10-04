@@ -177,7 +177,7 @@ export class CodexSessionWatcher {
   }
 
   scan(initial = false): number {
-    const root = this.options.sessionsRoot ?? join(homedir(), '.codex', 'sessions')
+    const root = this.options.sessionsRoot ?? join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'sessions')
     const now = this.options.now?.() ?? Date.now()
     let observed = 0
     for (const path of jsonlFiles(root)) {
@@ -189,7 +189,9 @@ export class CodexSessionWatcher {
       }
       const previous = this.mtimes.get(path)
       this.mtimes.set(path, modified)
-      const changed = previous !== undefined && modified > previous
+      // A file created after startup must be discovered on its first scan, even if the
+      // provider has already finished writing. Waiting for a second write hides idle chats.
+      const changed = previous === undefined ? !initial : modified !== previous
       const recentlyActive = initial && now - modified <= this.options.initialRecentMs
       if (!changed && !recentlyActive) continue
       const previousSession = this.known.get(path)

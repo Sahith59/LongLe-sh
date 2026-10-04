@@ -7,6 +7,19 @@ import { CodexSessionWatcher, inspectCodexTranscript } from '../src/codex-sessio
 const line = (value: unknown) => `${JSON.stringify(value)}\n`
 
 describe('Codex durable-session discovery', () => {
+  it('discovers a new VS Code file after startup without requiring another write', () => {
+    const root = mkdtempSync(join(tmpdir(), 'll-codex-new-'))
+    try {
+      const seen: string[] = []
+      const watcher = new CodexSessionWatcher({ roots: [root], sessionsRoot: root, onSession: (s) => seen.push(s.sessionId) })
+      expect(watcher.scan(true)).toBe(0)
+      writeFileSync(join(root, 'new.jsonl'), line({ type: 'session_meta', payload: { id: 'new-chat', cwd: root, source: 'vscode' } }))
+      expect(watcher.scan()).toBe(1)
+      expect(watcher.scan()).toBe(0)
+      expect(seen).toEqual(['new-chat'])
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
   it('reads bounded metadata and the latest user turn from a resumed VS Code session', () => {
     const root = mkdtempSync(join(tmpdir(), 'll-codex-watch-'))
     const sessions = join(root, 'sessions')

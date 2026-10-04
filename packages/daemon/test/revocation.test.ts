@@ -250,7 +250,7 @@ describe('requesting a fresh pairing link from the local CLI', () => {
     expect((await api(h, '/local/pairing', { method: 'POST', body: '{}' }, 'wrong-secret')).status).toBe(401)
     const response = await api(h, '/local/pairing', { method: 'POST', body: '{}' })
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ url: 'https://relay.example/?c=challenge&s=single-use-secret' })
+    expect(await response.json()).toEqual({ url: 'https://relay.example/?c=challenge&s=single-use-secret', version: 2, challengeId: null })
   })
 
   it('fails explicitly when pairing is unavailable and never accepts GET', async () => {

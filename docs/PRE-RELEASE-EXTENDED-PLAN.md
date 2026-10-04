@@ -27,6 +27,8 @@ including local workerd-D1 coverage. This is not a P0–P5 completion or product
 The [Resend setup runbook](RESEND-SETUP.md) records the remaining domain/key steps and staged owner
 secret. Production sending, account reporting, product measurement and scheduled digests remain off.
 
+**Current checkpoint, 4 October 2026:** the owner has requested continuing Workstream D development, one phase at a time, while hardening for daily use and public release. D2 phone/CLI/transport integration is implemented and locally validated; candidate flows now use v2. D3 physical-device, packaged-install and production acceptance is next. These changes are not published or deployed. See [the exact D checkpoint](WORKSTREAM-D-VERIFIED-PAIRING.md) and [competitive research](COMPETITIVE-LANDSCAPE-2026-10.md). This supersedes the September development ordering, not the P5 release gate. Public build `7266155` is visible, but the CI remote D1 migration failed (Cloudflare 7403); production persistence and acceptance are not established. Earlier statements that features are off/not deployed are historical, not a current production assertion.
+
 ## Outcome
 
 A new user should be able to discover LongLeash, understand it in 30 seconds, install it without a

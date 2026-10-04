@@ -15,7 +15,9 @@ import type { EventLog, AppendInput } from './eventlog.js'
 import type { PushNotifier } from './push.js'
 import { surfaceOf, terminalAgentOf, type ExternalSessions } from './external.js'
 import type { DeviceRegistry } from './auth.js'
-import { PairingError } from './auth.js'
+import { PairingError, type PairingChallenge } from './auth.js'
+import { createPairingSession } from './pairing-session.js'
+import { z } from 'zod'
 import { SessionError, type SessionListing, type SessionManager } from './sessions.js'
 import type { FolderIndex } from './folders.js'
 import { RelayLink } from './relay-link.js'
@@ -104,6 +106,10 @@ export class LongLeashServer {
   private delegations: DelegationManager | null = null
   private hookSecret: string | null = null
   private localPairing: (() => string) | null = null
+  private readonly pairingChallenges = new Map<string, PairingChallenge>()
+  private readonly pairingSockets = new Set<WebSocket>()
+  private pairingRequests: number[] = []
+  private readonly pairingCleanups = new Set<() => void>()
   private readonly staticRoot: string | undefined
   /** Captured at process start so updating files on disk cannot impersonate a daemon restart. */
   private readonly expectedBuild: string | null
@@ -135,6 +141,7 @@ export class LongLeashServer {
       ok: true,
       name: 'longleash',
       protocol: PROTOCOL_VERSION,
+      pairingVersion: 2,
       // A version is not machine data. Exposing it turns "connection refused / is this old?"
       // from guesswork into a doctor check and prevents testing a daemon that never restarted.
       build: this.expectedBuild,
@@ -275,9 +282,10 @@ export class LongLeashServer {
     const localOnly = (request: { headers: Record<string, unknown> }): boolean => {
       const presented = request.headers['x-longleash-hook']
       return (
+        !request.headers.origin &&
         this.hookSecret !== null &&
         typeof presented === 'string' &&
-        presented.length === this.hookSecret.length &&
+        Buffer.byteLength(presented) === Buffer.byteLength(this.hookSecret) &&
         timingSafeEqual(Buffer.from(presented), Buffer.from(this.hookSecret))
       )
     }
@@ -310,12 +318,63 @@ export class LongLeashServer {
 
     this.app.post('/local/pairing', async (request, reply) => {
       if (!localOnly(request as never)) return reply.code(401).send({ reason: 'unauthorized' })
+      this.pairingRequests = this.pairingRequests.filter((at) => Date.now() - at < 60_000)
+      if (this.pairingRequests.length >= 10) return reply.code(429).send({ reason: 'rate-limited' })
+      this.pairingRequests.push(Date.now())
       if (this.localPairing === null) return reply.code(503).send({ reason: 'pairing-unavailable' })
       try {
-        return { url: this.localPairing() }
+        const url = this.localPairing()
+        const challengeId = new URLSearchParams(new URL(url).hash.slice(1)).get('c')
+        const challenge = challengeId ? this.pairingChallenges.get(challengeId) : undefined
+        return { url, version: 2, challengeId, expiresAt: challenge?.expiresAt }
       } catch {
         return reply.code(503).send({ reason: 'pairing-failed' })
       }
+    })
+
+    const localPairingInput = z.object({ challengeId: z.string().min(1).max(128),
+      attemptId: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
+    }).strict()
+    for (const action of ['status', 'confirm', 'cancel'] as const) {
+      this.app.post(`/local/pairing/${action}`, async (request, reply) => {
+        if (!localOnly(request as never)) return reply.code(401).send({ reason: 'unauthorized' })
+        const input = localPairingInput.safeParse(request.body)
+        if (!input.success) return reply.code(400).send({ reason: 'invalid-input' })
+        const { challengeId, attemptId } = input.data
+        if (action === 'cancel') { this.registry.cancelPairingChallenge(challengeId); return { cancelled: true } }
+        const result = this.registry.getPairingResult(challengeId)
+        if (action === 'status' && result) return { state: 'paired', deviceId: result.deviceId }
+        if (!this.registry.hasPairingChallenge(challengeId)) return reply.code(410).send({ reason: 'ended' })
+        if (action === 'status') return { verification: this.registry.getPairingVerification(challengeId) }
+        if (!attemptId) return reply.code(400).send({ reason: 'invalid-input' })
+        try { this.registry.confirmPairingLocally(challengeId, attemptId); return { confirmed: true } }
+        catch { return reply.code(409).send({ reason: 'attempt-ended' }) }
+      })
+    }
+
+    this.app.get('/pair/v2', { websocket: true }, (socket, request) => {
+      const challengeId = (request.query as { c?: string }).c ?? ''
+      const challenge = this.pairingChallenges.get(challengeId)
+      if (!challenge || !this.registry.hasPairingChallenge(challengeId) || this.pairingSockets.size >= 16) {
+        socket.close(4403, 'Pairing unavailable; generate a fresh QR')
+        return
+      }
+      this.pairingSockets.add(socket)
+      const session = createPairingSession({ registry: this.registry, challenge,
+        send: (payload) => { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ v: 1, type: 'frame', payload })) },
+        close: () => socket.close(),
+      })
+      this.pairingCleanups.add(session.dispose)
+      socket.on('message', (raw) => {
+        if (String(raw).length > 9000) { session.dispose(); return }
+        try {
+          const message = JSON.parse(String(raw)) as { type?: unknown; payload?: unknown }
+          if (message.type === 'frame' && typeof message.payload === 'string') void session.receive(message.payload)
+        } catch { /* no credentials or user data in diagnostics */ }
+      })
+      socket.on('close', () => { session.dispose(); this.pairingSockets.delete(socket); this.pairingCleanups.delete(session.dispose) })
+      socket.on('error', session.dispose)
+      socket.send(JSON.stringify({ v: 2, type: 'pair-ready' }))
     })
 
     // Pairing is POST-only: link previews and crawlers issue GETs, and must never be able
@@ -446,7 +505,7 @@ export class LongLeashServer {
    */
   async rebind(host: string): Promise<number> {
     const wanted = this.boundPort
-    await new Promise<void>((resolve) => this.app.server.close(() => resolve()))
+    if (this.app.server.listening) await new Promise<void>((resolve) => this.app.server.close(() => resolve()))
 
     const tryListen = (port: number): Promise<void> =>
       new Promise<void>((resolve, reject) => {
@@ -492,6 +551,18 @@ export class LongLeashServer {
   }
 
 
+  /** Only transient memory; URLs/secrets must never reach logs or the event database. */
+  registerPairingChallenge(challenge: PairingChallenge): void {
+    for (const [id, previous] of this.pairingChallenges) {
+      if (previous.expiresAt <= Date.now() || !this.registry.hasPairingChallenge(id)) this.pairingChallenges.delete(id)
+    }
+    this.pairingChallenges.set(challenge.challengeId, challenge)
+    const cleanup = () => { clearTimeout(timer); this.pairingChallenges.delete(challenge.challengeId); this.pairingCleanups.delete(cleanup) }
+    const timer = setTimeout(cleanup, Math.max(0, challenge.expiresAt - Date.now()))
+    timer.unref?.()
+    this.pairingCleanups.add(cleanup)
+  }
+
   /** Persist an event, then fan it out to every subscriber of that session. */
   publish(sessionId: string, input: AppendInput): SessionEvent {
     const event = this.eventLog.append(sessionId, input)
@@ -516,6 +587,9 @@ export class LongLeashServer {
   }
 
   async close(): Promise<void> {
+    for (const cleanup of this.pairingCleanups) cleanup()
+    for (const socket of this.pairingSockets) socket.terminate()
+    this.pairingChallenges.clear()
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
     this.heartbeatTimer = null
     this.unsubscribeRevoked?.()

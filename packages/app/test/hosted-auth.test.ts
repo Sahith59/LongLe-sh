@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { credentialKey } from '../src/lib/client.js'
 import {
   loadHostedAuthConfig,
+  authReturnUrl,
   rememberPairingLocation,
   restorePairingLocation,
 } from '../src/HostedAuth.js'
@@ -82,4 +83,10 @@ describe('hosted account boundary', () => {
     expect(auth).not.toContain('Continue with Google')
     expect(auth).not.toContain('Google confirms your account')
   })
+})
+
+
+it('keeps QR credentials out of OAuth redirect URLs, including nested URL fragments', () => {
+  expect(authReturnUrl({ href: 'https://app.longleash.dev/#c=challenge&s=secret&v=2' })).toBe('https://app.longleash.dev/')
+  expect(authReturnUrl({ href: 'https://app.longleash.dev/?c=challenge&s=secret&v=2&session=keep' })).toBe('https://app.longleash.dev/?session=keep')
 })

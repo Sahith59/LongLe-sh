@@ -1,4 +1,4 @@
-import { accessSync, constants, mkdirSync, existsSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, mkdirSync, existsSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { pauseCurrentSessionOwner } from './delegation-handoff.js'
 import { homedir } from 'node:os'
@@ -54,6 +54,8 @@ export interface Daemon {
   approvals: ApprovalStore
   delegations: DelegationManager
   port: number
+  /** Move the local listener and its secret-authenticated hook discovery record together. */
+  rebindLocal: (host: string) => Promise<number>
   /** Approvals reconciled at startup because a previous run died holding them. */
   orphansClosed: number
   /** Whether the user's own Claude settings let some actions bypass the phone. */
@@ -294,11 +296,15 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   const { port } = await server.listen()
   // Where the hook script finds this daemon — rewritten every boot because the
   // LAN address and port can change between runs.
-  writeFileSync(
-    join(dataDir, 'hook-endpoint.json'),
-    JSON.stringify({ url: `http://${options.host}:${port}/hook`, secret: hookSecret }, null, 2) + '\n',
-    { mode: 0o600 },
-  )
+  const endpointPath = join(dataDir, 'hook-endpoint.json')
+  const publishHookEndpoint = (host: string, boundPort: number): void => {
+    const staged = `${endpointPath}.${randomBytes(8).toString('hex')}.tmp`
+    try {
+      writeFileSync(staged, JSON.stringify({ url: `http://${host}:${boundPort}/hook`, secret: hookSecret }, null, 2) + '\n', { mode: 0o600 })
+      renameSync(staged, endpointPath)
+    } finally { rmSync(staged, { force: true }) }
+  }
+  publishHookEndpoint(options.host, port)
   const stopMaintenance = sessions.startMaintenance()
 
   // The daemon's presence in the world beyond the LAN: one E2E room per paired device,
@@ -312,6 +318,11 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
 
   return {
     server,
+    rebindLocal: async (host: string) => {
+      const reboundPort = await server.rebind(host)
+      publishHookEndpoint(host, reboundPort)
+      return reboundPort
+    },
     sessions,
     registry,
     eventLog,

@@ -6,6 +6,10 @@ completion, and stale-state cleanup. A green unit test is not a substitute for t
 
 ## Before testing
 
+For the exact install, QR comparison and daily-use sequence, start with
+[the laptop/phone walkthrough](PHONE-LAPTOP-WALKTHROUGH.md). Its release-version placeholder
+must be replaced only after the coordinated candidate is published and deployed.
+
 1. On the laptop, run:
 
    ```sh
@@ -17,7 +21,10 @@ completion, and stale-state cleanup. A green unit test is not a substitute for t
    - the daemon is reachable;
    - `code builds` says `match`;
    - `app builds` says `match`;
-   - both Claude Code and Codex say `hook installed for this build`.
+   - pairing says `verified v2`;
+   - hooks for each installed provider say `configured for this runtime` (the legacy checkout
+     wrapper used `hook installed for this build`). This is configuration evidence; provider
+     trust and a fresh-process lifecycle event must still be verified below.
 
 2. Open <https://app.longleash.dev> on the phone and sign in. If LongLeash is installed
    to the home screen, open that copy and pull down to refresh. Accept an offered **Update**.
@@ -76,6 +83,11 @@ approval card disappears after a phone decision or laptop handoff. Leaving an ol
 a failure.
 
 ## 3. VS Code discovery and labels
+
+Test integrated-terminal sessions and vendor chat panels separately. This section tests visibility
+on the phone, not the unreleased LongLeash companion sidebar. The companion's authenticated live
+sync is still pending in [Phase 2A](PHASE2A-CHECKPOINT.md). A Codex transcript-only observation
+may legitimately be read-only; it must not advertise unsupported approval/Stop/takeover controls.
 
 1. Start a new Claude Code session from VS Code and ask it to use a tool that needs approval.
 2. Confirm the phone shows the session with `Claude` and `in VS Code`; approve once.

@@ -86,15 +86,16 @@ The release-candidate installer does not use `sudo` or clone a maintainer branch
 npm package under `~/.local/share/longleash`, installs the command at `~/.local/bin/longleash`, and
 keeps local state in `~/.longleash`. It backs up provider configuration before adding lifecycle hooks.
 
-### 2. Keep the laptop daemon available
+### 2. Check the laptop daemon
 
 ```sh
-longleash setup
+longleash service status
+longleash doctor
 ```
 
-Setup recommends a per-user background service, so the setup terminal can close. It shows the roots,
-relay mode, and login behavior before applying them. At the folder question, press Enter to accept
-the displayed folder or type an existing directory path; it is not a yes/no question. Foreground
+Setup recommends a per-user background service, so the setup terminal can close. It has already
+shown the roots, relay mode and login behavior before applying them. Require a reachable daemon,
+matching app/daemon builds and verified pairing v2 before testing. Foreground
 mode remains available for diagnosis:
 
 ```sh
@@ -110,12 +111,15 @@ Keep the terminal open only in foreground mode. See the [background-service guid
 2. Sign in inside that installed app.
 3. Scan the fresh QR from **inside the installed LongLeash app** so the paired credentials
    belong to that app rather than a separate browser tab. Pasting the complete link also works.
-4. Confirm the header says `linked · relay` or `linked · direct`.
+4. On the verified-pairing release, compare all eight digits on the phone and laptop. Type `yes` in
+   `longleash pair` (or `y` + Enter in foreground mode), then choose **Codes match** on the phone.
+   Choose **They do not match** if any digit differs. Both confirmations are required.
+5. Confirm the header says `linked · relay` or `linked · direct`.
 
 Pairing links are single-use and expire. Run `longleash pair` for a fresh one from a background
 service, or press `n` then Enter in a foreground daemon. Do not reuse or share a QR—it contains a temporary secret.
 Current links keep that secret after `#`, so the browser does not send it to the relay as part of
-the HTTP request. Older query-style links remain readable only for single-use compatibility.
+the HTTP request. Older links are recognized so the app can explain the required laptop update; they cannot bypass verification.
 If the installed app's camera stays soft, fit the full white border in the finder, tap **Refocus**,
 then try **Switch lens** if it is offered. See [camera and QR recovery](docs/TROUBLESHOOTING.md#the-in-app-camera-is-soft-or-the-qr-will-not-scan).
 

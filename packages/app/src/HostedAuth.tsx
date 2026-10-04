@@ -30,6 +30,14 @@ function isPairingLocation(url: URL): boolean {
   return (hash.has('c') && hash.has('s')) || (url.searchParams.has('c') && url.searchParams.has('s'))
 }
 
+/** OAuth redirect parameters must never contain the QR secret, including nested fragments. */
+export function authReturnUrl(location: Pick<Location, 'href'>): string {
+  const url = new URL(location.href)
+  url.hash = ''
+  for (const key of ['c', 's', 'v']) url.searchParams.delete(key)
+  return url.toString()
+}
+
 export function rememberPairingLocation(storage: Storage, location: Location): void {
   const url = new URL(location.href)
   if (isPairingLocation(url)) storage.setItem(PENDING_PAIRING_KEY, `${url.pathname}${url.search}${url.hash}`)
@@ -83,9 +91,12 @@ export default function HostedAuth() {
 
   useEffect(() => {
     let live = true
-    rememberPairingLocation(sessionStorage, window.location)
+    try { rememberPairingLocation(sessionStorage, window.location) } catch { /* sign in first, then scan again if storage is blocked */ }
     void loadHostedAuthConfig().then((loaded) => {
-      if (live) setConfig(loaded)
+      if (live) {
+        if (loaded.required && isPairingLocation(new URL(window.location.href))) window.history.replaceState(null, '', authReturnUrl(window.location))
+        setConfig(loaded)
+      }
     })
     return () => { live = false }
   }, [])
@@ -102,8 +113,8 @@ export default function HostedAuth() {
     <ClerkProvider
       publishableKey={config.publishableKey}
       afterSignOutUrl="/"
-      signInFallbackRedirectUrl={window.location.href}
-      signUpFallbackRedirectUrl={window.location.href}
+      signInFallbackRedirectUrl={authReturnUrl(window.location)}
+      signUpFallbackRedirectUrl={authReturnUrl(window.location)}
     >
       <ClerkLoading><AccountLoading /></ClerkLoading>
       <ClerkFailed><AccountUnavailable /></ClerkFailed>
@@ -296,7 +307,7 @@ export function SignInGate() {
         <Boundary icon={<KeyRound />} title="Pairing QR" detail="Device authority" />
         <Boundary icon={<Laptop />} title="Your laptop" detail="Code stays here" />
       </div>
-      <SignInButton mode="redirect" oauthFlow="redirect" fallbackRedirectUrl={window.location.href} withSignUp>
+      <SignInButton mode="redirect" oauthFlow="redirect" fallbackRedirectUrl={authReturnUrl(window.location)} withSignUp>
         <button className="key account-action" type="button">
           <UserRoundCheck size={19} aria-hidden="true" /> Continue to sign in <ArrowRight size={17} aria-hidden="true" />
         </button>
