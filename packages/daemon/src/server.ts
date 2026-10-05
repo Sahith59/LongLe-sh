@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
@@ -105,6 +105,7 @@ export class LongLeashServer {
   private external: ExternalSessions | null = null
   private delegations: DelegationManager | null = null
   private hookSecret: string | null = null
+  private readonly pendingVscodeClaude = new Map<string, NodeJS.Timeout>()
   private localPairing: (() => string) | null = null
   private readonly pairingChallenges = new Map<string, PairingChallenge>()
   private readonly pairingSockets = new Set<WebSocket>()
@@ -188,6 +189,14 @@ export class LongLeashServer {
       const surface = surfaceOf(body.ll_surface)
 
       if (body.hook_event_name === 'SessionStart' || body.hook_event_name === 'SessionObserved') {
+        // Claude's VS Code integration can fire lifecycle hooks for transient native IDs
+        // that never acquire a transcript. Publishing those IDs creates empty finished
+        // cards (one per apparent turn). Wait for a real transcript before registering
+        // passive observation; a permission request below still registers immediately.
+        if (agent === 'claude' && surface === 'vscode') {
+          this.observeVscodeClaude(sessionId, cwd ?? '', transcript ?? '', body.ll_pid)
+          return {}
+        }
         this.external.sessionStart(
           sessionId,
           cwd ?? '',
@@ -203,6 +212,7 @@ export class LongLeashServer {
       }
       if (body.hook_event_name === 'PreToolUse' || body.hook_event_name === 'PermissionRequest') {
         if (typeof body.tool_name !== 'string') return reply.code(400).send({ reason: 'missing tool_name' })
+        this.clearPendingVscodeClaude(sessionId)
         // A lifecycle hook can be missed when LongLeash starts after the agent or while the
         // daemon is offline. Every actual interaction repairs discovery, PID, and surface.
         this.external.sessionStart(
@@ -260,6 +270,7 @@ export class LongLeashServer {
         return decision
       }
       if (body.hook_event_name === 'SessionEnd') {
+        this.clearPendingVscodeClaude(sessionId)
         this.external.sessionEnd(sessionId)
         return {}
       }
@@ -545,6 +556,45 @@ export class LongLeashServer {
     this.hookSecret = hookSecret
   }
 
+  private observeVscodeClaude(sessionId: string, cwd: string, transcript: string, pid?: number): void {
+    const promote = (): boolean => {
+      // Claude stores a durable conversation at <native session id>.jsonl. A transient
+      // lifecycle ID may refer to a different (existing) transcript: its nonempty bytes
+      // do not prove that the transient ID is a second conversation.
+      if (!transcript || basename(transcript) !== `${sessionId}.jsonl` || !existsSync(transcript)) return false
+      try {
+        const file = statSync(transcript)
+        if (!file.isFile() || file.size === 0) return false
+      } catch { return false }
+      this.clearPendingVscodeClaude(sessionId)
+      this.external?.sessionStart(sessionId, cwd, transcript, pid, 'claude', 'vscode')
+      return true
+    }
+    if (promote() || this.pendingVscodeClaude.has(sessionId)) return
+    // A new transcript often appears just after SessionStart. Keep this bounded so
+    // abandoned provider IDs never occupy a card or a permanent watcher.
+    if (this.pendingVscodeClaude.size >= 128) return
+    const expiresAt = Date.now() + 120_000
+    const poll = () => {
+      if (promote() || Date.now() >= expiresAt) {
+        this.clearPendingVscodeClaude(sessionId)
+        return
+      }
+      const timer = setTimeout(poll, 500)
+      timer.unref?.()
+      this.pendingVscodeClaude.set(sessionId, timer)
+    }
+    const timer = setTimeout(poll, 500)
+    timer.unref?.()
+    this.pendingVscodeClaude.set(sessionId, timer)
+  }
+
+  private clearPendingVscodeClaude(sessionId: string): void {
+    const timer = this.pendingVscodeClaude.get(sessionId)
+    if (timer) clearTimeout(timer)
+    this.pendingVscodeClaude.delete(sessionId)
+  }
+
   /** A laptop-local CLI may request a transient QR without persisting its secret in service logs. */
   attachLocalPairing(create: () => string): void {
     this.localPairing = create
@@ -587,6 +637,7 @@ export class LongLeashServer {
   }
 
   async close(): Promise<void> {
+    for (const sessionId of this.pendingVscodeClaude.keys()) this.clearPendingVscodeClaude(sessionId)
     for (const cleanup of this.pairingCleanups) cleanup()
     for (const socket of this.pairingSockets) socket.terminate()
     this.pairingChallenges.clear()

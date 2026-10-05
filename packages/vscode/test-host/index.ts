@@ -22,6 +22,7 @@ interface HostCase {
   expectedRemote: boolean
   expectedProvider: 'installed' | 'missing'
   coordinationDir?: string
+  liveInventory?: boolean
 }
 
 const capabilities: IdeCapability[] = [
@@ -56,6 +57,19 @@ export async function run(): Promise<void> {
       const longleash = vscode.extensions.getExtension('longleash.longleash')
       assert.ok(longleash, 'LongLeash extension-under-test is installed')
       await longleash.activate()
+
+      if (fixture.liveInventory) {
+        const deadline = Date.now() + 5_000
+        let live: { streamId?: string; sections?: { sessions: { sessionId: string }[] }[] } | undefined
+        while (Date.now() < deadline) {
+          live = await vscode.commands.executeCommand('longleash.phase2a.getSessionTreeForTest')
+          if (live?.streamId === 'host-live-stream') break
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        assert.equal(live?.streamId, 'host-live-stream', 'the installed extension must sync over the authenticated local endpoint')
+        assert.deepEqual(live?.sections?.flatMap((section) => section.sessions.map((session) => session.sessionId)), ['live-host-session'])
+        return
+      }
 
       const diagnostics = await vscode.commands.executeCommand<string>(
         'longleash.phase2a.getDiagnosticsForTest',

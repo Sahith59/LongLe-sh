@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { createServer } from 'node:http'
 import {
   mkdirSync,
   mkdtempSync,
@@ -46,11 +48,38 @@ function createFolder(name) {
   return realpathSync(folder)
 }
 
-async function runCase({ caseId, target, expectedRoots, coordinationDir }) {
+async function runCase({ caseId, target, expectedRoots, coordinationDir, liveInventory = false }) {
   const userData = path.join(fixtureRoot, `user-${caseId}`)
   const extensions = path.join(fixtureRoot, `extensions-${caseId}`)
   mkdirSync(userData, { recursive: true })
   mkdirSync(extensions, { recursive: true })
+  const dataDir = path.join(fixtureRoot, `daemon-${caseId}`)
+  mkdirSync(dataDir, { recursive: true })
+  let companion
+  if (liveInventory) {
+    const secret = randomBytes(32).toString('base64url')
+    companion = createServer(async (request, response) => {
+      let body = ''
+      for await (const chunk of request) body += String(chunk)
+      const hello = JSON.parse(body)
+      const authorized = request.headers['x-longleash-ide'] === secret &&
+        hello.vscode.workspaceFolders.some((folder) => folder.canonicalPath === expectedRoots[0])
+      response.writeHead(authorized ? 200 : 401, { 'content-type': 'application/json' })
+      response.end(JSON.stringify(authorized ? {
+        v: 1, type: 'ide.sessionInventory', streamId: 'host-live-stream', cursor: 1,
+        generatedAt: Date.now(), sessions: [{
+          sessionId: 'live-host-session', provider: 'claude', title: 'One stable conversation',
+          origin: 'vscode', status: 'running', live: true, resumable: true,
+          workspace: { label: path.basename(expectedRoots[0]), mode: 'shared' }, updatedAt: Date.now(),
+        }],
+      } : { reason: 'unauthorized' }))
+    })
+    await new Promise((resolve) => companion.listen(0, '127.0.0.1', resolve))
+    const address = companion.address()
+    writeFileSync(path.join(dataDir, 'ide-endpoint.json'), JSON.stringify({
+      url: `http://127.0.0.1:${address.port}/snapshot`, secret,
+    }), { mode: 0o600 })
+  }
   const fixture = {
     caseId,
     expectedRoots,
@@ -58,14 +87,17 @@ async function runCase({ caseId, target, expectedRoots, coordinationDir }) {
     expectedRemote: false,
     expectedProvider: 'installed',
     ...(coordinationDir === undefined ? {} : { coordinationDir }),
+    liveInventory,
   }
-  await runTests({
+  try { await runTests({
     vscodeExecutablePath,
     extensionDevelopmentPath: [extensionRoot, newestClaudeExtension()],
     extensionTestsPath: testRunner,
     extensionTestsEnv: {
       LONGLEASH_V0_HOST_CASE: JSON.stringify(fixture),
       LONGLEASH_V0_HOST_MARKER: marker,
+      LONGLEASH_DATA: dataDir,
+      ...(liveInventory ? { LONGLEASH_V1_HOST_LIVE: '1' } : {}),
     },
     launchArgs: [
       target,
@@ -73,7 +105,9 @@ async function runCase({ caseId, target, expectedRoots, coordinationDir }) {
       `--extensions-dir=${extensions}`,
       '--disable-telemetry',
     ],
-  })
+  }) } finally {
+    if (companion) await new Promise((resolve) => companion.close(resolve))
+  }
 }
 
 try {
@@ -110,6 +144,7 @@ try {
   command('git', ['worktree', 'add', '-qb', 'phase2a-fixture', worktree], repository)
 
   await runCase({ caseId: 'same', target: same, expectedRoots: [same] })
+  await runCase({ caseId: 'live', target: same, expectedRoots: [same], liveInventory: true })
   await runCase({ caseId: 'multi-root', target: workspace, expectedRoots: [multiA, multiB] })
   await runCase({
     caseId: 'worktree',
@@ -143,7 +178,7 @@ try {
       {
         schema: 1,
         vscode: version,
-        cases: ['same-window', 'multi-window', 'multi-root', 'worktree'],
+        cases: ['same-window', 'live-inventory', 'multi-window', 'multi-root', 'worktree'],
         claudeProviderExtension: 'installed',
         missingNativeRecord: 'blocked-before-dispatch',
         codexClients: 2,

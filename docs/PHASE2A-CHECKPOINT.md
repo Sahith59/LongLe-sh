@@ -1,5 +1,12 @@
 # Phase 2A checkpoint — resume after public-site release
 
+**2026-10-05 continuation:** the exact next slice below has advanced to an authenticated,
+workspace-scoped **read-only live inventory preview** in extension `0.0.2`. Unit and disposable
+extension-host tests pass. Per-window principal/revocation, event-level replay, physical owner
+VS Code checks, signed distribution, and handoff remain open. The field duplicate-card correction
+and current ordered gates are in [VSCODE-LIVE-INVENTORY-2026-10.md](VSCODE-LIVE-INVENTORY-2026-10.md).
+The paragraphs below are the prior checkpoint, retained as historical evidence.
+
 **Checkpoint reaffirmed:** 2026-08-15
 
 **Functional-development baseline:** `2b49028` (`Build Phase 2A VS Code companion foundation`)

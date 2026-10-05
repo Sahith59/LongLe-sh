@@ -6,6 +6,8 @@ import { z } from 'zod'
  * device token or the hook secret merely because all three happen to run on one laptop.
  */
 export const IDE_PROTOCOL_VERSION = 1
+/** Exact companion build reviewed with the daemon's read-only inventory transport. */
+export const IDE_COMPANION_BUILD = '0.0.2'
 export const IDE_OPERATION_MAX_TTL_MS = 60_000
 
 export const IdeCapability = z.enum([

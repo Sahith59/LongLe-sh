@@ -22,8 +22,8 @@ describe('local VSIX installer', () => {
 
     expect(plan).toMatchObject({
       executable: 'code-insiders',
-      artifact: 'longleash-vscode-0.0.1.vsix',
-      version: '0.0.1',
+      artifact: 'longleash-vscode-0.0.2.vsix',
+      version: '0.0.2',
       executed: false,
     })
     expect(plan.args[0]).toBe('--install-extension')

@@ -24,6 +24,7 @@ import { WorkspaceLeaseManager } from './workspace-leases.js'
 import { ReturnBuilder } from './return-builder.js'
 import { WorktreeManager } from './worktrees.js'
 import { CodexSessionWatcher } from './codex-session-watch.js'
+import { IdeCompanionServer } from './ide-companion.js'
 
 export interface DaemonOptions {
   /** Directories agents may work in. Nothing outside these can be targeted. */
@@ -305,6 +306,14 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     } finally { rmSync(staged, { force: true }) }
   }
   publishHookEndpoint(options.host, port)
+  const companion = new IdeCompanionServer({
+    dataDir,
+    allowedRoots: roots,
+    sessions: () => [...sessions.listSessions(), ...external.listSessions()],
+    latestActivity: (sessionId) => eventLog.latestTimestamp(sessionId),
+    pendingApprovals: () => [...approvals.listPending(), ...externalApprovals.listPending()],
+  })
+  await companion.start()
   const stopMaintenance = sessions.startMaintenance()
 
   // The daemon's presence in the world beyond the LAN: one E2E room per paired device,
@@ -335,6 +344,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       stopMaintenance()
       codexWatcher.stop()
       bridge?.stop()
+      await companion.stop()
       // Agents first: a consume loop still writing while the databases close is an
       // unhandled rejection and a corrupted final status.
       await sessions.shutdown()

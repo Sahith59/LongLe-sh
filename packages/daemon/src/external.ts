@@ -61,6 +61,11 @@ export function terminalAgentOf(raw: unknown): TerminalAgent {
 }
 
 const AGENT_LABEL: Record<TerminalAgent, string> = { claude: 'terminal', codex: 'codex' }
+// A resumed native transcript can be several GB. Keep initial adoption and each
+// synchronous poll bounded so one hook cannot stall the daemon's health/phone socket.
+const INITIAL_TRANSCRIPT_BYTES = 1_000_000
+const MAX_DRAIN_BYTES = 256_000
+const MAX_PARTIAL_LINE_BYTES = 4_000_000
 
 export interface ExternalSessionsOptions {
   eventLog: EventLog
@@ -1038,6 +1043,11 @@ export class ExternalSessions {
     const replay = this.eventLog.replay(sessionId, 0)
     const hasHistory = replay.gap === false ? replay.events.length > 0 : true
     const alias = this.eventLog.aliasFor(sessionId)
+    let initialOffset = 0
+    try {
+      const size = statSync(transcriptPath).size
+      initialOffset = tailOnly || hasHistory ? size : Math.max(0, size - INITIAL_TRANSCRIPT_BYTES)
+    } catch { /* Claude may not have created its transcript yet. */ }
     const session: ExternalSession = {
       sessionId,
       agent,
@@ -1051,7 +1061,7 @@ export class ExternalSessions {
       named: alias !== undefined,
       permissionMode: null,
       gate: 'ask',
-      offset: (tailOnly || hasHistory) && existsSync(transcriptPath) ? statSync(transcriptPath).size : 0,
+      offset: initialOffset,
       remainder: '',
       timer: null,
       suspended: false,
@@ -1180,7 +1190,7 @@ export class ExternalSessions {
     try {
       const fd = openSync(session.transcriptPath, 'r')
       try {
-        const buffer = Buffer.alloc(size - session.offset)
+        const buffer = Buffer.alloc(Math.min(size - session.offset, MAX_DRAIN_BYTES))
         const read = readSync(fd, buffer, 0, buffer.length, session.offset)
         chunk = buffer.subarray(0, read).toString('utf8')
         session.offset += read
@@ -1193,7 +1203,7 @@ export class ExternalSessions {
 
     const text = session.remainder + chunk
     const lines = text.split('\n')
-    session.remainder = lines.pop() ?? ''
+    session.remainder = (lines.pop() ?? '').slice(-MAX_PARTIAL_LINE_BYTES)
     const deltas: AppendInput[] = []
     for (const line of lines) {
       if (line.trim() === '') continue
