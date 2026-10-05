@@ -39,7 +39,7 @@ After publisher ownership is verified, configure a narrowly scoped Marketplace p
 
 ## Local candidate evidence
 
-- 1,104 workspace tests passed: protocol 80, relay 127, app 196, daemon 625, extension 30, CLI 46.
+- 1,105 workspace tests passed: protocol 80, relay 127, app 196, daemon 626, extension 30, CLI 46.
 - Workspace typechecks passed. Workspace build and Worker deployment dry-run passed during candidate verification; exact committed CI remains required.
 - Eleven real Claude/Codex provider contract tests passed, including tool denial and resumable transcripts.
 - Real VS Code 1.131 editor-host test passed with a disposable authenticated companion fixture: exact webview render acknowledgment, send, approval, Stop, phone return, observation-only guard and negative command acknowledgment. Original V0 host matrix also passed.
@@ -50,3 +50,9 @@ After publisher ownership is verified, configure a narrowly scoped Marketplace p
 Final approval review added explicit VS Code confirmation for an Allow request outside the permitted project folder, showing the target path and tool summary before sending the decision. Extension typecheck, 30 unit tests, actual editor-host test and repack verification passed afterward.
 
 The composed roundtrip regression additionally passed with real daemon, session manager, event log, companion and control hub over loopback HTTP and an authenticated phone WebSocket (only the agent factory is fake). It proves send routing into one session and confirmed handoff in both directions. PR CI passed Linux/macOS clean tarballs, Linux systemd crash/update/restart lifecycle, the Docker image, workspace checks and the actual editor host. Final test-only commit is rerunning those gates before merge.
+
+## Live rc.13 stall discovered before rollout
+
+The owner rc.13 daemon had elevated CPU and both its LAN health check and separate loopback IDE endpoint timed out. A bounded native sample showed the main timer thread repeatedly doing string searches and regular-expression construction, with no corresponding SQLite/I/O hot path. The Codex fallback title scan used an inclusive `lastIndexOf` cursor and reused that same position after rejecting IDE-only text: it could loop indefinitely and block every daemon request.
+
+The candidate now advances to `roleAt - 1`. The title pass also skips JSON lines over 1 MB before parsing them, leaving the bounded string fallback for compaction history. A subprocess regression has a hard timeout, so a recurrence fails instead of hanging the test worker; it covers both only-context history and an earlier real message followed by context. Fixed inspector checks on three recent real VS Code transcripts (86 MB, 18 MB and 3 MB) returned in 246/154/112 ms with bounded blocks and no transcript content logged. The live service remains unchanged until the coordinated upgrade; verify both health and idle CPU after that upgrade.

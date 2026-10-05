@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { CodexSessionWatcher, inspectCodexTranscript } from '../src/codex-session-watch.js'
 
 const line = (value: unknown) => `${JSON.stringify(value)}\n`
@@ -88,5 +91,31 @@ describe('Codex durable-session discovery', () => {
     }))
     expect(inspectCodexTranscript(path, [root])?.title).toBe('Fix the premium session browser')
     rmSync(root, { recursive: true, force: true })
+  })
+
+  it('makes progress past rejected IDE-only user blocks in oversized compaction records', () => {
+    const root = mkdtempSync(join(tmpdir(), 'll-codex-oversized-'))
+    try {
+      const moduleDir = dirname(fileURLToPath(import.meta.url))
+      const source = join(moduleDir, '..', 'src', 'codex-session-watch.ts')
+      const inspect = (name: string, history: unknown[]) => {
+        const path = join(root, name)
+        writeFileSync(path, line({ type: 'session_meta', payload: { session_id: name, cwd: root, source: 'vscode' } }) +
+          line({ type: 'compacted', payload: { replacement_history: history, filler: 'x'.repeat(1_200_000) } }))
+        const script = `import { inspectCodexTranscript } from ${JSON.stringify(pathToFileURL(source).href)};` +
+          `const result = inspectCodexTranscript(${JSON.stringify(path)}, [${JSON.stringify(root)}]);` +
+          `console.log(JSON.stringify({ title: result?.title ?? null, blocks: result?.snapshot.length ?? -1 }))`
+        const child = spawnSync(process.execPath, ['--import', createRequire(import.meta.url).resolve('tsx'), '--input-type=module', '-e', script], { encoding: 'utf8', timeout: 2_500 })
+        expect(child.error).toBeUndefined()
+        expect(child.status).toBe(0)
+        return JSON.parse(child.stdout) as { title: string | null; blocks: number }
+      }
+      const chrome = { role: 'user', content: [{ type: 'input_text', text: '<ide_opened_file>machine only</ide_opened_file>' }] }
+      expect(inspect('only-chrome.jsonl', [chrome])).toEqual({ title: null, blocks: 0 })
+      expect(inspect('earlier-real.jsonl', [
+        { role: 'user', content: [{ type: 'input_text', text: 'Earlier real task' }] },
+        chrome,
+      ])).toEqual({ title: 'Earlier real task', blocks: 0 })
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 })
