@@ -7,8 +7,8 @@ completion, and stale-state cleanup. A green unit test is not a substitute for t
 ## Before testing
 
 For the exact install, QR comparison and daily-use sequence, start with
-[the laptop/phone walkthrough](PHONE-LAPTOP-WALKTHROUGH.md). Its release-version placeholder
-must be replaced only after the coordinated candidate is published and deployed.
+[the laptop/phone walkthrough](PHONE-LAPTOP-WALKTHROUGH.md). It records the released CLI, extension and deployed build. For a guided owner test, use
+[the step-by-step field test](OWNER-FIELD-TEST.md).
 
 1. On the laptop, run:
 
@@ -84,13 +84,15 @@ a failure.
 
 ## 3. VS Code discovery and labels
 
-Test integrated-terminal sessions and vendor chat panels separately. This section tests visibility
-on the phone, not the unreleased LongLeash companion sidebar. The companion's authenticated live
-sync is still pending in [Phase 2A](PHASE2A-CHECKPOINT.md). A Codex transcript-only observation
-may legitimately be read-only; it must not advertise unsupported approval/Stop/takeover controls.
+Test integrated-terminal sessions and vendor chat panels separately. Extension 0.0.3 now has
+authenticated live inventory and the LongLeash conversation editor. Native vendor panels are
+observed through the daemon's supported hooks/transcripts; installing LongLeash does not grant
+access to every private panel API. A transcript-only observation may be read-only and must not
+advertise unsupported approval/Stop/takeover controls. Test exact LongLeash editor handoff
+separately using the walkthrough.
 
 1. Start a new Claude Code session from VS Code and ask it to use a tool that needs approval.
-2. Confirm the phone shows the session with `Claude` and `in VS Code`; approve once.
+2. Confirm the phone shows the session with `Claude` and `in VS Code`; approve once if verified control is available. Record observation-only separately.
 3. Start a new Codex session from VS Code and repeat.
 4. Leave a VS Code session idle, refresh the phone, then make the agent use another tool.
 

@@ -2,6 +2,10 @@
 
 Update this file at the end of any session that changes project state. Newest entries first in the log.
 
+## Guided owner acceptance — 2026-10-05
+
+Owner clarified the extension's primary purpose: native VS Code agent chats must appear once on the phone and stay current. Provided [step-by-step field test](../docs/OWNER-FIELD-TEST.md), testing native Claude/Codex panels first, then terminal/integrated-terminal origins across two repositories, then LongLeash editor handoff and recovery. A passing own-editor test does not substitute for native panel discovery. Read-only observation is recorded separately from control. Rechecked installed rc.15/extension0.0.3 and matching daemon/production ed7d72d; corrected stale acceptance text that called extension sync pending. No physical phone pass is claimed; owner will report results.
+
 ## Latest release — 2026-10-05 (rc.15 operational correction)
 
 - **Current:** CLI rc.15, extension0.0.3, deployed commit `ed7d72d` / tag `cli-v0.1.0-rc.15`, PR #34. npm registry confirms `rc` → rc.15, matching tarball checksum and SLSA provenance metadata. Exact CI tarball is attached to GitHub and installed on the owner laptop. **Actual setup succeeded first try**, service healthy, CLI/daemon/relay matching `ed7d72d`, pairingv2 and hooks configured. After1m46s, IDE HTTP200/74ms, 8 unique LongLeash workspace cards, CPU0.0%, managerPID=lockPID.

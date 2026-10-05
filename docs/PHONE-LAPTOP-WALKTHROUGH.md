@@ -2,6 +2,8 @@
 
 Updated 2026-10-05. This guide targets the **released** `@longleash/cli@0.1.0-rc.15` and the matching LongLeash VS Code extension `0.0.3`. The public app serves build `ed7d72d`; check `https://app.longleash.dev/build.json` and `longleash doctor` before testing. The VSIX is an installable prerelease extension, not a verified Marketplace listing. On the owner's laptop both are already installed; reload the VS Code window to activate the companion.
 
+For a click-by-click test sequence and results template, use [the owner field test](OWNER-FIELD-TEST.md). It starts with native VS Code panel discovery, then terminal sessions and LongLeash editor handoff.
+
 ## 1. Before installation
 
 - Use macOS or Linux with Node >=22.14 and npm >=10. The release CI covers Node 22/Linux and Node 24/macOS. Windows is not supported by this CLI package.
