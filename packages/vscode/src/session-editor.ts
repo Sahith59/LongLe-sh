@@ -224,6 +224,14 @@ class SessionEditor implements vscode.Disposable {
     const approval = this.pending.get(approvalId)
     if (!approval) throw new Error('This request is no longer pending.')
     if (this.observeOnly) throw new Error('This conversation is view only. Control is unavailable.')
+    if (verdict === 'allow' && approval.outsideRoot) {
+      const confirmed = await vscode.window.showWarningMessage(
+        `Allow ${approval.toolName} outside this project's allowed folder?`,
+        { modal: true, detail: `${approval.targetPath ?? 'Outside the allowed workspace'}\n\n${approval.inputSummary}` },
+        'Allow once',
+      )
+      if (confirmed !== 'Allow once') return
+    }
     if (approval.questions?.length) {
       if (verdict === 'deny') {
         await this.run({ v: PROTOCOL_VERSION, type: 'decision', approvalId, verdict: 'deny' })

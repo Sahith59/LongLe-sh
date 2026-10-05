@@ -1,5 +1,8 @@
 # Workstream D — verified pairing
 
+**Current 2026-10-05 work:** universal session identity, browser reconnect cleanup, managed service lifecycle and exact phone ↔ LongLeash VS Code editor control are implemented in the rc.14 / extension 0.0.3 candidate. [Current implementation and gates](IDE-CONTROL-IMPLEMENTATION-2026-10.md) supersedes the older ordering and read-only preview limitations below. Physical phone and Marketplace installation acceptance are still open; Workstream D is not declared closed.
+
+
 Updated: 2026-10-04. Base: `7266155`. Status: **D2 implemented; D3 local hardening and release checks advanced, with device/platform/production acceptance still open. Not published or deployed.** See [D3 evidence and remaining gates](D3-RELEASE-READINESS.md) and [the setup walkthrough](PHONE-LAPTOP-WALKTHROUGH.md).
 
 The owner requested production hardening, one phase at a time, with competitor research and durable context. This authorizes continuing D development after the September customer-feedback work. P5 production acceptance remains a separate launch blocker.

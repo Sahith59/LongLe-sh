@@ -43,6 +43,8 @@ After publisher ownership is verified, configure a narrowly scoped Marketplace p
 - Workspace typechecks passed. Workspace build and Worker deployment dry-run passed during candidate verification; exact committed CI remains required.
 - Eleven real Claude/Codex provider contract tests passed, including tool denial and resumable transcripts.
 - Real VS Code 1.131 editor-host test passed with a disposable authenticated companion fixture: exact webview render acknowledgment, send, approval, Stop, phone return, observation-only guard and negative command acknowledgment. Original V0 host matrix also passed.
-- Verified extension artifact 0.0.3: 43,353 bytes, eight entries; SHA-256 `c030e1fa4a29f65ab63e189ee1805412ac059b4ba4fbf33f9a705f9787cdb51d`.
+- Verified extension artifact 0.0.3: 43,485 bytes, eight entries; SHA-256 `4817ded0ba27487b1290e973971f120ad5ed991326d709877b1611bfdcd970de`.
 - Isolated macOS launchd accepted the packaged direct-daemon wrapper, verified matching lock/manager PID and build, and removed the process on repeated bootout. The owner's service was unchanged during these checks.
 - Independent review additionally fixed old browser subscription replay resurrecting aliases, negative send acknowledgments clearing drafts, stale editor render acknowledgments, cursor rollback, approval snapshot loss, and legacy registry rollback compatibility.
+
+Final approval review added explicit VS Code confirmation for an Allow request outside the permitted project folder, showing the target path and tool summary before sending the decision. Extension typecheck, 30 unit tests, actual editor-host test and repack verification passed afterward.
