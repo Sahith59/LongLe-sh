@@ -155,6 +155,8 @@ interface ExternalSession {
   suspended: boolean
   /** Discovered from Codex's durable VS Code transcript without a lifecycle/PID hook. */
   observedOnly: boolean
+  /** Historical observed transcript restored without evidence of a currently running writer. */
+  observedIdle?: boolean
   observedFingerprint?: string
 }
 
@@ -425,9 +427,15 @@ export class ExternalSessions {
     surface: Surface
     title?: string
     activityAt: number
+    restoredKnown?: boolean
+    restoredIdle?: boolean
     snapshot: { kind: 'text' | 'tool' | 'thinking' | 'user'; text: string }[]
   }): void {
-    const session = this.ensure(info.sessionId, info.cwd, info.transcriptPath, 'codex', info.surface, true)
+    const session = this.ensure(info.sessionId, info.cwd, info.transcriptPath, 'codex', info.surface, true, info.restoredIdle === true)
+    if (session.observedOnly) {
+      session.observedIdle = info.restoredIdle === true
+      session.status = session.observedIdle ? 'ended' : 'running'
+    }
     const alias = this.eventLog.aliasFor(session.sessionId)
     const nextTitle = alias ?? info.title
     if (nextTitle !== undefined && nextTitle !== session.title) {
@@ -440,10 +448,14 @@ export class ExternalSessions {
     // long-running conversation grow the event database quadratically.
     if (session.observedOnly && session.observedFingerprint === undefined) {
       session.observedFingerprint = JSON.stringify(info.snapshot)
-      this.emit(session.sessionId, {
-        type: 'session.transcript.reset',
-        payload: { reason: 'provider-snapshot', blocks: info.snapshot },
-      })
+      // A restored observer already has provider blocks in the durable event log. Its small
+      // startup tail is only for identity and title; replacing history with it would erase text.
+      if (!info.restoredKnown) {
+        this.emit(session.sessionId, {
+          type: 'session.transcript.reset',
+          payload: { reason: 'provider-snapshot', blocks: info.snapshot },
+        })
+      }
     }
     // Every observed write is real activity even when the prompt-derived title did not change.
     // Emitting a bounded status beat keeps resumed sessions ordered by current activity rather
@@ -452,7 +464,7 @@ export class ExternalSessions {
       type: 'session.status',
       payload: {
         status: session.status,
-        live: true,
+        live: session.observedIdle !== true,
         controller: 'external',
         control: session.observedOnly ? 'observe' : 'full',
         ...(nextTitle === undefined ? {} : { title: nextTitle }),
@@ -916,7 +928,7 @@ export class ExternalSessions {
     return [...this.sessions.values()].map((session) => ({
       sessionId: session.sessionId,
       agent: session.agent,
-      live: true,
+      live: session.observedIdle !== true,
       cwd: session.cwd,
       status: session.status,
       startedAt: session.startedAt,
@@ -1017,6 +1029,7 @@ export class ExternalSessions {
     agent: TerminalAgent = 'claude',
     surface: Surface = 'terminal',
     tailOnly = false,
+    observedIdle = false,
   ): ExternalSession {
     const existing = this.sessions.get(nativeKey(agent, claudeSessionId))
     if (existing) {
@@ -1024,6 +1037,8 @@ export class ExternalSessions {
       // fully controlled external session without duplicating its card or conversation id.
       if (!tailOnly && existing.observedOnly) {
         existing.observedOnly = false
+        existing.observedIdle = false
+        existing.status = 'running'
         this.persist(claudeSessionId, existing)
         this.emit(existing.sessionId, {
           type: 'session.status',
@@ -1066,7 +1081,7 @@ export class ExternalSessions {
       surface,
       cwd,
       transcriptPath,
-      status: 'running',
+      status: observedIdle ? 'ended' : 'running',
       startedAt: this.now(),
       title: alias ?? `${basename(cwd)} — ${surface === 'vscode' ? 'VS Code' : AGENT_LABEL[agent]}`,
       pid: null,
@@ -1078,6 +1093,7 @@ export class ExternalSessions {
       timer: null,
       suspended: false,
       observedOnly: tailOnly,
+      observedIdle,
     }
     this.sessions.set(nativeKey(agent, claudeSessionId), session)
     this.persist(claudeSessionId, session)
@@ -1097,16 +1113,18 @@ export class ExternalSessions {
         },
       })
     }
-    this.emit(sessionId, {
-      type: 'session.status',
-      payload: {
-        status: 'running',
-        live: true,
-        controller: 'external',
-        control: tailOnly ? 'observe' : 'full',
-        surface,
-      },
-    })
+    if (!observedIdle) {
+      this.emit(sessionId, {
+        type: 'session.status',
+        payload: {
+          status: 'running',
+          live: true,
+          controller: 'external',
+          control: tailOnly ? 'observe' : 'full',
+          surface,
+        },
+      })
+    }
 
     // Observation starts at the current EOF. Its one-time snapshot supplies the visible past;
     // the shared tailer then appends only records written after discovery.

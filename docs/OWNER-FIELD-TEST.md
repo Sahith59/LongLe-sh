@@ -1,7 +1,19 @@
-# Owner field test — rc.15 / VS Code 0.0.3
+# Owner field test — rc.16 / VS Code 0.0.3
 
-Use this in order. Do not mark an untested step as passed. Current deployed build: `ed7d72d`.
+Use this in order. Do not mark an untested step as passed. Current deployed build: `d3267b7`.
 The laptop CLI and extension are already installed. These are manual acceptance instructions, not a claim that the phone tests have passed.
+
+## Retest the missing-message report first
+
+Before starting any new test conversations:
+
+1. Keep the existing Test-A native Codex conversation open on the laptop.
+2. Refresh the phone app and accept **Update** if offered. Reopen it if installed on the Home Screen.
+3. Open the same “sample test files” conversation. Existing user and assistant messages must appear.
+4. Send one more message from that same native Codex panel. Confirm the response appears in the same phone card.
+5. Do not clear browser storage, delete the chat, or pair again. If history is still empty, record the time and send a screenshot.
+
+Read-only observation limits sending/stopping; it must still show saved conversation content. Messages written while the daemon is stopped are a separate open recovery limitation; keep the service running for this acceptance test.
 
 ## What each component does
 
@@ -22,7 +34,7 @@ The primary test is your actual Claude/Codex vendor chat panel appearing once on
    longleash doctor
    ```
 
-   Expect `0.1.0-rc.15`, active/healthy service, reachable daemon, both build comparisons `match`, pairing `verified v2`, and provider hooks configured. If the service is stopped, run `longleash service start` and repeat doctor. Stop here if health/build checks still fail.
+   Expect `0.1.0-rc.16`, active/healthy service, reachable daemon, both build comparisons `match`, pairing `verified v2`, and provider hooks configured. If the service is stopped, run `longleash service start` and repeat doctor. Stop here if health/build checks still fail.
 3. Prepare two harmless projects:
 
    ```sh

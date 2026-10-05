@@ -29,6 +29,21 @@ describe('EventLog: append + replay', () => {
     expect([a.seq, b.seq, c.seq]).toEqual([1, 2, 3])
   })
 
+  it('lists only durable observed native Codex IDs for restart restoration', () => {
+    const observed = (agent: 'codex' | 'claude', control: 'observe' | 'full', resumeId: string): AppendInput => ({
+      type: 'session.started',
+      payload: { agent, cwd: '/tmp/proj', controller: 'external', control, resumeId },
+    })
+    log.append('ext_codex_known', observed('codex', 'observe', 'native-known'))
+    log.append('ext_codex_known', observed('codex', 'observe', 'native-known'))
+    log.append('ext_codex_known', { type: 'session.ended', payload: { reason: 'LongLeash stopped watching' } })
+    log.append('ext_codex_full', observed('codex', 'full', 'native-full'))
+    log.append('ext_claude_known', observed('claude', 'observe', 'native-claude'))
+    log.append('ext_codex_ended', observed('codex', 'observe', 'native-ended'))
+    log.append('ext_codex_ended', { type: 'session.ended', payload: { reason: 'native session ended' } })
+    expect(log.knownObservedCodexNativeIds(1)).toEqual(['native-known'])
+  })
+
   it('recovers question choices only for the exact session and approval', () => {
     const questions = [{ question: 'Which route?', header: 'Route', options: [{ label: 'A', description: 'first' }], multiSelect: false }]
     log.append('ses_a', { type: 'approval.requested', payload: {

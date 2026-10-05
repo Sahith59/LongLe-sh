@@ -2,9 +2,12 @@
 
 Update this file at the end of any session that changes project state. Newest entries first in the log.
 
-## Active field fix — missing phone transcript, 2026-10-05
+## Current release — phone transcript repair, 2026-10-05
 
-Native Codex Test-A card appeared but phone said “Nothing yet.” The actual transcript and daemon events contain the conversation; this is a phone replay-order failure, not an observed-only limitation. Real20-event replay gives8blocks in order,0when latest status advances the cursor before history. Fix in progress on `fix/phone-history-replay-order`: ordered bounded client replay, slow/reconnect/gap handling, and clear stale server subscriptions on authoritative hello. CLIrc.16 assigned; rc.15/ed7d72d remains live until new release verified. See [evidence](../docs/PHONE-TRANSCRIPT-REPLAY-2026-10.md). No user storage cleared or native provider process stopped.
+- Owner's native Codex Test-A card was visible but phone said “Nothing yet.” Saved transcript/events were intact. Newer live status advanced the old phone cursor before history arrived; chronological20events gave8blocks but status-first gave0.
+- **Released rc.16 / d3267b7 / PR #35**, extension remains0.0.3. Ordered bounded replay, slow/reconnect/pruned-gap handling, existing empty-card repair, exact IDE-return history barrier, and fresh server subscriptions on hello. Corrected real client replays the owner's20events with status first to8blocks/0errors.
+- **1,117 tests**, exact main test/image and tag Linux/macOS/systemd/publishing gates pass. Hosted production matrix passes d3267b7; manual exact-commit deploy used existing local authentication after CI D1 scope7403 failure. Owner rc.16 installation passed: CLI, daemon and relay match d3267b7; npm checksum matches the CI artifact. Restart verification exposed an idle observer discovery defect; rc.17 restoration is in progress.
+- Retest only the same sample-files conversation first: refresh/update phone, open the existing Test-A chat, confirm saved messages, then send one native VS Code prompt. Do not delete/re-pair/reset storage. Read-only must still show history. D physical acceptance remainsopen. [Evidence and retest](../docs/PHONE-TRANSCRIPT-REPLAY-2026-10.md).
 
 ## Guided owner acceptance — 2026-10-05
 

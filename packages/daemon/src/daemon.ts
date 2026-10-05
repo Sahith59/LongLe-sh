@@ -254,6 +254,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   })
   const codexWatcher = new CodexSessionWatcher({
     roots,
+    knownNativeIds: eventLog.knownObservedCodexNativeIds(),
     onSession: (session) => external.observeCodexSession(session),
   })
   codexWatcher.start()
