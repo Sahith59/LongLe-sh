@@ -1,6 +1,6 @@
 # Laptop and phone walkthrough — verified pairing
 
-Updated 2026-10-05. This guide targets the **released** `@longleash/cli@0.1.0-rc.15` and the matching LongLeash VS Code extension `0.0.3`. The public app serves build `ed7d72d`; check `https://app.longleash.dev/build.json` and `longleash doctor` before testing. The VSIX is an installable prerelease extension, not a verified Marketplace listing. On the owner's laptop both are already installed; reload the VS Code window to activate the companion.
+Updated 2026-10-05. This guide targets the **released** `@longleash/cli@0.1.0-rc.16` and the matching LongLeash VS Code extension `0.0.3`. The public app serves build `d3267b7`; check `https://app.longleash.dev/build.json` and `longleash doctor` before testing. The VSIX is an installable prerelease extension, not a verified Marketplace listing. On the owner's laptop both are already installed; reload the VS Code window to activate the companion.
 
 For a click-by-click test sequence and results template, use [the owner field test](OWNER-FIELD-TEST.md). It starts with native VS Code panel discovery, then terminal sessions and LongLeash editor handoff.
 
@@ -16,17 +16,17 @@ For a click-by-click test sequence and results template, use [the owner field te
 
 For a new laptop, after confirming the live app build:
 
-The `rc` npm tag now resolves to rc.15 with provenance. The owner laptop already has that exact release installed and healthy; start with the version/doctor checks rather than reinstalling.
+The `rc` npm tag now resolves to rc.16 with provenance. The owner laptop already has that exact release installed and healthy; start with the version/doctor checks rather than reinstalling.
 
 ```sh
 node --version
 npm --version
-npm exec --yes --registry=https://registry.npmjs.org/ --package=@longleash/cli@0.1.0-rc.15 -- longleash setup
+npm exec --yes --registry=https://registry.npmjs.org/ --package=@longleash/cli@0.1.0-rc.16 -- longleash setup
 ```
 
 Choose your allowed project folder, **hosted** connectivity, and the per-user background service. Review the settings before answering yes. Use the scoped `@longleash/cli` package; the unscoped npm name belongs to someone else.
 
-For an existing managed installation, use `longleash update 0.1.0-rc.15` instead. It reuses configuration. Follow the installer's PATH instructions and open a fresh terminal if necessary.
+For an existing managed installation, use `longleash update 0.1.0-rc.16` instead. It reuses configuration. Follow the installer's PATH instructions and open a fresh terminal if necessary.
 
 ```sh
 longleash --version
@@ -78,9 +78,9 @@ Test vendor chat panels separately. Their hook support differs; Codex's durable 
 
 ### Install the control extension (0.0.3)
 
-The editor test targets CLI **rc.15**, VSIX **0.0.3**, and live build **ed7d72d**. The matching [GitHub release](https://github.com/Sahith59/LongLe-sh/releases/tag/cli-v0.1.0-rc.15) contains the exact CI-tested VSIX and CLI tarball.
+The editor test targets CLI **rc.16**, VSIX **0.0.3**, and live build **d3267b7**. The matching [GitHub release](https://github.com/Sahith59/LongLe-sh/releases/tag/cli-v0.1.0-rc.16) contains the exact CI-tested VSIX and CLI tarball.
 
-1. Download `longleash-vscode-0.0.3.vsix` from the [matching GitHub release](https://github.com/Sahith59/LongLe-sh/releases/tag/cli-v0.1.0-rc.15). A Marketplace listing is not yet verified.
+1. Download `longleash-vscode-0.0.3.vsix` from the [matching GitHub release](https://github.com/Sahith59/LongLe-sh/releases/tag/cli-v0.1.0-rc.16). A Marketplace listing is not yet verified.
 2. In desktop VS Code choose **Extensions → … → Install from VSIX…**, select that file, then **Developer: Reload Window**. Alternatively run `code --install-extension /path/to/longleash-vscode-0.0.3.vsix --force`.
 3. Open the allowlisted disposable project as a local folder and grant workspace trust only if you trust that project. Remote/SSH/container/browser workspaces are not supported in this release.
 4. Open the LongLeash Activity Bar icon. Confirm the Sessions tree is connected and shows the expected provider conversations. Click a conversation to open its LongLeash editor. Startup registration also runs when the sidebar is hidden.

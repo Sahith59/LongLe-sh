@@ -124,6 +124,29 @@ export class EventLog {
     return (this.maxSeqStmt.get(sessionId) as { seq: number }).seq
   }
 
+  /** Recent observed native Codex IDs, read from durable metadata without replaying transcripts. */
+  knownObservedCodexNativeIds(limit = 256): string[] {
+    const rows = this.rawDb.prepare(`
+      SELECT native_id FROM (
+        SELECT json_extract(start.payload, '$.resumeId') AS native_id, start.ts AS started_at
+        FROM events AS start
+        WHERE start.type = 'session.started'
+          AND json_extract(start.payload, '$.agent') = 'codex'
+          AND json_extract(start.payload, '$.controller') = 'external'
+          AND json_extract(start.payload, '$.control') = 'observe'
+          AND json_type(start.payload, '$.resumeId') = 'text'
+          AND NOT EXISTS (
+            SELECT 1 FROM events AS ended
+            WHERE ended.session_id = start.session_id AND ended.type = 'session.ended'
+              AND ended.seq > start.seq
+              AND json_extract(ended.payload, '$.reason') IS NOT 'LongLeash stopped watching'
+          )
+      ) AS known
+      GROUP BY native_id ORDER BY MAX(started_at) DESC, native_id DESC LIMIT ?
+    `).all(limit) as { native_id: string }[]
+    return rows.map((row) => row.native_id)
+  }
+
   /** Bounded IDE replay: pagination never loads an entire historical conversation. */
   readPage(sessionId: string, fromCursor: number): { events: SessionEvent[]; latestCursor: number; hasMore: boolean } {
     const rows = this.rawDb.prepare('SELECT * FROM events WHERE session_id = ? AND seq > ? ORDER BY seq ASC LIMIT 250')

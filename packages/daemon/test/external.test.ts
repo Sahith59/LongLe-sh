@@ -181,6 +181,37 @@ describe('terminal sessions, adopted through hooks', () => {
     external.shutdown()
   })
 
+  it('preserves durable transcript blocks when restoring a previously observed Codex chat', () => {
+    const transcript = join(dir, 'restored.jsonl')
+    writeFileSync(transcript, '')
+    eventLog.append('ext_restored', { type: 'session.started', payload: {
+      agent: 'codex', cwd: dir, controller: 'external', control: 'observe', resumeId: 'restored',
+    } })
+    eventLog.append('ext_restored', { type: 'session.transcript.reset', payload: {
+      reason: 'provider-snapshot', blocks: [{ kind: 'user', text: 'prior question' }, { kind: 'text', text: 'prior answer' }],
+    } })
+    eventLog.append('ext_restored', { type: 'session.ended', payload: { reason: 'LongLeash stopped watching' } })
+    const external = manager()
+    external.observeCodexSession({
+      sessionId: 'restored', cwd: dir, transcriptPath: transcript, surface: 'vscode',
+      activityAt: 100, snapshot: [], restoredKnown: true, restoredIdle: true,
+    })
+    expect(external.listSessions()[0]).toMatchObject({ live: false, status: 'ended', control: 'observe' })
+    expect(seen.find((event) => event.type === 'session.status')?.payload).toMatchObject({ status: 'ended', live: false, control: 'observe' })
+    const replay = eventLog.replay('ext_restored', 0)
+    if (replay.gap) expect.unreachable('no gap expected')
+    expect(replay.events.filter((event) => event.type === 'session.transcript.reset')).toHaveLength(1)
+    expect(replay.events.find((event) => event.type === 'session.transcript.reset')?.payload.blocks).toEqual([
+      { kind: 'user', text: 'prior question' }, { kind: 'text', text: 'prior answer' },
+    ])
+    external.observeCodexSession({
+      sessionId: 'restored', cwd: dir, transcriptPath: transcript, surface: 'vscode',
+      activityAt: 200, snapshot: [],
+    })
+    expect(external.listSessions()[0]).toMatchObject({ live: true, status: 'running', control: 'observe' })
+    external.shutdown()
+  })
+
   it('reuses the stable phone card for its native resume id and preserves a user rename', () => {
     const transcript = join(dir, 'same-card.jsonl')
     writeFileSync(transcript, '')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -62,6 +62,43 @@ describe('Codex durable-session discovery', () => {
     expect(watcher.scan(false)).toBe(1)
     expect(seen).toEqual(['current', 'current'])
     rmSync(root, { recursive: true, force: true })
+  })
+
+  it('restores only a known observed Codex chat after its transcript ages past discovery', () => {
+    const root = mkdtempSync(join(tmpdir(), 'll-codex-restore-'))
+    const knownId = '01a10e09-3b14-7932-998a-1aaf8de364ea'
+    const unknownId = '01a10e09-3b14-7932-998a-1aaf8de364eb'
+    const old = new Date(Date.now() - 20 * 60_000)
+    try {
+      for (const id of [knownId, unknownId]) {
+        const path = join(root, `rollout-2026-10-05T17-47-28-${id}.jsonl`)
+        writeFileSync(path, line({ type: 'session_meta', payload: { id, cwd: root, source: 'vscode' } }) +
+          line({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'A task' }] } }))
+        utimesSync(path, old, old)
+      }
+      const seen: { sessionId: string; restoredKnown?: boolean; restoredIdle?: boolean }[] = []
+      const watcher = new CodexSessionWatcher({
+        roots: [root], sessionsRoot: root, now: () => Date.now(), knownNativeIds: [knownId],
+        onSession: (session) => seen.push({ sessionId: session.sessionId, restoredKnown: session.restoredKnown, restoredIdle: session.restoredIdle }),
+      })
+      expect(watcher.scan(true)).toBe(1)
+      expect(seen).toEqual([{ sessionId: knownId, restoredKnown: true, restoredIdle: true }])
+      expect(watcher.scan()).toBe(0)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('preserves prior durable history for a known chat still inside the recent window', () => {
+    const root = mkdtempSync(join(tmpdir(), 'll-codex-recent-'))
+    const id = '01a10e09-3b14-7932-998a-1aaf8de364ea'
+    try {
+      writeFileSync(join(root, `rollout-2026-10-05T17-47-28-${id}.jsonl`),
+        line({ type: 'session_meta', payload: { id, cwd: root, source: 'vscode' } }))
+      const seen: boolean[] = []
+      const watcher = new CodexSessionWatcher({ roots: [root], sessionsRoot: root,
+        knownNativeIds: [id], onSession: (session) => seen.push(session.restoredKnown === true) })
+      expect(watcher.scan(true)).toBe(1)
+      expect(seen).toEqual([true])
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
   it('leaves terminal sessions to the synchronous hook path', () => {

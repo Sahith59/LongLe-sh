@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { titleFrom, transcriptDeltas, type Surface } from './external.js'
 
 export interface ObservedTranscriptBlock {
@@ -15,6 +15,10 @@ export interface ObservedCodexSession {
   surface: Surface
   title?: string
   activityAt: number
+  /** This native ID was previously observed and its phone transcript already lives in the log. */
+  restoredKnown?: boolean
+  /** Previously observed file has not changed within the fresh-discovery window. */
+  restoredIdle?: boolean
   /** A bounded, provider-authoritative view used to replace stale pre-observer history. */
   snapshot: ObservedTranscriptBlock[]
 }
@@ -22,6 +26,8 @@ export interface ObservedCodexSession {
 interface WatchOptions {
   roots: string[]
   sessionsRoot?: string
+  /** Native IDs already observed in the durable event log before this daemon started. */
+  knownNativeIds?: readonly string[]
   now?: () => number
   pollMs?: number
   initialRecentMs?: number
@@ -195,12 +201,16 @@ export class CodexSessionWatcher {
       // provider has already finished writing. Waiting for a second write hides idle chats.
       const changed = previous === undefined ? !initial : modified !== previous
       const recentlyActive = initial && now - modified <= this.options.initialRecentMs
-      if (!changed && !recentlyActive) continue
+      const filenameId = /-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i.exec(basename(path))?.[1]
+      const knownPrior = initial && filenameId !== undefined &&
+        this.options.knownNativeIds?.includes(filenameId) === true
+      const restoreKnown = knownPrior && !recentlyActive
+      if (!changed && !recentlyActive && !restoreKnown) continue
       const previousSession = this.known.get(path)
       const inspected = inspectCodexTranscript(
         path,
         this.options.roots,
-        previousSession === undefined ? MAX_INITIAL_TAIL : MAX_TAIL,
+        previousSession === undefined && !knownPrior ? MAX_INITIAL_TAIL : MAX_TAIL,
       )
       const session = inspected === null
         ? null
@@ -208,8 +218,12 @@ export class CodexSessionWatcher {
           ? { ...inspected, title: previousSession.title }
           : inspected
       if (session === null) continue
-      this.known.set(path, session)
-      this.options.onSession(session)
+      // The filename only selects a cheap candidate. The transcript metadata supplies identity.
+      if (knownPrior && session.sessionId !== filenameId) continue
+      const observedSession = knownPrior && session.sessionId === filenameId
+        ? { ...session, restoredKnown: true, ...(restoreKnown ? { restoredIdle: true } : {}) } : session
+      this.known.set(path, observedSession)
+      this.options.onSession(observedSession)
       observed += 1
     }
     return observed
