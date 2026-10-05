@@ -2,7 +2,15 @@
 
 Update this file at the end of any session that changes project state. Newest entries first in the log.
 
-## Current release — 2026-10-05 (universal identity / exact IDE control)
+## Latest release — 2026-10-05 (rc.15 operational correction)
+
+- **Current:** CLI rc.15, extension0.0.3, deployed commit `ed7d72d` / tag `cli-v0.1.0-rc.15`, PR #34. npm registry confirms `rc` → rc.15, matching tarball checksum and SLSA provenance metadata. Exact CI tarball is attached to GitHub and installed on the owner laptop. **Actual setup succeeded first try**, service healthy, CLI/daemon/relay matching `ed7d72d`, pairingv2 and hooks configured. After1m46s, IDE HTTP200/74ms, 8 unique LongLeash workspace cards, CPU0.0%, managerPID=lockPID.
+- Resolved initial rc.14 activation failure with a reproduced macOS cause: bootout returns before old CLI parent exits/reparents its child. Capture the former managed job PID before bootout, verify that surviving managed CLI parent and lock-backed child before retirement; ESRCH is a successful exit. An unrelated foreground parent is preserved. Real isolated launchd transition passed in2.36s; old processes exited, new manager/lock/endpoint matched, cleanup confirmed.
+- **1,107 workspace tests**, exact main test/image and tag Linux/macOS/systemd/publishing gates pass. Production HTTP matrix passes `ed7d72d`; manual exact-commit Cloudflare deploy used existing local authentication because CI D1 token still fails7403.
+- Extension0.0.3 final CI contents exactly match installed rc.14 artifact; only ZIP timestamps differ. Owner needs VS Code reload and native provider restart for hooks. Matching [release](https://github.com/Sahith59/LongLe-sh/releases/tag/cli-v0.1.0-rc.15) / [guide](../docs/PHONE-LAPTOP-WALKTHROUGH.md).
+- **D NOT CLOSED:** physical phone acceptance, verified Marketplace publisher/public install and P5 authenticated owner/account/feedback/mail evidence remain. Native private panels without verified process control remain observed-only; exact continuation uses LongLeash's editor. Do not claim every IDE/provider supported. User asks extension before phone test; that implementation and automated validation are now released.
+
+## Prior release — 2026-10-05 (universal identity / exact IDE control)
 
 - Owner clarified duplicates affect **every repository**, and requires the installable extension before another phone test. GPT-6 Sol agents researched current APIs, implemented identity/service hardening and reviewed IDE controls. Native identity is provider-scoped; histories are preserved and reconciled without merging by title.
 - **Released:** PR #33 merged; tag `cli-v0.1.0-rc.14` and app/relay commit `614d44d`. npm `rc` now resolves to rc.14 with provenance. Matching VS Code `longleash.longleash@0.0.3` is attached to the [GitHub release](https://github.com/Sahith59/LongLe-sh/releases/tag/cli-v0.1.0-rc.14), installed on the owner laptop, and needs a window reload. Marketplace publisher ownership/access is unanswered; never ask for tokens in chat.

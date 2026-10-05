@@ -31,3 +31,10 @@ Exact rc.14 tag CI `37349423372` passed the Linux systemd-user install/crash/upd
 A disposable real launchd reproduction showed `bootout` returning immediately while the supervised Node CLI parent and its daemon child still existed with their original parent relationship after 1.2 seconds. rc.14 allowed only orphan PPID1 and checked for 500 ms, so it could skip that child before starting the replacement.
 
 The correction captures the exact managed job's supervisor PID **before** bootout. Retirement may then accept that same surviving parent only when its UID and managed `longleash.mjs run` command also match. An arbitrary foreground process is not accepted. Unloaded jobs still require an orphan. Child lock kind/PID/token are rechecked before signaling; no provider process is matched by title. `ps -ww` prevents display-width truncation, although width did not cause this observed failure. rc.15 is assigned for this correction; it is not yet the live baseline.
+
+
+### rc.15 verification and rollout
+
+CLI **48/48** tests and typecheck pass, including disappearing-process ESRCH and unrelated foreground preservation. A disposable real launchd transition using the old managed parent/lock-backed child shape passed in **2.36 s**: both old processes exited, new direct manager PID matched lock and endpoint, owner service unchanged, disposable job verified unloaded.
+
+PR #34 / release `ed7d72d` passed main test/image and tag Linux/macOS tarball + systemd checks. The owner's actual rc.14 → rc.15 setup then completed on the first attempt; authenticated service health and CLI/daemon/relay build agreement passed. The released package is available in the matching GitHub prerelease and npm `rc` tag; registry checksum matches the installed CI tarball. This supersedes the candidate-only status above.

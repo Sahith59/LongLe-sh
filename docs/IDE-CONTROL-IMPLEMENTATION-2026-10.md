@@ -4,7 +4,7 @@
 
 The owner clarified that duplicate cards occur across repositories, not only Orbit. Correct session identity and control take priority over visual polish. Build and verify the installable VS Code extension before asking the owner to repeat the physical phone matrix. This supersedes earlier roadmap ordering that deferred extension work until that matrix. GPT-6 Sol research, identity, and independent review agents are authorized. Existing commit/push/release authorization remains in force.
 
-## Released implementation — rc.14 / extension 0.0.3
+## Released implementation — rc.15 / extension 0.0.3
 
 1. Canonical provider conversation identity at hook ingress, provider-scoped live/registry/managed resume lookup, and safe historical inventory reconciliation. Never join conversations by project name or title. See [identity audit](SESSION-IDENTITY-AUDIT-2026-10.md).
 2. Direct daemon supervision and authenticated build readiness during service replacement, including narrowly verified legacy orphan retirement. See [service lifecycle](D-SERVICE-LIFECYCLE-2026-10.md).
@@ -18,6 +18,16 @@ The owner clarified that duplicate cards occur across repositories, not only Orb
 The exact IDE destination is **the LongLeash conversation editor inside VS Code** for both providers. It continues the same provider conversation through the laptop daemon. This is distinct from clicking into the private Claude/Codex vendor panel. Claude's native URI can silently create a fresh conversation when an ID is wrong; it remains fail-closed until the specific build has passed exact-history testing. No supported Codex native-panel deep link was verified. See [official-source research](VSCODE-INTEGRATION-RESEARCH-2026-10.md).
 
 This release does not promise control of every arbitrary IDE/provider. Support is explicitly Claude Code and Codex through the validated terminal, hook, SDK/app-server and LongLeash editor paths. VS Code remote/SSH/containers and browser-hosted VS Code remain unsupported by the local companion.
+
+## Final coordinated release — rc.15
+
+PR #34 merged the reproduced macOS asynchronous bootout correction. Release commit **`ed7d72d`**, tag **`cli-v0.1.0-rc.15`**. Main CI `37352216047` test/image passed; tag CI `37352220081` passed Linux/macOS tarballs, Linux systemd and trusted npm publication. Production was deployed from that exact commit and the HTTP matrix passed. Cloudflare version `cef4d2bd-3d74-4a62-8c09-a9e3ec7d7d4c`. Automatic GitHub deploy still lacks D1 permission7403; no broad OAuth credential was copied to CI.
+
+The owner's rc.14 → rc.15 setup completed first try; service healthy and doctor CLI/daemon/relay all match `ed7d72d`, pairingv2 and both hook configurations. The exact published CI tarball was installed while npm processed registry availability; SHA-1 `abfeb766f249556a75671a5ce63b423baf183fc6`. [GitHub release and artifacts](https://github.com/Sahith59/LongLe-sh/releases/tag/cli-v0.1.0-rc.15).
+
+Final tests: **1,107** (CLI48; other packages unchanged), typechecks/builds and package checks. Disposable real macOS legacy-parent → direct-daemon transition passed in 2.36 s, with new manager/lock/endpoint PID agreement, both old processes exited, disposable job unloaded, owner process untouched. ESRCH signal race is covered. The existing orphan fallback still relies on same-user, same-installation lock-backed runtime evidence; a manually detached daemon from that same installation is not independently distinguishable by launchd provenance.
+
+Extension remains **0.0.3**; exact final CI VSIX SHA-256 `f545e60e7aac235cee6ef0137d897d2de850136341f4815a3ba299fbe6902ac6` (43,532 bytes). Every archive member is identical to the rc.14 VSIX already installed; ZIP timestamps differ. Reload the owner VS Code window before physical acceptance.
 
 ## Completion gates
 
@@ -63,3 +73,6 @@ The candidate now advances to `roleAt - 1`. The title pass also skips JSON lines
 Initial rc.13 → rc.14 setup activated the verified runtime/hooks but did not become healthy; the old stalled PID remained. A subsequent installed `longleash service start` automatically retired that verified orphan and started the new direct-supervision daemon. No manual kill was used. Doctor then reported matching CLI/daemon/relay `614d44d`, pairing v2 and configured Claude/Codex hooks. The initial activation race is reproduced, with an rc.15 correction under verification and is not erased by successful recovery. Reload VS Code to activate the installed extension and restart old native provider sessions to load their hooks.
 
 The second owner health check after 1m54s returned HTTP 200 in 30 ms, CPU 0.1%, and matching launchd/lock PID. npm registry visibility subsequently passed: `rc` → `0.1.0-rc.14`, matching published SHA-1, SLSA provenance metadata present.
+
+
+**Final rc.15 registry and operational check:** npm `rc` points to rc.15; checksum matches the installed CI tarball and SLSA provenance metadata is present. At1m46s the owner IDE endpoint returned HTTP200 in74ms with8 unique LongLeash workspace session IDs, CPU0.0% and matching manager/lock PID. Native extension reload and physical phone matrix remain unclaimed.
