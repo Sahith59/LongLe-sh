@@ -19,3 +19,15 @@ Service install, start, restart, stop, and uninstall use the same macOS bootout 
 ## Remaining acceptance
 
 Run an isolated real macOS upgrade from a prior packaged service that produces a legacy orphan; the real launchd test above covered the corrected direct daemon path, not that upgrade transition. Run a clean Linux systemd-user lifecycle with the packaged tarball. The owner's live service must only be updated in a coordinated step.
+
+
+## Release and owner follow-up
+
+Exact rc.14 tag CI `37349423372` passed the Linux systemd-user install/crash/update/logs/stop/start/uninstall gate and both Linux/macOS tarball checks. During the owner rc.13 → rc.14 rollout, initial setup failed readiness and left the old stalled daemon alive. A subsequent `longleash service start` used the new bounded retirement logic successfully without manual signals. The new direct daemon PID matched launchd, authenticated health/build checks passed, and CPU fell to 0.1% after nearly two minutes. This proves the recovery command; the initial setup failure is still under investigation and seamless legacy upgrade acceptance remains open.
+
+
+### Initial activation cause and rc.15 correction
+
+A disposable real launchd reproduction showed `bootout` returning immediately while the supervised Node CLI parent and its daemon child still existed with their original parent relationship after 1.2 seconds. rc.14 allowed only orphan PPID1 and checked for 500 ms, so it could skip that child before starting the replacement.
+
+The correction captures the exact managed job's supervisor PID **before** bootout. Retirement may then accept that same surviving parent only when its UID and managed `longleash.mjs run` command also match. An arbitrary foreground process is not accepted. Unloaded jobs still require an orphan. Child lock kind/PID/token are rechecked before signaling; no provider process is matched by title. `ps -ww` prevents display-width truncation, although width did not cause this observed failure. rc.15 is assigned for this correction; it is not yet the live baseline.

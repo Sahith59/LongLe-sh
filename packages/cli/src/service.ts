@@ -258,9 +258,12 @@ export function startService(context: ServiceContext = {}): ServiceState {
   assertServiceInstallation(resolved)
   if (resolved.platform === 'darwin') {
     if (launchdLoaded(resolved)) {
+      const supervisorPid = launchdJobPid(resolved)
       requireSuccess(resolved, '/bin/launchctl', ['bootout', serviceTarget(resolved)])
+      retireOwnedOrphan(resolved, supervisorPid)
+    } else {
+      retireOwnedOrphan(resolved)
     }
-    retireOwnedOrphan(resolved)
     bootstrapLaunchAgent(resolved)
   } else {
     requireSuccess(resolved, 'systemctl', ['--user', 'start', SYSTEMD_UNIT])
@@ -274,9 +277,12 @@ export function stopService(context: ServiceContext = {}): ServiceState {
     const loaded = launchdLoaded(resolved)
     if (loaded) {
       assertManagedDefinition(resolved.paths.definition)
+      const supervisorPid = launchdJobPid(resolved)
       requireSuccess(resolved, '/bin/launchctl', ['bootout', serviceTarget(resolved)])
+      retireOwnedOrphan(resolved, supervisorPid)
+    } else if (managedDefinitionExists(resolved.paths.definition)) {
+      retireOwnedOrphan(resolved)
     }
-    if (managedDefinitionExists(resolved.paths.definition)) retireOwnedOrphan(resolved)
   } else if (run(resolved, 'systemctl', ['--user', 'is-active', '--quiet', SYSTEMD_UNIT]).status === 0) {
     assertManagedDefinition(resolved.paths.definition)
     requireSuccess(resolved, 'systemctl', ['--user', 'stop', SYSTEMD_UNIT])
@@ -289,9 +295,12 @@ export function restartService(context: ServiceContext = {}): ServiceState {
   assertServiceInstallation(resolved)
   if (resolved.platform === 'darwin') {
     if (launchdLoaded(resolved)) {
+      const supervisorPid = launchdJobPid(resolved)
       requireSuccess(resolved, '/bin/launchctl', ['bootout', serviceTarget(resolved)])
+      retireOwnedOrphan(resolved, supervisorPid)
+    } else {
+      retireOwnedOrphan(resolved)
     }
-    retireOwnedOrphan(resolved)
     bootstrapLaunchAgent(resolved)
   } else {
     requireSuccess(resolved, 'systemctl', ['--user', 'restart', SYSTEMD_UNIT])
@@ -308,9 +317,12 @@ export function uninstallService(context: ServiceContext = {}): ServiceState {
       throw new Error(`Refusing to stop an unowned launchd job without a managed definition: ${resolved.paths.definition}`)
     }
     if (loaded) {
+      const supervisorPid = launchdJobPid(resolved)
       requireSuccess(resolved, '/bin/launchctl', ['bootout', serviceTarget(resolved)])
+      retireOwnedOrphan(resolved, supervisorPid)
+    } else if (installed) {
+      retireOwnedOrphan(resolved)
     }
-    if (installed) retireOwnedOrphan(resolved)
     if (installed) rmSync(resolved.paths.definition)
   } else {
     if (installed) {
@@ -350,9 +362,12 @@ function installLaunchAgent(context: ResolvedContext): void {
     throw new Error(`Refusing to replace an unowned launchd job without a managed definition: ${context.paths.definition}`)
   }
   if (wasLoaded) {
+    const supervisorPid = launchdJobPid(context)
     requireSuccess(context, '/bin/launchctl', ['bootout', serviceTarget(context)])
+    retireOwnedOrphan(context, supervisorPid)
+  } else if (previous !== null) {
+    retireOwnedOrphan(context)
   }
-  if (previous !== null) retireOwnedOrphan(context)
   try {
     writeManagedAtomically(context.paths.definition, content, 0o600, (temporary) => {
       requireSuccess(context, '/usr/bin/plutil', ['-lint', temporary])
@@ -486,8 +501,15 @@ function launchdLoaded(context: ResolvedContext): boolean {
   return run(context, '/bin/launchctl', ['print', serviceTarget(context)]).status === 0
 }
 
+function launchdJobPid(context: ResolvedContext): number | null {
+  const result = run(context, '/bin/launchctl', ['print', serviceTarget(context)])
+  if (result.status !== 0) return null
+  const pid = Number(result.stdout.match(/^\s*pid = (\d+)\s*$/m)?.[1])
+  return Number.isSafeInteger(pid) && pid > 1 ? pid : null
+}
+
 /** Retire only a daemon proved to be an orphan from this managed installation. */
-function retireOwnedOrphan(context: ResolvedContext): void {
+function retireOwnedOrphan(context: ResolvedContext, formerSupervisorPid: number | null = null): void {
   const lock = join(context.paths.data, 'daemon.lock')
   if (!existsSync(lock) || lstatSync(lock).isSymbolicLink()) return
   let owner: { kind?: unknown; pid?: unknown; token?: unknown }
@@ -499,15 +521,25 @@ function retireOwnedOrphan(context: ResolvedContext): void {
   const token = owner.token
   const home = installPaths(context.env).home
   const daemonPath = new RegExp(`(?:^|\\s)${escapeRegex(home)}/(?:current|releases/[^/\\s]+)/node_modules/@longleash/cli/runtime/daemon/bin/longleashd\\.mjs(?:\\s|$)`)
+  const cliPath = new RegExp(`(?:^|\\s)${escapeRegex(home)}/(?:current|releases/[^/\\s]+)/node_modules/@longleash/cli/bin/longleash\\.mjs\\s+run(?:\\s|$)`)
+  const formerSupervisorVerified = (ppid: number): boolean => {
+    if (formerSupervisorPid === null || ppid !== formerSupervisorPid) return false
+    const parent = run(context, '/bin/ps', ['-ww', '-p', String(ppid), '-o', 'uid=', '-o', 'command='])
+    if (parent.status !== 0) return false
+    const match = parent.stdout.trim().match(/^(\d+)\s+(.+)$/s)
+    return match !== null && Number(match[1]) === context.uid &&
+      /^(?:\S*\/)?node\s/.test(match[2] ?? '') && cliPath.test(match[2] ?? '')
+  }
   const verified = (): boolean => {
     if (!existsSync(lock) || lstatSync(lock).isSymbolicLink()) return false
     let current: { kind?: unknown; pid?: unknown; token?: unknown }
     try { current = JSON.parse(readFileSync(lock, 'utf8')) as typeof current } catch { return false }
     if (current.kind !== 'longleash-daemon' || current.pid !== pid || current.token !== token) return false
-    const result = run(context, '/bin/ps', ['-p', String(pid), '-o', 'uid=', '-o', 'ppid=', '-o', 'command='])
+    const result = run(context, '/bin/ps', ['-ww', '-p', String(pid), '-o', 'uid=', '-o', 'ppid=', '-o', 'command='])
     if (result.status !== 0) return false
     const match = result.stdout.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/s)
-    if (match === null || Number(match[1]) !== context.uid || Number(match[2]) !== 1 ||
+    if (match === null || Number(match[1]) !== context.uid ||
+      (Number(match[2]) !== 1 && !formerSupervisorVerified(Number(match[2]))) ||
       !/^(?:\S*\/)?node\s/.test(match[3] ?? '') || !daemonPath.test(match[3] ?? '')) return false
     try {
       const afterPs = JSON.parse(readFileSync(lock, 'utf8')) as typeof current
@@ -517,17 +549,28 @@ function retireOwnedOrphan(context: ResolvedContext): void {
   // launchd may return from bootout just before the former CLI child is reparented.
   for (let attempt = 0; attempt < 5 && !verified(); attempt += 1) pause(100)
   if (!verified()) return
-  context.signalProcess(pid, 'SIGTERM')
+  if (!signalOwnedProcess(context, pid, 'SIGTERM')) return
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (!verified()) return
     pause(100)
   }
-  if (verified()) context.signalProcess(pid, 'SIGKILL')
+  if (verified() && !signalOwnedProcess(context, pid, 'SIGKILL')) return
   for (let attempt = 0; attempt < 10; attempt += 1) {
     if (!verified()) return
     pause(100)
   }
   throw new Error(`Verified orphan LongLeash daemon ${pid} did not exit after bounded shutdown.`)
+}
+
+function signalOwnedProcess(context: ResolvedContext, pid: number, signal: NodeJS.Signals): boolean {
+  try {
+    context.signalProcess(pid, signal)
+    return true
+  } catch (error) {
+    // The verified child may exit between the final ps and kill syscall.
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false
+    throw error
+  }
 }
 
 function escapeRegex(value: string): string {

@@ -237,6 +237,60 @@ describe('macOS per-user service lifecycle', () => {
     expect(psCalls).toBeGreaterThan(0)
     expect(signals).toEqual([])
   })
+
+  it('retires a lock-backed rc.13 child still attached to the exact booted-out launchd CLI', () => {
+    const f = fixture('darwin')
+    installService(f.context)
+    writeFileSync(join(f.paths.data, 'daemon.lock'), JSON.stringify({ kind: 'longleash-daemon', pid: 41488, token: 'old' }))
+    const release = join(f.env.LONGLEASH_INSTALL_HOME, 'releases', '0.1.0-rc.13', 'node_modules', '@longleash', 'cli')
+    const daemon = join(release, 'runtime', 'daemon', 'bin', 'longleashd.mjs')
+    const cli = join(release, 'bin', 'longleash.mjs')
+    let managerLoaded = true
+    let alive = true
+    let childParent = 41486
+    const signals: string[] = []
+    const runner: CommandRunner = (file, args, options) => {
+      if (file === '/bin/launchctl' && args[0] === 'print') return {
+        status: managerLoaded ? 0 : 113, stdout: managerLoaded ? 'state = running\n\tpid = 41486\n' : '', stderr: '',
+      }
+      if (file === '/bin/launchctl' && args[0] === 'bootout') { managerLoaded = false; return { status: 0, stdout: '', stderr: '' } }
+      if (file === '/bin/launchctl' && args[0] === 'bootstrap') { managerLoaded = true; return { status: 0, stdout: '', stderr: '' } }
+      if (file === '/bin/ps' && args.includes('41488')) return {
+        status: alive ? 0 : 1,
+        stdout: alive ? `501 ${childParent} ${process.execPath} ${daemon} ${f.project}\n` : '', stderr: '',
+      }
+      if (file === '/bin/ps' && args.includes('41486')) return {
+        status: 0, stdout: `501 ${process.execPath} ${cli} run\n`, stderr: '',
+      }
+      return f.context.runner!(file, args, options)
+    }
+    installService({ ...f.context, runner, signalProcess: (_pid, signal) => { signals.push(signal); alive = false } })
+    expect(signals).toEqual(['SIGTERM'])
+
+    // An unrelated foreground CLI with the same executable path is not the captured job PID.
+    managerLoaded = true
+    alive = true
+    childParent = 49999
+    signals.length = 0
+    installService({ ...f.context, runner, signalProcess: (_pid, signal) => signals.push(signal) })
+    expect(signals).toEqual([])
+  })
+
+  it('accepts ESRCH when the verified child exits between inspection and signaling', () => {
+    const f = fixture('darwin')
+    installService(f.context)
+    writeFileSync(join(f.paths.data, 'daemon.lock'), JSON.stringify({ kind: 'longleash-daemon', pid: 48731, token: 'race' }))
+    const daemon = join(f.env.LONGLEASH_INSTALL_HOME, 'current', 'node_modules', '@longleash', 'cli', 'runtime', 'daemon', 'bin', 'longleashd.mjs')
+    const runner: CommandRunner = (file, args, options) => file === '/bin/ps'
+      ? { status: 0, stdout: `501 1 ${process.execPath} ${daemon} ${f.project}\n`, stderr: '' }
+      : f.context.runner!(file, args, options)
+    expect(() => restartService({ ...f.context, runner, signalProcess: () => {
+      throw Object.assign(new Error('No such process'), { code: 'ESRCH' })
+    } })).not.toThrow()
+    expect(() => restartService({ ...f.context, runner, signalProcess: () => {
+      throw Object.assign(new Error('Permission denied'), { code: 'EPERM' })
+    } })).toThrow('Permission denied')
+  })
 })
 
 describe('Linux systemd user-service lifecycle', () => {
