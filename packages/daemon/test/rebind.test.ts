@@ -26,6 +26,25 @@ describe('following the machine onto a new network', () => {
       expect(statSync(endpointPath).mode & 0o777).toBe(0o600)
       const health = await fetch(current.url.replace(/\/hook$/, '/health'), { headers: { 'x-longleash-hook': current.secret } })
       expect(health.ok).toBe(true)
+      const idePath = join(dataDir, 'ide-endpoint.json')
+      const ide = JSON.parse(readFileSync(idePath, 'utf8')) as { url: string; secret: string }
+      expect(statSync(idePath).mode & 0o777).toBe(0o600)
+      expect(new URL(ide.url).hostname).toBe('127.0.0.1')
+      expect(ide.secret).not.toBe(current.secret)
+      const snapshot = await fetch(ide.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-longleash-ide': ide.secret },
+        body: JSON.stringify({
+          v: 1, type: 'ide.hello', clientInstanceId: 'real-daemon', protocol: { min: 1, max: 1 },
+          extension: { version: '0.0.2', build: '0.0.2' },
+          vscode: { version: '1.131.0', uriScheme: 'vscode', remoteAuthority: null,
+            workspaceTrusted: true, windowFocused: true,
+            workspaceFolders: [{ uri: `file://${project}`, canonicalPath: project }] },
+          capabilities: ['sessions.read'],
+        }),
+      })
+      expect(snapshot.status).toBe(200)
+      expect((await snapshot.json() as { sessions: unknown[] }).sessions).toEqual([])
     } finally {
       await daemon.stop()
       rmSync(root, { recursive: true, force: true })

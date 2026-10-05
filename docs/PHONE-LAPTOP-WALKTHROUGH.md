@@ -1,6 +1,6 @@
 # Laptop and phone walkthrough — verified pairing
 
-Updated 2026-10-04. This guide targets `@longleash/cli@0.1.0-rc.12`. **Check the release status before following it:** the CLI must be published at that exact version and `https://app.longleash.dev/build.json` must match the release commit. Published rc.11 does not contain verified pairing.
+Updated 2026-10-05. This guide targets `@longleash/cli@0.1.0-rc.13` and the matching LongLeash VS Code companion `0.0.2`. **Check release status before following it:** the CLI must be published at that exact version and `https://app.longleash.dev/build.json` must match the release commit. The VSIX is an owner preview, not a Marketplace listing.
 
 ## 1. Before installation
 
@@ -12,17 +12,17 @@ Updated 2026-10-04. This guide targets `@longleash/cli@0.1.0-rc.12`. **Check the
 
 ## 2. Install the approved release on the laptop
 
-After rc.12 is confirmed published and the app build verified:
+After rc.13 is confirmed published and the app build verified:
 
 ```sh
 node --version
 npm --version
-npm exec --yes --registry=https://registry.npmjs.org/ --package=@longleash/cli@0.1.0-rc.12 -- longleash setup
+npm exec --yes --registry=https://registry.npmjs.org/ --package=@longleash/cli@0.1.0-rc.13 -- longleash setup
 ```
 
 Choose your allowed project folder, **hosted** connectivity, and the per-user background service. Review the settings before answering yes. Use the scoped `@longleash/cli` package; the unscoped npm name belongs to someone else.
 
-For an existing managed installation, use `longleash update 0.1.0-rc.12` instead. It reuses configuration. Follow the installer's PATH instructions and open a fresh terminal if necessary.
+For an existing managed installation, use `longleash update 0.1.0-rc.13` instead. It reuses configuration. Follow the installer's PATH instructions and open a fresh terminal if necessary.
 
 ```sh
 longleash --version
@@ -72,7 +72,9 @@ Send a unique harmless prompt, such as `Reply exactly TERMINAL CLAUDE CHECK`, us
 
 Test vendor chat panels separately. Their hook support differs; Codex's durable VS Code transcript can provide read-only observation even without a lifecycle/PID hook. **Read-only observation does not grant approval, Stop or takeover authority.** Existing sessions may require a new tool event or restart.
 
-The separate **LongLeash VS Code sidebar is an unreleased foundation without authenticated live sync**. Installing its current VSIX will not populate a live inventory. That is distinct from seeing VS Code-origin sessions on the phone and must not be presented as fixed or shipped.
+For the owner preview, download `longleash-vscode-0.0.2.vsix` from the rc.13 GitHub release and install it in VS Code using **Extensions → … → Install from VSIX…**. Reload the window, open the allowlisted test project, and select the LongLeash Activity Bar icon. Its **Sessions** tree should show one live card per native conversation after a real prompt and should update within a few seconds. A transient Claude lifecycle ID with no matching transcript should not appear. Refresh or reload the phone once after updating the daemon to clear historical empty cards.
+
+The companion tree is read-only. It does not send messages, approve, Stop, or perform exact phone ↔ IDE handoff yet. For this preview, test the existing explicit terminal/VS Code integrated-terminal transfer controls separately. Do not treat a vendor chat panel as handed off until a later exact-open acknowledgement exists.
 
 ## 5. Exercise normal work from the phone
 

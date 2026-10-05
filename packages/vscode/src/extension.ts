@@ -2,6 +2,9 @@ import * as vscode from 'vscode'
 import { claudeNativeDispatchVerified } from './compatibility.js'
 import { createSafeDiagnostics, serializeSafeDiagnostics, type SafeExtensionDiagnostics } from './diagnostics.js'
 import { SessionTreeProvider } from './session-tree.js'
+import { fetchCompanionInventory } from './companion-client.js'
+import { randomUUID } from 'node:crypto'
+import { IDE_PROTOCOL_VERSION } from '@longleash/protocol'
 
 const EXTENSION_ID = 'longleash.longleash'
 const CLAUDE_EXTENSION_ID = 'anthropic.claude-code'
@@ -15,6 +18,40 @@ export function activate(context: vscode.ExtensionContext): void {
   })
   treeView.message =
     'LongLeash is offline. Start the laptop daemon to load sessions; no cached sessions are shown.'
+  const clientInstanceId = randomUUID()
+  let syncing = false
+  const sync = async () => {
+    if (syncing) return
+    syncing = true
+    try {
+      const inventory = await fetchCompanionInventory(context, clientInstanceId)
+      sessionTree.replace(inventory)
+      treeView.message = inventory.sessions.length === 0
+        ? 'Connected. No LongLeash sessions in this workspace yet.'
+        : ''
+    } catch (error) {
+      sessionTree.replace({
+        v: IDE_PROTOCOL_VERSION,
+        type: 'ide.sessionInventory',
+        streamId: 'offline',
+        cursor: 0,
+        generatedAt: Date.now(),
+        sessions: [],
+      })
+      treeView.message = error instanceof Error && error.message.includes('trusted local')
+        ? error.message
+        : 'LongLeash is offline. Start the laptop service, then refresh sessions.'
+    } finally { syncing = false }
+  }
+  // V0's disposable extension-host matrix injects snapshots and must never read the
+  // operator's real local credential. Normal installed windows always sync live.
+  if (!(context.extensionMode === vscode.ExtensionMode.Test && process.env.LONGLEASH_V0_HOST_CASE && !process.env.LONGLEASH_V1_HOST_LIVE)) {
+    void sync()
+    const poll = setInterval(() => { void sync() }, 2_000)
+    context.subscriptions.push({ dispose: () => clearInterval(poll) })
+    context.subscriptions.push(vscode.workspace.onDidGrantWorkspaceTrust(() => { void sync() }))
+    context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => { void sync() }))
+  }
 
   const show = vscode.commands.registerCommand('longleash.phase2a.showDiagnostics', async () => {
     const diagnostics = collectDiagnostics(context)
@@ -33,15 +70,7 @@ export function activate(context: vscode.ExtensionContext): void {
   })
 
   const refreshSessions = vscode.commands.registerCommand('longleash.sessions.refresh', () => {
-    sessionTree.refresh()
-    void vscode.window.showInformationMessage(
-      'LongLeash has not connected this extension to the daemon yet. Safe diagnostics are available now; authenticated session sync is the next Phase 2A gate.',
-      'Show diagnostics',
-    ).then(async (choice) => {
-      if (choice === 'Show diagnostics') {
-        await vscode.commands.executeCommand('longleash.phase2a.showDiagnostics')
-      }
-    })
+    void sync()
   })
 
   context.subscriptions.push(show, copy, refreshSessions, treeView, sessionTree)

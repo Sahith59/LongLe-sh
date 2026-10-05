@@ -128,6 +128,15 @@ export class EventLog {
     return (this.latestTsStmt.get(sessionId) as { ts: number }).ts
   }
 
+  /** Historical lifecycle-only IDs are not conversations: no text, tool, or approval arrived. */
+  hasConversationActivity(sessionId: string): boolean {
+    const row = this.rawDb.prepare(
+      `SELECT 1 FROM events WHERE session_id = ?
+       AND type NOT IN ('session.started', 'session.status', 'session.ended') LIMIT 1`,
+    ).get(sessionId)
+    return row !== undefined
+  }
+
   aliasFor(sessionId: string): string | undefined {
     const row = this.rawDb
       .prepare('SELECT title FROM session_aliases WHERE session_id = ?')

@@ -170,6 +170,35 @@ const eventsOf = (log: EventLog, sessionId: string) => {
 
 const typesOf = (log: EventLog, sessionId: string) => eventsOf(log, sessionId).map((e) => e.type)
 
+it('keeps old lifecycle-only VS Code ghosts out of phone inventory without deleting a real conversation', () => {
+  const h = makeHarness()
+  try {
+    for (const nativeId of ['ghost', 'real']) {
+      h.manager.adoptEndedSession({
+        sessionId: `ext_${nativeId}`,
+        agent: 'claude',
+        cwd: h.root,
+        title: `${h.root.split('/').at(-1)} — VS Code`,
+        origin: 'vscode',
+        startedAt: 100,
+        agentSessionId: nativeId,
+      })
+      h.log.append(`ext_${nativeId}`, {
+        type: 'session.started',
+        payload: { agent: 'claude', cwd: h.root, title: 'test', origin: 'vscode' },
+      })
+    }
+    h.log.append('ext_real', { type: 'stream.delta', payload: { kind: 'text', text: 'real reply' } })
+    expect(h.manager.listSessions().map((session) => session.sessionId)).toContain('ext_real')
+    expect(h.manager.listSessions().map((session) => session.sessionId)).not.toContain('ext_ghost')
+    expect(h.log.replay('ext_ghost', 0).events).toHaveLength(1)
+  } finally {
+    rmSync(h.dir, { recursive: true, force: true })
+    h.log.close()
+    h.approvals.close()
+  }
+})
+
 describe('startSession: allowlisted roots (security boundary)', () => {
   let h: Harness
   beforeEach(() => {

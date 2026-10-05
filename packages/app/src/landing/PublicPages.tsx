@@ -960,8 +960,9 @@ function Faq() {
         future team or premium services may develop separate pricing; nothing on this page promises an unshipped tier.
       </Question>
       <Question q="Is the VS Code companion available?">
-        Not publicly yet. Its secure protocol, package verification, compatibility checks, and native
-        session-tree foundation exist. Authenticated live daemon sync is the next engineering checkpoint.
+        An installable owner preview is available from the matching GitHub release. It shows a live,
+        workspace-scoped session tree when the laptop daemon is running. Sending messages and exact
+        phone-to-IDE handoff are still being built; this is not yet a Marketplace release.
       </Question>
     </DocsLayout>
   )

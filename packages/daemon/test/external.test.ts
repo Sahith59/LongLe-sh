@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { appendFileSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, realpathSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SessionEvent } from '@longleash/protocol'
@@ -229,6 +229,20 @@ describe('terminal sessions, adopted through hooks', () => {
       .map((e) => (e.payload as { kind: string; text: string }))
     expect(kinds.map((k) => k.kind)).toEqual(['user', 'thinking', 'text', 'tool'])
     expect(kinds[3]?.text).toBe('Edit: /Users/x/proj/poll.ts')
+    external.shutdown()
+  })
+
+  it('adopts only the recent tail of a very large resumed transcript without blocking the daemon', async () => {
+    const transcript = join(dir, 'large-resume.jsonl')
+    writeFileSync(transcript, line({ type: 'user', message: { content: 'ancient request' } }))
+    truncateSync(transcript, 128 * 1024 * 1024) // sparse file: no 128 MB fixture in memory
+    appendFileSync(transcript, '\n' + line({ type: 'user', message: { content: 'current request' } }))
+    const external = manager()
+    external.sessionStart('large-resume', dir, transcript)
+    await until(() => seen.some((event) => event.type === 'stream.delta'))
+    const userText = seen.filter((event) => event.type === 'stream.delta' && event.payload.kind === 'user')
+      .map((event) => (event.payload as { text: string }).text)
+    expect(userText).toEqual(['current request'])
     external.shutdown()
   })
 

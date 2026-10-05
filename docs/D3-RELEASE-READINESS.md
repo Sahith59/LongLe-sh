@@ -1,5 +1,7 @@
 # D3 release readiness — 2026-10-04
 
+**Field update, 2026-10-05:** rc.12 was subsequently published and deployed. The owner's physical iPhone then exposed repeated empty Claude VS Code cards, so D remains open. The rc.13 correction and read-only companion preview are documented in [VS Code field correction](VSCODE-LIVE-INVENTORY-2026-10.md); the historical rc.12 candidate figures below are retained as the earlier checkpoint. The owner must retest the real provider matrix after rc.13 is live.
+
 **Release checkpoint:** D3 and Workstream D remain open until physical phone acceptance. The owner has now authorized committing, pushing, publishing and deploying the candidate for live testing. Record each actual release result below; do not mark a gate passed because a command was planned. Continue D before E/F.
 
 ## Findings fixed in this candidate

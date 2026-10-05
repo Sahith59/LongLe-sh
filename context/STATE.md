@@ -2,6 +2,14 @@
 
 Update this file at the end of any session that changes project state. Newest entries first in the log.
 
+## Current checkpoint — 2026-10-05 (phone duplicate field report / IDE foundation)
+
+- The owner tested rc.12 on a physical iPhone and reported repeated finished Claude `Orbit — VS Code` cards. Of 37 such local event histories, 36 were lifecycle-only and one had the continuing transcript. Root cause in LongLeash: passive hook IDs were published before any transcript existed. The rc.13 candidate requires a nonempty transcript whose filename matches the native ID and hides historical empty finished cards without deleting records. Physical replay after release remains required.
+- The VS Code companion `0.0.2` read-only live inventory preview is implemented with an independent loopback credential, SecretStorage, workspace scoping, trust/build/protocol checks, typed snapshot cursor, and real extension-host proof. It has no native-panel control or bidirectional handoff yet. See [field correction and ordered gates](../docs/VSCODE-LIVE-INVENTORY-2026-10.md).
+- Release review found the running rc.12 daemon at high CPU and its health endpoint timing out. A multi-GB Claude transcript exposes the existing unbounded synchronous first-read path; rc.13 now caps initial history and per-poll bytes, with a sparse large-file regression. Verify that the installed rc.13 service remains responsive during owner testing before attributing the field stall conclusively.
+- **Next:** roll out the rc.13 daemon candidate and VSIX together; perform real Claude/Codex terminal and VS Code matrix on the owner's phone; then implement exact daemon-owned IDE handoff. Local gate: 1,075 tests, all typechecks/builds, five extension-host cases, 11 real-provider contracts, CLI/VSIX package verification, isolated tarball smoke and paired-device upgrade/rollback, and zero known production dependency advisories. Exact-commit CI and physical replay remain required. Workstream D stays open. The user asked that correctness and handoff precede UI polish.
+- rc.12 was published and deployed at build `618e867`; the owner's laptop doctor reported matching CLI/daemon/relay builds. Automatic Cloudflare CI deployment remains blocked by D1 token scope ([issue 31](https://github.com/Sahith59/LongLe-sh/issues/31)); a manual exact-commit deploy was verified. The macOS upgrade orphan follow-up is [issue 30](https://github.com/Sahith59/LongLe-sh/issues/30).
+
 ## Current checkpoint — 2026-10-04 (D3 release-readiness work)
 
 - Owner requested D3, correction of missing terminal/VS Code sessions, and an end-to-end laptop/phone walkthrough. Subsequent instruction **authorizes committing, pushing, publishing and deploying a controlled rc.12 candidate** for physical phone testing. D remains open until that acceptance passes.

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, realpathSync } from 'node:fs'
+import { mkdtempSync, rmSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import WebSocket from 'ws'
@@ -1365,6 +1365,7 @@ describe('take over: the baton passes from terminal to phone', () => {
     })
     h.server.attachExternal(external, 'hook-secret')
 
+    writeFileSync(join(dir, 'vs-fail.jsonl'), `${JSON.stringify({ type: 'queue-operation', sessionId: 'vs-fail' })}\n`)
     await fetch(`http://${HOST}:${h.port}/hook`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-longleash-hook': 'hook-secret' },
@@ -1372,7 +1373,7 @@ describe('take over: the baton passes from terminal to phone', () => {
         hook_event_name: 'SessionStart',
         session_id: 'vs-fail',
         cwd: dir,
-        transcript_path: join(dir, 'none.jsonl'),
+        transcript_path: join(dir, 'vs-fail.jsonl'),
         ll_pid: 4343,
         ll_surface: 'vscode',
       }),
@@ -1547,6 +1548,7 @@ describe('session settings over the wire', () => {
       }),
     })
     h.server.attachExternal(external, 'hook-secret')
+    writeFileSync(join(dir, 'vscode-native.jsonl'), `${JSON.stringify({ type: 'queue-operation', sessionId: 'vscode-native' })}\n`)
     await fetch(`http://${HOST}:${h.port}/hook`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-longleash-hook': 'hook-secret' },
@@ -1554,7 +1556,7 @@ describe('session settings over the wire', () => {
         hook_event_name: 'SessionStart',
         session_id: 'vscode-native',
         cwd: dir,
-        transcript_path: join(dir, 'none.jsonl'),
+        transcript_path: join(dir, 'vscode-native.jsonl'),
         ll_pid: 5151,
         ll_surface: 'vscode',
       }),

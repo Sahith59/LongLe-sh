@@ -100,8 +100,8 @@ describe('CHECKLIST end to end — a real daemon, a real socket', () => {
     ['claude', 'terminal'], ['claude', 'vscode'], ['codex', 'terminal'], ['codex', 'vscode'],
   ])('%s in %s reaches the phone and survives a phone reconnect without duplicates', async (agent, surface) => {
     await connectPhone()
-    const transcript = join(dir, 'work', 't.jsonl')
-    writeFileSync(transcript, '')
+    const transcript = join(dir, 'work', 'sess-a.jsonl')
+    writeFileSync(transcript, `${JSON.stringify({ type: 'queue-operation', sessionId: 'sess-a' })}\n`)
 
     await hookPost({
       hook_event_name: 'SessionStart',

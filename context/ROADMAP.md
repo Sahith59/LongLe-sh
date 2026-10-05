@@ -1,5 +1,7 @@
 # ROADMAP — what's broken, what's next, and why
 
+**2026-10-05 priority correction:** physical iPhone use exposed 36 empty finished Claude VS Code cards beside one real Orbit conversation. Session identity and IDE handoff are the immediate priority; visual polish waits. A daemon candidate now admits passive Claude VS Code IDs only after a transcript exists and filters legacy lifecycle-only cards from fresh inventories. The VS Code companion `0.0.2` has authenticated, workspace-scoped read-only live snapshots, but no message/control handoff. Next: release and physical provider matrix, then exact daemon-owned VS Code editor with phone ↔ laptop writer transfer. See [field evidence and gates](../docs/VSCODE-LIVE-INVENTORY-2026-10.md). Earlier “VS Code extension not needed” notes below referred only to origin labeling and are superseded for live IDE inventory/handoff.
+
 The running work plan. `DECISIONS.md` says *why things are the way they are*; `BUSINESS.md`
 says *how this makes money*; **this file says what we are doing next and in what order.**
 

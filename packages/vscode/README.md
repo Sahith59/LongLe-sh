@@ -1,9 +1,10 @@
 # LongLeash for VS Code
 
-This package is the Phase 2A companion extension. V0 contains the typed security contract,
-fail-closed provider preflights, safe diagnostics, and real extension-host tests. The first V1
-distribution slice adds a verified local VSIX and dry-run-capable install/update command. It does
-not yet connect to a production daemon or claim the V1 session tree.
+This package is the Phase 2A companion extension. Version `0.0.2` connects its native session
+tree to the local daemon's read-only, workspace-scoped inventory over an authenticated loopback
+endpoint. V0 also contains the typed security contract, fail-closed provider preflights, safe
+diagnostics, and real extension-host tests. Bidirectional handoff and provider control are not in
+this preview.
 
 The V0 live matrix found that Claude Code extension `2.1.229` did not render the requested native
 history through its documented URI. LongLeash therefore disables that route unless the exact build
@@ -19,10 +20,10 @@ From the repository root, build and verify the installable artifact with `pnpm v
 `pnpm vscode:install` only when you explicitly want to install or update the local VSIX. Public
 signing, Marketplace distribution, staged rollout, and rollback are later release gates.
 
-The Activity Bar now contains an honest Sessions view foundation. It accepts only typed, complete,
-monotonic inventory snapshots and groups them into **Needs you**, **Active**, and **Earlier**. A
-dormant resumable conversation never appears active. Until authenticated daemon transport lands,
-the installed view deliberately stays offline and empty instead of showing fixtures or stale cache.
+The Activity Bar Sessions view accepts typed, complete, monotonic inventory snapshots and groups
+them into **Needs you**, **Active**, and **Earlier**. A dormant resumable conversation never appears
+active. The preview shows only sessions inside the current trusted local workspace; it clears the
+tree when the daemon becomes unavailable. Install the matching CLI candidate before the VSIX.
 
 See [`../../docs/VSCODE-EXTENSION.md`](../../docs/VSCODE-EXTENSION.md) and
 [`../../docs/VSCODE-V0-EVIDENCE.md`](../../docs/VSCODE-V0-EVIDENCE.md).

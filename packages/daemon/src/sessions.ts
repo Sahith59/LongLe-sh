@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { realpathSync } from 'node:fs'
-import { resolve, sep } from 'node:path'
+import { basename, resolve, sep } from 'node:path'
 import type { AgentFactory, AgentRunHandle, PermissionDecision } from './agent.js'
 import type { ApprovalStore } from './approvals.js'
 import type { EventLog, AppendInput } from './eventlog.js'
@@ -712,7 +712,20 @@ export class SessionManager {
       workspace_branch: string | null
       settings_json: string | null
     }[]
-    return rows.map((row) => {
+    return rows.filter((row) => {
+      // Older Claude VS Code builds reported transient native IDs through SessionStart.
+      // The daemon previously adopted them as finished conversations even though no
+      // transcript/tool/approval ever arrived. Preserve their DB history for audit,
+      // but keep these empty generic cards out of a freshly hydrated phone list.
+      if (
+        row.session_id.startsWith('ext_') && row.agent === 'claude' &&
+        row.origin === 'vscode' && row.status === 'ended' &&
+        row.agent_session_id !== null &&
+        row.title === `${basename(row.cwd)} — VS Code` &&
+        !this.eventLog.hasConversationActivity(row.session_id)
+      ) return false
+      return true
+    }).map((row) => {
       const live = this.sessions.get(row.session_id)
       return {
         sessionId: row.session_id,
