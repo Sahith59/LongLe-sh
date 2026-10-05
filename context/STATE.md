@@ -2,7 +2,14 @@
 
 Update this file at the end of any session that changes project state. Newest entries first in the log.
 
-## Current checkpoint — 2026-10-05 (phone duplicate field report / IDE foundation)
+## Release checkpoint — 2026-10-05 (rc.13 live; physical IDE acceptance open)
+
+- Release commit/tag `37de078` / `cli-v0.1.0-rc.13` is on GitHub. Trusted npm publishing succeeded with provenance; `@longleash/cli@0.1.0-rc.13` became visible under the `rc` tag. The matching `longleash-vscode-0.0.2.vsix` is attached to the GitHub prerelease and installed in the owner's VS Code. It is an owner preview, not a Marketplace listing; the VS Code window still needs reload to activate it.
+- The public app/relay was deployed manually from `37de078` after remote D1 reported no migrations. `EXPECTED_BUILD=37de078 pnpm verify:production` passed. Main CI test/image passed but its automatic deploy again failed with Cloudflare 7403 because the GitHub token lacks D1 scope ([issue 31](https://github.com/Sahith59/LongLe-sh/issues/31)); do not infer a failed public deployment from that job.
+- The owner's managed CLI was updated to rc.13. The old rc.12 daemon survived launchd bootout as an orphan, kept port 4321, and had to be stopped by its exact PID before `longleash service start` succeeded ([issue 30](https://github.com/Sahith59/LongLe-sh/issues/30)). Installed CLI, daemon and relay doctor builds now all match `37de078`; authenticated health passed with the new daemon near idle CPU. The live loopback IDE snapshot for the Orbit workspace returned HTTP 200, a 0600 endpoint file, and **one** Claude VS Code session where the old event history contained 37 cards.
+- **Still open:** the owner must reload VS Code and refresh/reopen the phone PWA, then run multiple fresh turns and the full Claude/Codex terminal, integrated-terminal, vendor-panel and phone handoff matrix. The read-only companion does not yet implement exact phone ↔ IDE handoff or private provider-panel control. Do not close Workstream D or claim a physical end-to-end pass. Continue with the explicit handoff foundation after field replay; postpone UI polish.
+
+## Prior checkpoint — 2026-10-05 (phone duplicate field report / IDE foundation)
 
 - The owner tested rc.12 on a physical iPhone and reported repeated finished Claude `Orbit — VS Code` cards. Of 37 such local event histories, 36 were lifecycle-only and one had the continuing transcript. Root cause in LongLeash: passive hook IDs were published before any transcript existed. The rc.13 candidate requires a nonempty transcript whose filename matches the native ID and hides historical empty finished cards without deleting records. Physical replay after release remains required.
 - The VS Code companion `0.0.2` read-only live inventory preview is implemented with an independent loopback credential, SecretStorage, workspace scoping, trust/build/protocol checks, typed snapshot cursor, and real extension-host proof. It has no native-panel control or bidirectional handoff yet. See [field correction and ordered gates](../docs/VSCODE-LIVE-INVENTORY-2026-10.md).

@@ -1,5 +1,9 @@
 # VS Code field correction and companion rollout — 2026-10-05
 
+## Release outcome
+
+`cli-v0.1.0-rc.13` at commit `37de078` was published through npm trusted publishing and deployed to the public app/relay. The matching VSIX `0.0.2` was attached to that GitHub prerelease and installed locally. Main CI test/image and PR Linux/macOS/VS Code/package gates passed; automatic production deployment still fails with Cloudflare D1 permission 7403, so the exact commit was deployed manually through the owner's OAuth account and the production matrix passed. The owner laptop needed recovery from an orphan rc.12 daemon after upgrade; rc.13 doctor then reported matching CLI/daemon/relay builds and a responsive service. An authenticated live IDE snapshot for Orbit contained one Claude VS Code conversation. The physical phone and repeated-turn matrix remain unverified.
+
 ## Field evidence
 
 The owner's iPhone showed many finished `Orbit — VS Code` Claude cards. Read-only inspection of the local event database found **37** Orbit VS Code cards; **36** contained only start/status/end events and no transcript, tool, or approval event. One card contained the continuing transcript. These are distinct native IDs reported by Claude's hooks, not 36 copies of the same LongLeash ID. The absence of a LongLeash extension is not evidence that the native Claude panel creates a new conversation for every message.

@@ -1,6 +1,6 @@
 # Laptop and phone walkthrough — verified pairing
 
-Updated 2026-10-05. This guide targets `@longleash/cli@0.1.0-rc.13` and the matching LongLeash VS Code companion `0.0.2`. **Check release status before following it:** the CLI must be published at that exact version and `https://app.longleash.dev/build.json` must match the release commit. The VSIX is an owner preview, not a Marketplace listing.
+Updated 2026-10-05. This guide targets the **published** `@longleash/cli@0.1.0-rc.13` and the matching LongLeash VS Code companion `0.0.2`. The public app serves build `37de078`; check `https://app.longleash.dev/build.json` and `longleash doctor` before testing. The VSIX is an owner preview, not a Marketplace listing. On the owner's laptop both are already installed; reload the VS Code window to activate the companion.
 
 ## 1. Before installation
 
@@ -12,7 +12,7 @@ Updated 2026-10-05. This guide targets `@longleash/cli@0.1.0-rc.13` and the matc
 
 ## 2. Install the approved release on the laptop
 
-After rc.13 is confirmed published and the app build verified:
+For a new laptop, after confirming the live app build:
 
 ```sh
 node --version
@@ -99,12 +99,15 @@ Run the complete [acceptance checklist](ACCEPTANCE.md) for release sign-off, inc
 | Wrong VS Code label | Test a fresh integrated-terminal process; record agent, terminal vs vendor panel and exact time |
 | Codex hook configured but silent | Check Codex hook review and project trust; configuration alone cannot prove either |
 | Phone UI differs from laptop version | Resolve doctor build mismatch; update/reload the phone app, then confirm the live build again |
+| Update succeeded but service is unreachable | Run `longleash service status` and `longleash doctor --json`. An old macOS daemon may survive launchd bootout and keep the listener port; see the exact-process recovery note below. |
 | Read-only card | Observation has no verified process-control authority; use a freshly hooked provider session for control |
 | Pairing expired/disconnected | Create a fresh QR; compare both devices again |
 | Lost final pairing response | `longleash devices`; revoke an unintended device with `longleash revoke DEVICE_ID`, then pair again |
 | Laptop unreachable on cellular | Confirm hosted connectivity, laptop internet and awake state; LAN-only does not work away from that network |
 
 Before restarting to diagnose a failure, capture `longleash doctor --json`, the exact time, agent, origin and redacted screenshot. `longleash service logs` shows persistent service diagnostics. Never include QR URLs, hook endpoint secrets, tokens or private source/transcripts in a report.
+
+**macOS orphan recovery, only if the update left the service unreachable:** find `longleashd.mjs` with `ps -Ao pid,ppid,command | rg longleashd.mjs`. If a process path points to the *previous* release and its parent is `1`, verify that PID and stop only that process (`kill -TERM PID`; use `kill -KILL PID` only if it remains stuck). Then run `longleash service start` and `longleash doctor`. This occurred during the rc.12 → rc.13 owner upgrade; the startup issue is tracked separately. Do not kill an active native Claude or Codex process by a matching title.
 
 ## 7. Completion evidence
 
