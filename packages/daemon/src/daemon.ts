@@ -25,6 +25,7 @@ import { ReturnBuilder } from './return-builder.js'
 import { WorktreeManager } from './worktrees.js'
 import { CodexSessionWatcher } from './codex-session-watch.js'
 import { IdeCompanionServer } from './ide-companion.js'
+import { IdeControlHub } from './ide-control.js'
 
 export interface DaemonOptions {
   /** Directories agents may work in. Nothing outside these can be targeted. */
@@ -232,7 +233,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     registry: sessionRegistry,
     onEvent: mirror,
     workspace,
-    resolveSessionId: (agentSessionId) => sessions.sessionIdForAgentSession(agentSessionId),
+    resolveSessionId: (agentSessionId, agent) => sessions.sessionIdForAgentSession(agentSessionId, agent),
     // A live socket means the app is open and can answer in seconds. A push REGISTRATION is
     // permanent and proves nothing about whether anyone is looking — treating it as presence
     // is what froze the keyboard for two minutes with the phone in a drawer.
@@ -306,7 +307,22 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     } finally { rmSync(staged, { force: true }) }
   }
   publishHookEndpoint(options.host, port)
+  const ideControl = new IdeControlHub({
+    read: (sessionId, cursor) => eventLog.readPage(sessionId, cursor),
+    command: (principal, message) => server.performIdeCommand(principal, message),
+    approvals: () => [...approvals.listPending(), ...externalApprovals.listPending()].map((approval) => {
+      const questions = eventLog.pendingQuestions(approval.sessionId, approval.approvalId)
+      return {
+        approvalId: approval.approvalId, sessionId: approval.sessionId, toolName: approval.toolName,
+        inputSummary: approval.inputSummary, expiresAt: approval.expiresAt,
+        outsideRoot: approval.outsideRoot, targetPath: approval.targetPath,
+        ...(questions ? { questions } : {}),
+      }
+    }),
+    returnToPhone: (sessionId) => server.returnIdeToPhone(sessionId),
+  })
   const companion = new IdeCompanionServer({
+    control: ideControl,
     dataDir,
     allowedRoots: roots,
     sessions: () => [...sessions.listSessions(), ...external.listSessions()],
@@ -314,6 +330,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     pendingApprovals: () => [...approvals.listPending(), ...externalApprovals.listPending()],
   })
   await companion.start()
+  server.setIdeControl(ideControl)
   const stopMaintenance = sessions.startMaintenance()
 
   // The daemon's presence in the world beyond the LAN: one E2E room per paired device,

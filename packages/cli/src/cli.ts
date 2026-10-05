@@ -21,6 +21,7 @@ import { resolveAllowedRootAnswer } from './setup-input.js'
 import {
   installService,
   restartService,
+  serviceProcessReady,
   serviceState,
   showServiceLogs,
   startService,
@@ -29,7 +30,7 @@ import {
 } from './service.js'
 import { runVerifiedPairing } from './pairing.js'
 import { terminalQr } from './terminal-qr.js'
-import { compareBuilds, inspectHooks, readBuild } from './diagnostics.js'
+import { compareBuilds, daemonIsReady, inspectHooks, readBuild } from './diagnostics.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const packageRoot = resolve(here, '..')
@@ -299,7 +300,7 @@ async function serviceCommand(args: string[]): Promise<number> {
   if (command === 'logs') return showServiceLogs(args.includes('--follow') || args.includes('-f'))
   if (command === 'status') {
     const state = serviceState()
-    const healthy = await daemonHealth()
+    const healthy = serviceProcessReady() && await daemonHealth()
     if (args.includes('--json')) console.log(JSON.stringify({ ...state, healthy }, null, 2))
     else printServiceState(state, healthy)
     return state.installed && healthy ? 0 : 1
@@ -465,8 +466,8 @@ async function daemonHealth(): Promise<boolean> {
   try {
     const response = await localDaemonRequest('/health', { method: 'GET' }, 1_500)
     if (!response.ok) return false
-    const body = await response.json() as { name?: unknown }
-    return body.name === 'longleash'
+    const body = await response.json() as { name?: unknown; build?: unknown }
+    return daemonIsReady(readBuild(join(packageRoot, 'runtime', 'app', 'dist', 'build.json')), body)
   } catch {
     return false
   }
@@ -475,7 +476,7 @@ async function daemonHealth(): Promise<boolean> {
 async function waitForDaemon(timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    if (await daemonHealth()) return true
+    if (serviceProcessReady() && await daemonHealth()) return true
     await new Promise((resolveWait) => setTimeout(resolveWait, 200))
   }
   return false

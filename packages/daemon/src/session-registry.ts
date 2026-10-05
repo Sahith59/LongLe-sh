@@ -47,36 +47,84 @@ export class SessionRegistry {
         started_at       INTEGER NOT NULL
       );
     `)
+    // Keep the rc13 table and its single-column conflict target intact for rollback.
+    // The new table can represent independent providers with an identical native id.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS live_sessions_v2 (
+        agent_session_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        surface TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        transcript_path TEXT NOT NULL,
+        pid INTEGER,
+        title TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        PRIMARY KEY (agent, agent_session_id)
+      );
+    `)
+    // Import rows the old release may have written before upgrade or during rollback.
+    this.db.exec(`
+      INSERT INTO live_sessions_v2
+        (agent_session_id, session_id, agent, surface, cwd, transcript_path, pid, title, started_at)
+      SELECT agent_session_id, session_id, agent, surface, cwd, transcript_path, pid, title, started_at
+      FROM live_sessions WHERE true
+      ON CONFLICT(agent, agent_session_id) DO UPDATE SET
+        session_id = excluded.session_id, surface = excluded.surface, cwd = excluded.cwd,
+        transcript_path = excluded.transcript_path, pid = excluded.pid,
+        title = excluded.title, started_at = excluded.started_at;
+    `)
   }
 
   remember(session: RegisteredSession): void {
-    this.db
-      .prepare(
-        `INSERT INTO live_sessions
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO live_sessions_v2
            (agent_session_id, session_id, agent, surface, cwd, transcript_path, pid, title, started_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(agent_session_id) DO UPDATE SET
-           pid = excluded.pid, title = excluded.title, surface = excluded.surface`,
-      )
-      .run(
-        session.agentSessionId,
-        session.sessionId,
-        session.agent,
-        session.surface,
-        session.cwd,
-        session.transcriptPath,
-        session.pid,
-        session.title,
-        session.startedAt,
-      )
+         ON CONFLICT(agent, agent_session_id) DO UPDATE SET
+           session_id = excluded.session_id, pid = excluded.pid,
+           title = excluded.title, surface = excluded.surface,
+           cwd = excluded.cwd, transcript_path = excluded.transcript_path`,
+        )
+        .run(
+          session.agentSessionId,
+          session.sessionId,
+          session.agent,
+          session.surface,
+          session.cwd,
+          session.transcriptPath,
+          session.pid,
+          session.title,
+          session.startedAt,
+        )
+      const legacy = this.db.prepare('SELECT agent FROM live_sessions WHERE agent_session_id = ?')
+        .get(session.agentSessionId) as { agent: string } | undefined
+      if (legacy !== undefined && legacy.agent !== session.agent) return
+      // An old release can still restart against this database. Its legacy table mirrors
+      // ordinary rows; a provider collision lives only in v2 because v1 cannot encode it.
+      this.db.prepare(`INSERT INTO live_sessions
+        (agent_session_id, session_id, agent, surface, cwd, transcript_path, pid, title, started_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(agent_session_id) DO UPDATE SET
+          session_id = excluded.session_id, surface = excluded.surface, cwd = excluded.cwd,
+          transcript_path = excluded.transcript_path, pid = excluded.pid,
+          title = excluded.title, started_at = excluded.started_at`)
+        .run(session.agentSessionId, session.sessionId, session.agent, session.surface,
+          session.cwd, session.transcriptPath, session.pid, session.title, session.startedAt)
+    })()
   }
 
-  forget(agentSessionId: string): void {
-    this.db.prepare('DELETE FROM live_sessions WHERE agent_session_id = ?').run(agentSessionId)
+  forget(agentSessionId: string, agent: string): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM live_sessions_v2 WHERE agent_session_id = ? AND agent = ?').run(agentSessionId, agent)
+      this.db.prepare('DELETE FROM live_sessions WHERE agent_session_id = ? AND agent = ?').run(agentSessionId, agent)
+    })()
   }
 
   all(): RegisteredSession[] {
-    const rows = this.db.prepare('SELECT * FROM live_sessions ORDER BY started_at ASC').all() as {
+    const rows = this.db.prepare('SELECT * FROM live_sessions_v2 ORDER BY started_at ASC').all() as {
       agent_session_id: string
       session_id: string
       agent: string

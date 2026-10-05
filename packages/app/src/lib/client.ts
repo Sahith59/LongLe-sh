@@ -239,6 +239,7 @@ export interface Hello {
   roots: string[]
   sessions: SessionSeed[]
   capabilities: {
+    ideHandoff?: boolean
     startSession: boolean
     stopSession: boolean
     parallelWorkspaces?: 'git-worktree'
@@ -281,6 +282,7 @@ export interface FolderHit {
 }
 
 export interface ClientCallbacks {
+  onIdeReturn?: (sessionId: string) => Promise<void>
   onState: (state: ConnectionState) => void
   /** True while durable replay is being folded into one calm, coherent UI snapshot. */
   onHydration?: (hydrating: boolean) => void
@@ -459,6 +461,18 @@ async function relayWire(url: string, identity: RelayIdentity, events: WireEvent
  * carries it sealed.
  */
 export function connect(token: string, store: Store, callbacks: ClientCallbacks) {
+  const idePending = new Map<string, { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void }>()
+  const ideRequest = (type: 'ideListWindows' | 'ideOpen', sessionId: string, windowId?: string): Promise<Record<string, unknown>> => {
+    const requestId = crypto.randomUUID()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { idePending.delete(requestId); reject(new Error('The laptop did not confirm the request. Refresh before trying again.')) }, 25_000)
+      idePending.set(requestId, { resolve: (value) => { clearTimeout(timer); resolve(value) }, reject: (error) => { clearTimeout(timer); reject(error) } })
+      if (!send({ v: PROTOCOL_VERSION, type, sessionId, requestId, ...(windowId ? { windowId } : {}) })) {
+        idePending.get(requestId)?.reject(new Error('Connect to your laptop first.'))
+        idePending.delete(requestId)
+      }
+    })
+  }
   let closed = false
   let wire: Wire | null = null
   let attempt = 0
@@ -469,6 +483,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
   const subscribed = new Set<string>()
   const pendingDelegationStarts = new Set<string>()
   const pendingSync = new Map<string, string>()
+  const ideReturnSync = new Map<string, { sessionId: string; requestId: string; timer: ReturnType<typeof setTimeout> }>()
   let syncGeneration = 0
   let hydrationTimer: ReturnType<typeof setTimeout> | null = null
   let identity: RelayIdentity | null = null
@@ -542,9 +557,38 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
 
   const handleText = (raw: string): void => {
     const message = JSON.parse(raw) as Record<string, unknown>
+    if (message.type === 'ideReturn' && typeof message.sessionId === 'string' && typeof message.requestId === 'string') {
+      if (!callbacks.onIdeReturn || ideReturnSync.size >= 64) return
+      const syncId = `ide-${message.requestId}`
+      if (ideReturnSync.has(syncId)) return
+      const timer = setTimeout(() => ideReturnSync.delete(syncId), 20_000)
+      ideReturnSync.set(syncId, { sessionId: message.sessionId, requestId: message.requestId, timer })
+      subscribe(message.sessionId, syncId)
+      return
+    }
+    if (message.type === 'sync.complete' && typeof message.syncId === 'string') {
+      const pending = ideReturnSync.get(message.syncId)
+      if (pending && pending.sessionId === message.sessionId) {
+        clearTimeout(pending.timer)
+        ideReturnSync.delete(message.syncId)
+        if (callbacks.onIdeReturn) void callbacks.onIdeReturn(pending.sessionId).then(() => {
+          if (!closed) send({ v: PROTOCOL_VERSION, type: 'ideReturnAck', sessionId: pending.sessionId, requestId: pending.requestId })
+        }).catch(() => { /* A hidden phone must not claim it opened the session. */ })
+        return
+      }
+    }
+    if ((message.type === 'ideWindows' || message.type === 'ideResult') && typeof message.requestId === 'string') {
+      const pending = idePending.get(message.requestId)
+      if (message.type === 'ideResult' && message.outcome !== 'opened') pending?.reject(new Error(typeof message.message === 'string' ? message.message : 'VS Code did not confirm opening.'))
+      else pending?.resolve(message)
+      idePending.delete(message.requestId)
+      return
+    }
     if (message.type === 'gap') {
       store.applyGap(String(message.sessionId))
-      if (pendingSync.has(String(message.sessionId))) subscribeForHydration(String(message.sessionId))
+      const ideSync = [...ideReturnSync].find(([, pending]) => pending.sessionId === message.sessionId)
+      if (ideSync) subscribe(String(message.sessionId), ideSync[0])
+      else if (pendingSync.has(String(message.sessionId))) subscribeForHydration(String(message.sessionId))
       else subscribe(String(message.sessionId))
       return
     }
@@ -617,6 +661,7 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       syncGeneration += 1
       const generation = syncGeneration
       pendingSync.clear()
+      subscribed.clear()
       store.beginHydration()
       callbacks.onHydration?.(true)
       store.seedSessions(hello.sessions ?? [])
@@ -696,8 +741,8 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       // On the relay's own origin /health is the relay itself — "home" would always answer.
       if (path === 'relay' && !relayOrigin) startHomeProbe()
       else stopHomeProbe()
-      // Every known session resumes from its own cursor, so nothing is missed or repeated.
-      for (const sessionId of subscribed) subscribe(sessionId)
+      // Wait for authoritative hello before replay. Replaying cached aliases here resurrects
+      // historical duplicate cards that the upgraded daemon deliberately stopped listing.
     },
     onText: handleText,
     onDown: (reason) => {
@@ -782,6 +827,12 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
   })()
 
   return {
+    listIdeWindows: async (sessionId: string): Promise<{ windowId: string; label: string }[]> => {
+      const result = await ideRequest('ideListWindows', sessionId)
+      return Array.isArray(result.windows) ? result.windows.filter((item): item is { windowId: string; label: string } =>
+        typeof item === 'object' && item !== null && typeof item.windowId === 'string' && typeof item.label === 'string') : []
+    },
+    openInIde: async (sessionId: string, windowId: string): Promise<void> => { await ideRequest('ideOpen', sessionId, windowId) },
     subscribe,
     startSession: (
       root: string,
@@ -932,6 +983,10 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       }),
     close: () => {
       closed = true
+      for (const pending of idePending.values()) pending.reject(new Error('The laptop connection was closed.'))
+      idePending.clear()
+      for (const pending of ideReturnSync.values()) clearTimeout(pending.timer)
+      ideReturnSync.clear()
       stopHomeProbe()
       if (retryTimer !== null) clearTimeout(retryTimer)
       if (hydrationTimer !== null) clearTimeout(hydrationTimer)

@@ -12,7 +12,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'node:child_process'
-import { dataDir } from './config.js'
+import { configPath, configuredRoots, dataDir, loadConfig, normalizeRoots } from './config.js'
 import { installPaths } from './install.js'
 
 export const SERVICE_LABEL = 'dev.longleash.daemon'
@@ -37,6 +37,7 @@ export interface ServiceContext {
   home?: string
   uid?: number
   runner?: CommandRunner
+  signalProcess?: (pid: number, signal: NodeJS.Signals) => void
 }
 
 export interface ServicePaths {
@@ -65,6 +66,7 @@ interface ResolvedContext {
   home: string
   uid: number
   runner: CommandRunner
+  signalProcess: (pid: number, signal: NodeJS.Signals) => void
   paths: ServicePaths
 }
 
@@ -109,7 +111,8 @@ export function renderLaunchAgent(paths: ServicePaths, env: NodeJS.ProcessEnv = 
   <key>ProgramArguments</key>
   <array>
     <string>${xml(paths.wrapper)}</string>
-    <string>run</string>
+    <string>__service-run</string>
+${serviceRoots(paths).map((root) => `    <string>${xml(root)}</string>`).join('\n')}
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -154,7 +157,7 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=${systemdQuote(paths.wrapper)} run
+ExecStart=${systemdQuote(paths.wrapper)} __service-run ${serviceRoots(paths).map(systemdQuote).join(' ')}
 EnvironmentFile=${systemdPath(paths.environment)}
 WorkingDirectory=${systemdPath(home)}
 UMask=0077
@@ -177,6 +180,14 @@ PATH=${environmentQuote(path)}
 LONGLEASH_DATA=${environmentQuote(paths.data)}
 LONGLEASH_SERVICE=1
 `
+}
+
+function serviceRoots(paths: ServicePaths): string[] {
+  const roots = normalizeRoots(configuredRoots(loadConfig(configPath({ LONGLEASH_DATA: paths.data }))))
+  if (roots.some((root) => /[\u0000-\u001f\u007f-\u009f]/.test(root))) {
+    throw new Error('Allowed project folders may not contain control characters in a service definition.')
+  }
+  return roots
 }
 
 export function serviceState(context: ServiceContext = {}): ServiceState {
@@ -208,6 +219,31 @@ export function serviceState(context: ServiceContext = {}): ServiceState {
   }
 }
 
+/** A matching health response alone can come from a surviving old daemon. */
+export function serviceProcessReady(context: ServiceContext = {}): boolean {
+  const resolved = resolveContext(context)
+  if (!managedDefinitionExists(resolved.paths.definition)) return false
+  const lock = join(resolved.paths.data, 'daemon.lock')
+  if (!existsSync(lock) || lstatSync(lock).isSymbolicLink()) return false
+  let owner: { kind?: unknown; pid?: unknown; token?: unknown }
+  try { owner = JSON.parse(readFileSync(lock, 'utf8')) as typeof owner } catch { return false }
+  if (owner.kind !== 'longleash-daemon' || !Number.isSafeInteger(owner.pid) || (owner.pid as number) <= 1 ||
+      typeof owner.token !== 'string' || owner.token.length === 0) return false
+  const manager = resolved.platform === 'darwin'
+    ? run(resolved, '/bin/launchctl', ['print', serviceTarget(resolved)])
+    : run(resolved, 'systemctl', ['--user', 'show', '--property=MainPID', '--value', SYSTEMD_UNIT])
+  if (manager.status !== 0) return false
+  const pid = resolved.platform === 'darwin'
+    ? manager.stdout.match(/^\s*pid = (\d+)\s*$/m)?.[1]
+    : manager.stdout.trim()
+  if (pid === undefined || Number(pid) !== owner.pid) return false
+  try {
+    if (lstatSync(lock).isSymbolicLink()) return false
+    const current = JSON.parse(readFileSync(lock, 'utf8')) as typeof owner
+    return current.kind === owner.kind && current.pid === owner.pid && current.token === owner.token
+  } catch { return false }
+}
+
 export function installService(context: ServiceContext = {}): ServiceState {
   const resolved = resolveContext(context)
   assertManagedWrapper(resolved.paths.wrapper)
@@ -221,8 +257,11 @@ export function startService(context: ServiceContext = {}): ServiceState {
   const resolved = resolveContext(context)
   assertServiceInstallation(resolved)
   if (resolved.platform === 'darwin') {
-    if (launchdLoaded(resolved)) requireSuccess(resolved, '/bin/launchctl', ['kickstart', '-k', serviceTarget(resolved)])
-    else bootstrapLaunchAgent(resolved)
+    if (launchdLoaded(resolved)) {
+      requireSuccess(resolved, '/bin/launchctl', ['bootout', serviceTarget(resolved)])
+    }
+    retireOwnedOrphan(resolved)
+    bootstrapLaunchAgent(resolved)
   } else {
     requireSuccess(resolved, 'systemctl', ['--user', 'start', SYSTEMD_UNIT])
   }
@@ -237,6 +276,7 @@ export function stopService(context: ServiceContext = {}): ServiceState {
       assertManagedDefinition(resolved.paths.definition)
       requireSuccess(resolved, '/bin/launchctl', ['bootout', serviceTarget(resolved)])
     }
+    if (managedDefinitionExists(resolved.paths.definition)) retireOwnedOrphan(resolved)
   } else if (run(resolved, 'systemctl', ['--user', 'is-active', '--quiet', SYSTEMD_UNIT]).status === 0) {
     assertManagedDefinition(resolved.paths.definition)
     requireSuccess(resolved, 'systemctl', ['--user', 'stop', SYSTEMD_UNIT])
@@ -248,8 +288,11 @@ export function restartService(context: ServiceContext = {}): ServiceState {
   const resolved = resolveContext(context)
   assertServiceInstallation(resolved)
   if (resolved.platform === 'darwin') {
-    if (launchdLoaded(resolved)) requireSuccess(resolved, '/bin/launchctl', ['kickstart', '-k', serviceTarget(resolved)])
-    else bootstrapLaunchAgent(resolved)
+    if (launchdLoaded(resolved)) {
+      requireSuccess(resolved, '/bin/launchctl', ['bootout', serviceTarget(resolved)])
+    }
+    retireOwnedOrphan(resolved)
+    bootstrapLaunchAgent(resolved)
   } else {
     requireSuccess(resolved, 'systemctl', ['--user', 'restart', SYSTEMD_UNIT])
   }
@@ -264,7 +307,10 @@ export function uninstallService(context: ServiceContext = {}): ServiceState {
     if (loaded && !installed) {
       throw new Error(`Refusing to stop an unowned launchd job without a managed definition: ${resolved.paths.definition}`)
     }
-    if (loaded) requireSuccess(resolved, '/bin/launchctl', ['bootout', serviceTarget(resolved)])
+    if (loaded) {
+      requireSuccess(resolved, '/bin/launchctl', ['bootout', serviceTarget(resolved)])
+    }
+    if (installed) retireOwnedOrphan(resolved)
     if (installed) rmSync(resolved.paths.definition)
   } else {
     if (installed) {
@@ -303,7 +349,10 @@ function installLaunchAgent(context: ResolvedContext): void {
   if (wasLoaded && previous === null) {
     throw new Error(`Refusing to replace an unowned launchd job without a managed definition: ${context.paths.definition}`)
   }
-  if (wasLoaded) requireSuccess(context, '/bin/launchctl', ['bootout', serviceTarget(context)])
+  if (wasLoaded) {
+    requireSuccess(context, '/bin/launchctl', ['bootout', serviceTarget(context)])
+  }
+  if (previous !== null) retireOwnedOrphan(context)
   try {
     writeManagedAtomically(context.paths.definition, content, 0o600, (temporary) => {
       requireSuccess(context, '/usr/bin/plutil', ['-lint', temporary])
@@ -384,6 +433,7 @@ function resolveContext(context: ServiceContext): ResolvedContext {
     home,
     uid: uid!,
     runner: context.runner ?? defaultRunner,
+    signalProcess: context.signalProcess ?? ((pid, signal) => process.kill(pid, signal)),
     paths: servicePaths({ env, platform, home }),
   }
 }
@@ -434,6 +484,58 @@ function serviceTarget(context: ResolvedContext): string {
 
 function launchdLoaded(context: ResolvedContext): boolean {
   return run(context, '/bin/launchctl', ['print', serviceTarget(context)]).status === 0
+}
+
+/** Retire only a daemon proved to be an orphan from this managed installation. */
+function retireOwnedOrphan(context: ResolvedContext): void {
+  const lock = join(context.paths.data, 'daemon.lock')
+  if (!existsSync(lock) || lstatSync(lock).isSymbolicLink()) return
+  let owner: { kind?: unknown; pid?: unknown; token?: unknown }
+  try { owner = JSON.parse(readFileSync(lock, 'utf8')) as typeof owner } catch { return }
+  if (owner.kind !== 'longleash-daemon' || !Number.isSafeInteger(owner.pid) ||
+      (owner.pid as number) <= 1 || owner.pid === process.pid ||
+      typeof owner.token !== 'string' || owner.token.length === 0) return
+  const pid = owner.pid as number
+  const token = owner.token
+  const home = installPaths(context.env).home
+  const daemonPath = new RegExp(`(?:^|\\s)${escapeRegex(home)}/(?:current|releases/[^/\\s]+)/node_modules/@longleash/cli/runtime/daemon/bin/longleashd\\.mjs(?:\\s|$)`)
+  const verified = (): boolean => {
+    if (!existsSync(lock) || lstatSync(lock).isSymbolicLink()) return false
+    let current: { kind?: unknown; pid?: unknown; token?: unknown }
+    try { current = JSON.parse(readFileSync(lock, 'utf8')) as typeof current } catch { return false }
+    if (current.kind !== 'longleash-daemon' || current.pid !== pid || current.token !== token) return false
+    const result = run(context, '/bin/ps', ['-p', String(pid), '-o', 'uid=', '-o', 'ppid=', '-o', 'command='])
+    if (result.status !== 0) return false
+    const match = result.stdout.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/s)
+    if (match === null || Number(match[1]) !== context.uid || Number(match[2]) !== 1 ||
+      !/^(?:\S*\/)?node\s/.test(match[3] ?? '') || !daemonPath.test(match[3] ?? '')) return false
+    try {
+      const afterPs = JSON.parse(readFileSync(lock, 'utf8')) as typeof current
+      return !lstatSync(lock).isSymbolicLink() && afterPs.kind === 'longleash-daemon' && afterPs.pid === pid && afterPs.token === token
+    } catch { return false }
+  }
+  // launchd may return from bootout just before the former CLI child is reparented.
+  for (let attempt = 0; attempt < 5 && !verified(); attempt += 1) pause(100)
+  if (!verified()) return
+  context.signalProcess(pid, 'SIGTERM')
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (!verified()) return
+    pause(100)
+  }
+  if (verified()) context.signalProcess(pid, 'SIGKILL')
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (!verified()) return
+    pause(100)
+  }
+  throw new Error(`Verified orphan LongLeash daemon ${pid} did not exit after bounded shutdown.`)
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function pause(milliseconds: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
 }
 
 function lingerEnabled(context: ResolvedContext): boolean {

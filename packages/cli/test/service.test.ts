@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -8,6 +8,7 @@ import {
   renderSystemdEnvironment,
   renderSystemdUnit,
   restartService,
+  serviceProcessReady,
   servicePaths,
   serviceState,
   startService,
@@ -29,6 +30,10 @@ function fixture(platform: 'darwin' | 'linux') {
     LONGLEASH_BIN_DIR: join(root, 'bin'),
   }
   const paths = servicePaths({ platform, home, env })
+  const project = join(root, 'project folder')
+  mkdirSync(project, { recursive: true })
+  mkdirSync(paths.data, { recursive: true })
+  writeFileSync(join(paths.data, 'config.json'), JSON.stringify({ allowedRoots: [project] }))
   mkdirSync(join(root, 'bin'), { recursive: true })
   writeFileSync(paths.wrapper, '#!/bin/sh\n# Managed by @longleash/cli\nexit 0\n', { mode: 0o700 })
   let loaded = false
@@ -58,7 +63,7 @@ function fixture(platform: 'darwin' | 'linux') {
     return { status: 127, stdout: '', stderr: `unexpected command: ${call}` }
   }
   const context: ServiceContext = { platform, home, uid: 501, env, runner }
-  return { root, home, env, paths, context, calls, setLoaded: (value: boolean) => { loaded = value }, setLinger: (value: boolean) => { linger = value } }
+  return { root, home, env, paths, project, context, calls, setLoaded: (value: boolean) => { loaded = value }, setLinger: (value: boolean) => { linger = value } }
 }
 
 describe('macOS per-user service lifecycle', () => {
@@ -73,6 +78,8 @@ describe('macOS per-user service lifecycle', () => {
     const plist = readFileSync(f.paths.definition, 'utf8')
     expect(plist).toContain('Managed by @longleash/cli')
     expect(plist).toContain(f.paths.wrapper)
+    expect(plist).toContain('__service-run')
+    expect(plist).toContain(f.project)
     expect(plist).toContain('<key>KeepAlive</key>')
     expect(plist).not.toContain('token')
 
@@ -82,7 +89,7 @@ describe('macOS per-user service lifecycle', () => {
     expect(uninstallService(f.context)).toMatchObject({ installed: false, loaded: false })
     expect(existsSync(sentinel)).toBe(true)
     expect(f.calls.some((call) => call.includes('bootstrap gui/501'))).toBe(true)
-    expect(f.calls.some((call) => call.includes('kickstart -k gui/501/dev.longleash.daemon'))).toBe(true)
+    expect(f.calls.some((call) => call.includes('bootout gui/501/dev.longleash.daemon'))).toBe(true)
   })
 
   it('refuses an unmanaged, symlinked, or loaded-but-unowned launch agent', () => {
@@ -169,6 +176,67 @@ describe('macOS per-user service lifecycle', () => {
     expect(installService({ ...f.context, runner: racing })).toMatchObject({ loaded: true, active: true })
     expect(bootstrapAttempts).toBe(1)
   })
+
+  it('retires only the verified orphan from its own daemon lock before restarting', () => {
+    const f = fixture('darwin')
+    installService(f.context)
+    writeFileSync(join(f.paths.data, 'daemon.lock'), JSON.stringify({ kind: 'longleash-daemon', pid: 48731, token: 'test' }))
+    let alive = true
+    const signals: string[] = []
+    const daemon = join(f.env.LONGLEASH_INSTALL_HOME, 'current', 'node_modules', '@longleash', 'cli', 'runtime', 'daemon', 'bin', 'longleashd.mjs')
+    const runner: CommandRunner = (file, args, options) => {
+      if (file === '/bin/ps') return { status: alive ? 0 : 1, stdout: alive ? `501 1 ${process.execPath} ${daemon} ${f.project}\n` : '', stderr: '' }
+      return f.context.runner!(file, args, options)
+    }
+    restartService({ ...f.context, runner, signalProcess: (_pid, signal) => { signals.push(signal); alive = false } })
+    expect(signals).toEqual(['SIGTERM'])
+
+    f.setLoaded(false)
+    alive = true
+    signals.length = 0
+    startService({ ...f.context, runner, signalProcess: (_pid, signal) => { signals.push(signal); alive = false } })
+    expect(signals).toEqual(['SIGTERM'])
+
+    alive = true
+    signals.length = 0
+    restartService({ ...f.context, runner, signalProcess: (_pid, signal) => {
+      signals.push(signal)
+      if (signal === 'SIGKILL') alive = false
+    } })
+    expect(signals).toEqual(['SIGTERM', 'SIGKILL'])
+
+    alive = true
+    signals.length = 0
+    const foreign: CommandRunner = (file, args, options) => {
+      if (file === '/bin/ps') return { status: 0, stdout: `501 1 /usr/bin/unrelated ${daemon}\n`, stderr: '' }
+      return f.context.runner!(file, args, options)
+    }
+    // A reference to the daemon path in an unrelated process argument is not ownership.
+    restartService({ ...f.context, runner: foreign, signalProcess: (_pid, signal) => signals.push(signal) })
+    expect(signals).toEqual([])
+  })
+
+  it('does not signal a PID after its daemon lock is replaced during verification', () => {
+    const f = fixture('darwin')
+    installService(f.context)
+    f.setLoaded(false)
+    const lock = join(f.paths.data, 'daemon.lock')
+    writeFileSync(lock, JSON.stringify({ kind: 'longleash-daemon', pid: 48731, token: 'old' }))
+    const daemon = join(f.env.LONGLEASH_INSTALL_HOME, 'current', 'node_modules', '@longleash', 'cli', 'runtime', 'daemon', 'bin', 'longleashd.mjs')
+    let psCalls = 0
+    const runner: CommandRunner = (file, args, options) => {
+      if (file === '/bin/ps') {
+        psCalls += 1
+        writeFileSync(lock, JSON.stringify({ kind: 'longleash-daemon', pid: 48731, token: 'new' }))
+        return { status: 0, stdout: `501 1 ${process.execPath} ${daemon} ${f.project}\n`, stderr: '' }
+      }
+      return f.context.runner!(file, args, options)
+    }
+    const signals: string[] = []
+    restartService({ ...f.context, runner, signalProcess: (_pid, signal) => signals.push(signal) })
+    expect(psCalls).toBeGreaterThan(0)
+    expect(signals).toEqual([])
+  })
 })
 
 describe('Linux systemd user-service lifecycle', () => {
@@ -184,7 +252,7 @@ describe('Linux systemd user-service lifecycle', () => {
     const unit = readFileSync(f.paths.definition, 'utf8')
     expect(unit).toContain('Restart=on-failure')
     expect(unit).toContain('StartLimitBurst=5')
-    expect(unit).toContain(`ExecStart="${f.paths.wrapper}" run`)
+    expect(unit).toContain(`ExecStart="${f.paths.wrapper}" __service-run "${realpathSync(f.project)}"`)
     expect(unit).toContain(`EnvironmentFile=${f.paths.environment}`)
     expect(unit).toContain(`WorkingDirectory=${f.home}`)
     expect(unit).not.toMatch(/sudo|root/i)
@@ -268,12 +336,32 @@ describe('Linux systemd user-service lifecycle', () => {
 describe('service definition escaping and input boundaries', () => {
   it('escapes paths and rejects environment control characters', () => {
     const f = fixture('darwin')
-    const custom = { ...f.paths, wrapper: '/tmp/A&B<daemon>', data: '/tmp/data&more' }
+    const custom = { ...f.paths, wrapper: '/tmp/A&B<daemon>' }
     expect(renderLaunchAgent(custom, { HOME: f.home, PATH: '/a&b' })).toContain('/tmp/A&amp;B&lt;daemon&gt;')
     expect(() => renderLaunchAgent(f.paths, { HOME: f.home, PATH: '/bin\nEVIL=1' })).toThrow('Unsafe PATH')
 
     const linux = fixture('linux')
     expect(renderSystemdUnit({ ...linux.paths, wrapper: '/tmp/a%b"c' }, linux.home)).toContain('/tmp/a%%b\\"c')
     expect(() => renderSystemdEnvironment(linux.paths, { HOME: linux.home, PATH: '/bin\nEVIL=1' })).toThrow('Unsafe PATH')
+  })
+})
+
+describe('managed service readiness', () => {
+  it.each(['darwin', 'linux'] as const)('requires the %s manager PID to own the daemon lock', (platform) => {
+    const f = fixture(platform)
+    installService(f.context)
+    writeFileSync(join(f.paths.data, 'daemon.lock'), JSON.stringify({ kind: 'longleash-daemon', pid: 12345, token: 'owned' }))
+    const runner: CommandRunner = (file, args, options) => {
+      if (platform === 'darwin' && file === '/bin/launchctl' && args[0] === 'print') {
+        return { status: 0, stdout: 'state = running\n\tpid = 12345\n', stderr: '' }
+      }
+      if (platform === 'linux' && file === 'systemctl' && args.includes('show')) {
+        return { status: 0, stdout: '12345\n', stderr: '' }
+      }
+      return f.context.runner!(file, args, options)
+    }
+    expect(serviceProcessReady({ ...f.context, runner })).toBe(true)
+    writeFileSync(join(f.paths.data, 'daemon.lock'), JSON.stringify({ kind: 'longleash-daemon', pid: 54321, token: 'orphan' }))
+    expect(serviceProcessReady({ ...f.context, runner })).toBe(false)
   })
 })

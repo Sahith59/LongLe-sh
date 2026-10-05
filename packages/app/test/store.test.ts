@@ -602,8 +602,8 @@ describe('activity', () => {
     expect(users[1]?.text.trim()).toBe('— reopened —')
   })
 
-describe('a session the daemon no longer knows about must stop looking alive', () => {
-  it('clears ghosts left by a previous daemon run, and their approvals', () => {
+describe('hello is the authoritative phone inventory', () => {
+  it('removes ghosts and old aliases left by a previous daemon run, including their approvals and cursors', () => {
     const store = createStore()
     // How it happens in the field: the daemon died holding these, so no session.ended was
     // ever written and the phone kept showing them as working for days.
@@ -625,29 +625,22 @@ describe('a session the daemon no longer knows about must stop looking alive', (
     ] as never)
 
     const after = stateOf(store)
-    expect(after.sessions['ext_ghost']?.status).toBe('ended')
-    expect(after.sessions['ext_ghost']?.live).toBe(false)
+    expect(after.sessions['ext_ghost']).toBeUndefined()
     expect(after.sessions['ext_live']?.status).toBe('running')
     // Its approval died with it — nothing could ever answer it.
     expect([...after.approvals.values()].some((a) => a.sessionId === 'ext_ghost')).toBe(false)
 
-    // Historical replay can restore the last conversation status, but cannot manufacture a
-    // process the authoritative hello says does not exist.
-    store.apply(ev({
-      v: 1, seq: 2, sessionId: 'ext_ghost', ts: 1, type: 'session.status',
-      payload: { status: 'waiting' },
-    }))
-    expect(stateOf(store).sessions['ext_ghost']).toMatchObject({ status: 'waiting', live: false })
+    expect(store.cursors()['ext_ghost']).toBeUndefined()
   })
 
-  it('does not resurrect or discard a session that legitimately finished', () => {
+  it('drops a finished card only when the daemon omits it from the next hello', () => {
     const store = createStore()
     store.seedSessions([
       { sessionId: 'ext_done', agent: 'claude', cwd: '/x', title: 'done', origin: 'terminal', status: 'ended' },
     ] as never)
-    store.seedSessions([] as never)
-    // Still present to read, still ended — the conversation is worth keeping.
     expect(stateOf(store).sessions['ext_done']?.status).toBe('ended')
+    store.seedSessions([] as never)
+    expect(stateOf(store).sessions['ext_done']).toBeUndefined()
   })
 })
 

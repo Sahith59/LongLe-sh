@@ -36,7 +36,7 @@ describe('following the machine onto a new network', () => {
         headers: { 'content-type': 'application/json', 'x-longleash-ide': ide.secret },
         body: JSON.stringify({
           v: 1, type: 'ide.hello', clientInstanceId: 'real-daemon', protocol: { min: 1, max: 1 },
-          extension: { version: '0.0.2', build: '0.0.2' },
+          extension: { version: '0.0.3', build: '0.0.3' },
           vscode: { version: '1.131.0', uriScheme: 'vscode', remoteAuthority: null,
             workspaceTrusted: true, windowFocused: true,
             workspaceFolders: [{ uri: `file://${project}`, canonicalPath: project }] },

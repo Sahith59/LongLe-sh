@@ -1,5 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { IdeHandoff, type IdeHandoffProps } from './components/IdeHandoff.js'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   ArrowUp,
@@ -120,6 +121,7 @@ export default function App() {
   const [roots, setRoots] = useState<string[]>([])
   const [folders, setFolders] = useState<FolderHit[]>([])
   const [settingsCatalog, setSettingsCatalog] = useState<AgentSettingsCatalog | undefined>()
+  const [ideAvailable, setIdeAvailable] = useState(false)
   const [settingsSessionId, setSettingsSessionId] = useState<string | null>(null)
   const [settingsUpdate, setSettingsUpdate] = useState<SettingsUpdateState | null>(null)
   const settingsUpdateRef = useRef<string | null>(null)
@@ -291,11 +293,19 @@ export default function App() {
       setOpenSessionId(delegation.sourceSessionId)
     }
     const client = connect(token, store, {
+      onIdeReturn: async (sessionId) => {
+        if (document.visibilityState !== 'visible') throw new Error('Phone is not visible.')
+        setOpenSessionId(sessionId)
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        if (document.visibilityState !== 'visible') throw new Error('Phone is not visible.')
+        if (![...document.querySelectorAll('[data-session-id]')].some((element) => element.getAttribute('data-session-id') === sessionId)) throw new Error('The requested conversation has not rendered.')
+      },
       onState: setState,
       onHydration: setHydrating,
       onHello: (hello: Hello) => {
         setRoots(hello.roots)
         setSettingsCatalog(hello.capabilities.sessionSettings)
+        setIdeAvailable(hello.capabilities.ideHandoff === true)
         const restoredDelegations = hello.delegations ?? []
         setDelegations(
           Object.fromEntries(restoredDelegations.map((delegation) => [delegation.delegationId, delegation])),
@@ -587,6 +597,10 @@ export default function App() {
               onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
               onTakeOver={(text) => clientRef.current?.takeOver(openSession.sessionId, text) ?? false}
               onReclaim={() => clientRef.current?.reclaimSession(openSession.sessionId) ?? false}
+              {...(ideAvailable ? { ideHandoff: {
+                listWindows: () => clientRef.current?.listIdeWindows(openSession.sessionId) ?? Promise.reject(new Error('Connect to your laptop first.')),
+                openWindow: (windowId) => clientRef.current?.openInIde(openSession.sessionId, windowId) ?? Promise.reject(new Error('Connect to your laptop first.')),
+              } } : {})}
               onRename={(title) => clientRef.current?.renameSession(openSession.sessionId, title) ?? false}
               onSetGate={(gate) => clientRef.current?.setGate(openSession.sessionId, gate)}
               onTune={() => {
@@ -1611,6 +1625,7 @@ function delegationCounts(delegations: DelegationSummary[], sourceSessionId: str
 }
 
 export function DetailScreen({
+  ideHandoff,
   session,
   approvals,
   connected,
@@ -1634,6 +1649,7 @@ export function DetailScreen({
   onOpenSession,
   onReviewReturn,
 }: {
+  ideHandoff?: Omit<IdeHandoffProps, 'connected'>
   session: SessionView
   approvals: PendingApproval[]
   connected: boolean
@@ -1707,7 +1723,7 @@ export function DetailScreen({
 
   return (
     <Screen depth={1} still={still}>
-      <main className="shell hasdock">
+      <main className="shell hasdock" data-session-id={session.sessionId}>
         <Banners diagnostic={diagnostic} error={error} onClearError={onClearError} />
 
         <div className="detailhead">
@@ -1853,6 +1869,7 @@ export function DetailScreen({
               onRelease={onStop}
             />
           ) : null}
+          {ideHandoff ? <IdeHandoff connected={connected} {...ideHandoff} /> : null}
         </div>
 
         {observedOnly ? (

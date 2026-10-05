@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -149,13 +150,16 @@ describe('managed npm installation boundary', () => {
     mkdirSync(join(packageRoot, 'runtime', 'app', 'dist'), { recursive: true })
     writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: '@longleash/cli', version: '1.2.3' }))
     writeFileSync(join(packageRoot, 'bin', 'longleash.mjs'), '')
-    writeFileSync(join(packageRoot, 'runtime', 'daemon', 'bin', 'longleashd.mjs'), '')
+    writeFileSync(join(packageRoot, 'runtime', 'daemon', 'bin', 'longleashd.mjs'), 'console.log(JSON.stringify({ pid: process.pid, args: process.argv.slice(2) }))\n')
     writeFileSync(join(packageRoot, 'runtime', 'app', 'dist', 'index.html'), '')
 
     prepareManagedInstall('1.2.3', env).activate()
     const executable = readFileSync(paths.wrapper, 'utf8')
     expect(executable).toContain(`exec '${process.execPath}'`)
     expect(executable).not.toContain('exec node ')
+    const service = spawnSync(paths.wrapper, ['__service-run', join(root, 'project folder')], { encoding: 'utf8' })
+    expect(service.status).toBe(0)
+    expect(JSON.parse(service.stdout)).toEqual({ pid: service.pid, args: [join(root, 'project folder')] })
   })
 
   it('migrates the exact legacy installer wrapper and restores it on uninstall', () => {

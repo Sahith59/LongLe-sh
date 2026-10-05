@@ -1,5 +1,8 @@
 # D3 release readiness — 2026-10-04
 
+**Current 2026-10-05 work:** universal session identity, browser reconnect cleanup, managed service lifecycle and exact phone ↔ LongLeash VS Code editor control are implemented in the rc.14 / extension 0.0.3 candidate. [Current implementation and gates](IDE-CONTROL-IMPLEMENTATION-2026-10.md) supersedes the older ordering and read-only preview limitations below. Physical phone and Marketplace installation acceptance are still open; Workstream D is not declared closed.
+
+
 **Field update, 2026-10-05:** rc.12 was subsequently published and deployed. The owner's physical iPhone then exposed repeated empty Claude VS Code cards, so D remains open. The rc.13 correction and read-only companion preview are documented in [VS Code field correction](VSCODE-LIVE-INVENTORY-2026-10.md); the historical rc.12 candidate figures below are retained as the earlier checkpoint. The owner must retest the real provider matrix after rc.13 is live.
 
 **Release update:** rc.13 is now on npm and deployed at build `37de078`; its owner-preview VSIX is attached to the GitHub prerelease and installed locally. Automated deployment remains blocked by D1 token scope, while the manual exact-commit production matrix passed. The installed daemon is healthy after stopping an orphan rc.12 process. Physical phone and exact IDE handoff acceptance remain open.

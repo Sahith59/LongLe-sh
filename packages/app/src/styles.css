@@ -3748,3 +3748,7 @@ body {
 .pair-action:active { background: var(--key-hot-hi); }
 .pair-action:disabled { opacity: .5; cursor: default; }
 .pair-verify .pair-private { margin-top: 24px; font-size: 14px; color: var(--ink-2); }
+.ide-handoff { display: grid; gap: 10px; margin-top: 12px; }
+.ide-handoff p { color: var(--ink-2); font-size: 14px; line-height: 1.5; margin: 0; }
+.ide-handoff button { min-height: 44px; white-space: normal; }
+.ide-handoff button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }

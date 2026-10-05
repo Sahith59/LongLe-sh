@@ -1,6 +1,8 @@
 # LongLeash VS Code companion — Product and engineering plan
 
-**2026-10-05 update:** the `0.0.2` read-only companion now receives authenticated live,
+**Current work:** the owner has prioritized universal identity repair and the complete installable extension before another physical phone test. The exact supported destination is the daemon-backed LongLeash editor for both providers. See [implementation/gates](IDE-CONTROL-IMPLEMENTATION-2026-10.md) and [current official API research](VSCODE-INTEGRATION-RESEARCH-2026-10.md). Workstream D and Marketplace publication are not yet closed.
+
+**Prior 2026-10-05 update:** the `0.0.2` read-only companion now receives authenticated live,
 workspace-scoped full snapshots from a separate loopback endpoint. The physical-phone duplicate
 field report also exposed empty Claude VS Code hook IDs; see
 [field evidence and rollout gates](VSCODE-LIVE-INVENTORY-2026-10.md). Full V1 and V2 handoff

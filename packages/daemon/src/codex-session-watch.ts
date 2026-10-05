@@ -93,7 +93,9 @@ export function inspectCodexTranscript(
     const snapshot: ObservedTranscriptBlock[] = []
     for (let index = lines.length - 1; index >= 0; index -= 1) {
       const line = lines[index]
-      if (!line?.includes('"role":"user"')) continue
+      // A compaction record may be tens of MB. The structured pass must obey the
+      // same line limit as snapshot parsing; the bounded string fallback handles it.
+      if (!line || line.length > 1_000_000 || !line.includes('"role":"user"')) continue
       try {
         const record = JSON.parse(line) as { type?: unknown; payload?: Record<string, unknown> }
         if (record.type !== 'response_item' || record.payload?.type !== 'message' || record.payload.role !== 'user') continue
@@ -252,7 +254,9 @@ function latestUserText(source: string): string | null {
       const text = quoteAt < 0 ? null : jsonStringAt(source, quoteAt)
       if (text !== null && titleFrom(text) !== null) return text
     }
-    before = roleAt
+    // lastIndexOf includes its starting position. A rejected IDE-only user block must
+    // move before this match or the timer loops forever and starves /health.
+    before = roleAt - 1
   }
   return null
 }

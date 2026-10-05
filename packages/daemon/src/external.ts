@@ -123,10 +123,11 @@ export interface ExternalSessionsOptions {
   }) => void
   workspace?: WorkspaceLeaseManager
   /** Reuse the original LongLeash card when a phone conversation moves to a native surface. */
-  resolveSessionId?: (agentSessionId: string) => string | undefined
+  resolveSessionId?: (agentSessionId: string, agent: TerminalAgent) => string | undefined
 }
 
 interface ExternalSession {
+  agentSessionId: string
   sessionId: string
   /** Which CLI this session belongs to — a person running several must be able to tell. */
   agent: TerminalAgent
@@ -190,6 +191,7 @@ interface Waiting {
 }
 
 const newId = (prefix: string) => `${prefix}_${randomBytes(9).toString('base64url')}`
+const nativeKey = (agent: TerminalAgent, sessionId: string) => `${agent}:${sessionId}`
 
 /**
  * Claude Code's AskUserQuestion tool, read out of the hook payload. Anything that does
@@ -243,7 +245,7 @@ export class ExternalSessions {
   private readonly stopTimeoutMs: number
   private readonly onEnded: ExternalSessionsOptions['onEnded']
   private readonly workspace: WorkspaceLeaseManager | undefined
-  private readonly resolveSessionId: ((agentSessionId: string) => string | undefined) | undefined
+  private readonly resolveSessionId: ((agentSessionId: string, agent: TerminalAgent) => string | undefined) | undefined
   private readonly unsubscribeWorkspace: (() => void) | undefined
 
   constructor(opts: ExternalSessionsOptions) {
@@ -350,9 +352,11 @@ export class ExternalSessions {
   private readopt(): void {
     if (this.registry === undefined) return
     for (const row of this.registry.all()) {
+      const agent = terminalAgentOf(row.agent)
+      const preferredSessionId = this.resolveSessionId?.(row.agentSessionId, agent) ?? row.sessionId
       const alive = row.pid !== null && this.isClaudeProcess(row.pid)
       if (!alive) {
-        this.registry.forget(row.agentSessionId)
+        this.registry.forget(row.agentSessionId, row.agent)
         this.emit(row.sessionId, { type: 'session.status', payload: { status: 'ended', live: false } })
         this.emit(row.sessionId, {
           type: 'session.ended',
@@ -361,14 +365,15 @@ export class ExternalSessions {
         continue
       }
       const session: ExternalSession = {
-        sessionId: row.sessionId,
-        agent: terminalAgentOf(row.agent),
+        agentSessionId: row.agentSessionId,
+        sessionId: preferredSessionId,
+        agent,
         surface: surfaceOf(row.surface),
         cwd: row.cwd,
         transcriptPath: row.transcriptPath,
         status: 'running',
         startedAt: row.startedAt,
-        title: this.eventLog.aliasFor(row.sessionId) ?? row.title,
+        title: this.eventLog.aliasFor(preferredSessionId) ?? row.title,
         pid: row.pid,
         named: true,
         permissionMode: null,
@@ -380,7 +385,8 @@ export class ExternalSessions {
         suspended: false,
         observedOnly: false,
       }
-      this.sessions.set(row.agentSessionId, session)
+      this.sessions.set(nativeKey(session.agent, row.agentSessionId), session)
+      if (preferredSessionId !== row.sessionId) this.persist(row.agentSessionId, session)
       this.claimWorkspace(session)
       session.timer = setInterval(() => this.drain(session), this.pollMs)
       session.timer.unref?.()
@@ -471,7 +477,7 @@ export class ExternalSessions {
   async stop(externalSessionId: string, decidedBy: string): Promise<boolean> {
     const entry = [...this.sessions.entries()].find(([, s]) => s.sessionId === externalSessionId)
     if (!entry) return false
-    const [claudeSessionId, session] = entry
+    const [, session] = entry
     if (session.observedOnly) return false
 
     /**
@@ -487,7 +493,7 @@ export class ExternalSessions {
         type: 'stream.delta',
         payload: { kind: 'text', text: '— this session is no longer running —' },
       })
-      this.sessionEnd(claudeSessionId)
+      this.sessionEnd(session.agentSessionId, session.agent)
       return true
     }
     let resumedForStop = false
@@ -537,7 +543,7 @@ export class ExternalSessions {
     })
     // SessionEnd normally arrives from the dying process's own hook; ending it
     // here as well is idempotent and keeps the phone honest if that hook never runs.
-    this.sessionEnd(claudeSessionId)
+    this.sessionEnd(session.agentSessionId, session.agent)
     return true
   }
 
@@ -850,14 +856,15 @@ export class ExternalSessions {
     return true
   }
 
-  sessionEnd(claudeSessionId: string): void {
-    const session = this.sessions.get(claudeSessionId)
+  sessionEnd(claudeSessionId: string, agent: TerminalAgent = 'claude'): void {
+    const key = nativeKey(agent, claudeSessionId)
+    const session = this.sessions.get(key)
     if (!session) return
     this.drain(session)
     if (session.timer !== null) clearInterval(session.timer)
     session.status = 'ended'
-    this.sessions.delete(claudeSessionId)
-    this.registry?.forget(claudeSessionId)
+    this.sessions.delete(key)
+    this.registry?.forget(claudeSessionId, agent)
     this.workspace?.release(session.sessionId, 'system:external', 'external session ended')
 
     // Anything it was still asking about can never be answered now: the process that would
@@ -906,7 +913,7 @@ export class ExternalSessions {
     gate: SessionGate
     workspaceConflict?: { cwd: string; ownerSessionId: string; processPaused: boolean }
   }[] {
-    return [...this.sessions.entries()].map(([claudeSessionId, session]) => ({
+    return [...this.sessions.values()].map((session) => ({
       sessionId: session.sessionId,
       agent: session.agent,
       live: true,
@@ -919,7 +926,7 @@ export class ExternalSessions {
       resumable: false,
       // …but its conversation id is known from the first hook event, so the phone can
       // always offer `claude --resume <id>` for picking it up later.
-      resumeId: claudeSessionId,
+      resumeId: session.agentSessionId,
       gate: session.gate,
       controller: 'external' as const,
       control: session.observedOnly ? 'observe' as const : 'full' as const,
@@ -1011,7 +1018,7 @@ export class ExternalSessions {
     surface: Surface = 'terminal',
     tailOnly = false,
   ): ExternalSession {
-    const existing = this.sessions.get(claudeSessionId)
+    const existing = this.sessions.get(nativeKey(agent, claudeSessionId))
     if (existing) {
       // A later lifecycle hook promotes a transcript-only observation into an ordinary,
       // fully controlled external session without duplicating its card or conversation id.
@@ -1037,7 +1044,11 @@ export class ExternalSessions {
       return existing
     }
 
-    const sessionId = this.resolveSessionId?.(claudeSessionId) ?? `ext_${claudeSessionId}`
+    const proposed = this.resolveSessionId?.(claudeSessionId, agent) ?? `ext_${claudeSessionId}`
+    const previous = this.eventLog.replay(proposed, 0)
+    const prior = previous.gap ? undefined : previous.events.find((event) => event.type === 'session.started')
+    const sessionId = prior?.type === 'session.started' && prior.payload.agent !== agent
+      ? `ext_${agent}_${claudeSessionId}` : proposed
     // A daemon restart mid-conversation must adopt, not duplicate: history in the
     // log means the phone already has the story up to where the tail resumes.
     const replay = this.eventLog.replay(sessionId, 0)
@@ -1049,6 +1060,7 @@ export class ExternalSessions {
       initialOffset = tailOnly || hasHistory ? size : Math.max(0, size - INITIAL_TRANSCRIPT_BYTES)
     } catch { /* Claude may not have created its transcript yet. */ }
     const session: ExternalSession = {
+      agentSessionId: claudeSessionId,
       sessionId,
       agent,
       surface,
@@ -1067,7 +1079,7 @@ export class ExternalSessions {
       suspended: false,
       observedOnly: tailOnly,
     }
-    this.sessions.set(claudeSessionId, session)
+    this.sessions.set(nativeKey(agent, claudeSessionId), session)
     this.persist(claudeSessionId, session)
 
     if (!hasHistory) {

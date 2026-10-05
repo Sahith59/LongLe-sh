@@ -678,6 +678,9 @@ export const DelegationReturnPreviewSchema = z
 export type DelegationReturnPreview = z.infer<typeof DelegationReturnPreviewSchema>
 
 export const ClientMessageSchema = z.discriminatedUnion('type', [
+  z.object({ v: z.literal(PROTOCOL_VERSION), type: z.literal('ideReturnAck'), sessionId: z.string().min(1).max(256), requestId: z.string().uuid() }).strict(),
+  z.object({ v: z.literal(PROTOCOL_VERSION), type: z.literal('ideListWindows'), sessionId: z.string().min(1).max(256), requestId: z.string().uuid() }).strict(),
+  z.object({ v: z.literal(PROTOCOL_VERSION), type: z.literal('ideOpen'), sessionId: z.string().min(1).max(256), windowId: z.string().uuid(), requestId: z.string().uuid() }).strict(),
   subscribeMessage,
   decisionMessage,
   sendMessageMessage,
