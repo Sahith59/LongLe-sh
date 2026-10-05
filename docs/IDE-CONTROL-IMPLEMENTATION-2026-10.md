@@ -39,7 +39,7 @@ After publisher ownership is verified, configure a narrowly scoped Marketplace p
 
 ## Local candidate evidence
 
-- 1,103 workspace tests passed: protocol 80, relay 127, app 196, daemon 624, extension 30, CLI 46.
+- 1,104 workspace tests passed: protocol 80, relay 127, app 196, daemon 625, extension 30, CLI 46.
 - Workspace typechecks passed. Workspace build and Worker deployment dry-run passed during candidate verification; exact committed CI remains required.
 - Eleven real Claude/Codex provider contract tests passed, including tool denial and resumable transcripts.
 - Real VS Code 1.131 editor-host test passed with a disposable authenticated companion fixture: exact webview render acknowledgment, send, approval, Stop, phone return, observation-only guard and negative command acknowledgment. Original V0 host matrix also passed.
@@ -48,3 +48,5 @@ After publisher ownership is verified, configure a narrowly scoped Marketplace p
 - Independent review additionally fixed old browser subscription replay resurrecting aliases, negative send acknowledgments clearing drafts, stale editor render acknowledgments, cursor rollback, approval snapshot loss, and legacy registry rollback compatibility.
 
 Final approval review added explicit VS Code confirmation for an Allow request outside the permitted project folder, showing the target path and tool summary before sending the decision. Extension typecheck, 30 unit tests, actual editor-host test and repack verification passed afterward.
+
+The composed roundtrip regression additionally passed with real daemon, session manager, event log, companion and control hub over loopback HTTP and an authenticated phone WebSocket (only the agent factory is fake). It proves send routing into one session and confirmed handoff in both directions. PR CI passed Linux/macOS clean tarballs, Linux systemd crash/update/restart lifecycle, the Docker image, workspace checks and the actual editor host. Final test-only commit is rerunning those gates before merge.
