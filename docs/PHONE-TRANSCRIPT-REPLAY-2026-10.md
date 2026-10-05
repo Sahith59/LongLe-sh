@@ -22,7 +22,7 @@ Release CLI tarball SHA-1 `5a4c2b73ebf8c39957eca9e285ffc3176d91389c`. Matching V
 
 Refresh the phone app and accept Update if offered. Open the same Test-A “sample test files” conversation; its existing messages should render. Then send one more prompt in the same native Codex VS Code chat and verify it appends on the phone without a new card. Do not clear storage, delete conversations or pair again for this test. Observation-only still means no send/stop authority; it never means an intentionally empty transcript. Physical owner confirmation remains pending.
 
-## Restart restoration correction — rc.17 candidate
+## Released restart restoration correction — rc.17
 
 The rc.16 owner upgrade exposed a second defect: initial Codex discovery only considers recently modified transcripts, while read-only observations are intentionally absent from the process-control registry. An idle known Test-A conversation disappeared from current inventory after restart despite its durable messages remaining intact.
 
@@ -31,3 +31,15 @@ Restore a bounded set of known native Codex identities from event-log metadata, 
 ### Remaining offline recovery work
 
 The existing transcript tailer starts at EOF when adopting an existing history. Messages written while the daemon is stopped can therefore be missing; this hotfix preserves already ingested history and does not claim offline catch-up. Track a follow-up to persist observer file identity, byte offset and partial-line remainder atomically with ingested events, then resume from that checkpoint. Legacy files need bounded, non-destructive reconciliation. Do not replace a complete saved conversation with a smaller tail snapshot to conceal the gap.
+
+## Final rollout evidence
+
+- PR #36, release commit `e4d827d`, tag `cli-v0.1.0-rc.17`; extension remains 0.0.3.
+- **1,121 workspace tests** (daemon 631), types and build pass. Independent focused restart/history review passed 109 tests. Exact main CI `37382079885` test/image and tag CI `37382085373` Linux/macOS/systemd/trusted publishing passed.
+- Production deployed from the exact tested commit, Cloudflare version `795117d5-6155-4a1e-8bc4-b42e99628e84`. Production matrix passed. CI D1 scope 7403 remains a deployment automation issue; local authenticated deployment succeeded.
+- Owner laptop installed the exact CI tarball: SHA-1 `27343b1f0ce80d6f5439c8539a8d211765416b4a`. CLI/daemon/relay match `e4d827d`; service installed, loaded, active and healthy; pairing v2 intact.
+- After restart, authenticated Test-A IDE snapshot returned HTTP 200 in 43 ms with the original conversation listed once. History returned HTTP 200 with 23 events, exactly one original transcript reset and seven stream deltas. Idle restoration reports ended/live false and does not invent control authority. No private message bodies are recorded here.
+- Matching VSIX 0.0.3 SHA-256 `d0a48587db7a19223b1accf6fd9f3e8e544a1dabef125605fde52f2169610754`; installed extension source is unchanged.
+- Physical phone confirmation remains pending. [Release](https://github.com/Sahith59/LongLe-sh/releases/tag/cli-v0.1.0-rc.17).
+
+Trusted npm publication succeeded, but registry propagation was still pending at the final check. Owner installation used the verified release artifact directly. After nearly one minute the same chat still returned HTTP 200 with unchanged message counts; service remained healthy.

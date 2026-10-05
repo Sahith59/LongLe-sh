@@ -1,6 +1,6 @@
-# Owner field test — rc.16 / VS Code 0.0.3
+# Owner field test — rc.17 / VS Code 0.0.3
 
-Use this in order. Do not mark an untested step as passed. Current deployed build: `d3267b7`.
+Use this in order. Do not mark an untested step as passed. Current deployed build: `e4d827d`.
 The laptop CLI and extension are already installed. These are manual acceptance instructions, not a claim that the phone tests have passed.
 
 ## Retest the missing-message report first
@@ -34,7 +34,7 @@ The primary test is your actual Claude/Codex vendor chat panel appearing once on
    longleash doctor
    ```
 
-   Expect `0.1.0-rc.16`, active/healthy service, reachable daemon, both build comparisons `match`, pairing `verified v2`, and provider hooks configured. If the service is stopped, run `longleash service start` and repeat doctor. Stop here if health/build checks still fail.
+   Expect `0.1.0-rc.17`, active/healthy service, reachable daemon, both build comparisons `match`, pairing `verified v2`, and provider hooks configured. If the service is stopped, run `longleash service start` and repeat doctor. Stop here if health/build checks still fail.
 3. Prepare two harmless projects:
 
    ```sh

@@ -2,7 +2,16 @@
 
 Update this file at the end of any session that changes project state. Newest entries first in the log.
 
-## Current release — phone transcript repair, 2026-10-05
+## Current release — idle Codex restoration, 2026-10-05
+
+- **Released and installed rc.17 / e4d827d / PR #36**; extension remains 0.0.3. Includes rc.16 phone replay ordering fix and restores known idle native Codex conversations after daemon restart while preserving saved transcript blocks and read-only authority.
+- **1,121 workspace tests**, types/build, exact main CI test/image, tag Linux/macOS/systemd/trusted publishing pass. Production matrix passes. Existing CI D1 scope 7403 still requires local authenticated deployment; exact commit deployed successfully.
+- Trusted npm publish succeeded; registry propagation pending at final check. Owner uses the verified CI/GitHub release tarball.
+- Owner service healthy; CLI/daemon/relay match e4d827d; pairing v2 retained. Actual Test-A chat reappears once in scoped IDE inventory (HTTP 200 / 43 ms); history HTTP 200 returns 23 events with the original reset and seven deltas intact. No native chat was recreated.
+- Phone retest pending: refresh/update, reopen the same sample-files chat, confirm messages, send one native VS Code follow-up and check the same card. Do not clear storage or re-pair.
+- Explicit remaining limitation: messages written while daemon is stopped lack durable checkpoint catch-up. Preserve existing history; next engineering step is atomic observer byte-offset/remainder checkpoints and safe legacy reconciliation. Workstream D physical/Marketplace/P5 acceptance remains open. [Evidence](../docs/PHONE-TRANSCRIPT-REPLAY-2026-10.md).
+
+## Prior release — phone transcript repair, 2026-10-05
 
 - Owner's native Codex Test-A card was visible but phone said “Nothing yet.” Saved transcript/events were intact. Newer live status advanced the old phone cursor before history arrived; chronological20events gave8blocks but status-first gave0.
 - **Released rc.16 / d3267b7 / PR #35**, extension remains0.0.3. Ordered bounded replay, slow/reconnect/pruned-gap handling, existing empty-card repair, exact IDE-return history barrier, and fresh server subscriptions on hello. Corrected real client replays the owner's20events with status first to8blocks/0errors.
