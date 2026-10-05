@@ -121,6 +121,7 @@ export default function App() {
   const [roots, setRoots] = useState<string[]>([])
   const [folders, setFolders] = useState<FolderHit[]>([])
   const [settingsCatalog, setSettingsCatalog] = useState<AgentSettingsCatalog | undefined>()
+  const [ideAvailable, setIdeAvailable] = useState(false)
   const [settingsSessionId, setSettingsSessionId] = useState<string | null>(null)
   const [settingsUpdate, setSettingsUpdate] = useState<SettingsUpdateState | null>(null)
   const settingsUpdateRef = useRef<string | null>(null)
@@ -304,6 +305,7 @@ export default function App() {
       onHello: (hello: Hello) => {
         setRoots(hello.roots)
         setSettingsCatalog(hello.capabilities.sessionSettings)
+        setIdeAvailable(hello.capabilities.ideHandoff === true)
         const restoredDelegations = hello.delegations ?? []
         setDelegations(
           Object.fromEntries(restoredDelegations.map((delegation) => [delegation.delegationId, delegation])),
@@ -595,10 +597,10 @@ export default function App() {
               onSend={(text) => clientRef.current?.sendMessage(openSession.sessionId, text) ?? false}
               onTakeOver={(text) => clientRef.current?.takeOver(openSession.sessionId, text) ?? false}
               onReclaim={() => clientRef.current?.reclaimSession(openSession.sessionId) ?? false}
-              ideHandoff={{
+              {...(ideAvailable ? { ideHandoff: {
                 listWindows: () => clientRef.current?.listIdeWindows(openSession.sessionId) ?? Promise.reject(new Error('Connect to your laptop first.')),
                 openWindow: (windowId) => clientRef.current?.openInIde(openSession.sessionId, windowId) ?? Promise.reject(new Error('Connect to your laptop first.')),
-              }}
+              } } : {})}
               onRename={(title) => clientRef.current?.renameSession(openSession.sessionId, title) ?? false}
               onSetGate={(gate) => clientRef.current?.setGate(openSession.sessionId, gate)}
               onTune={() => {

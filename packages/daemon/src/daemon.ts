@@ -321,7 +321,6 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     }),
     returnToPhone: (sessionId) => server.returnIdeToPhone(sessionId),
   })
-  server.setIdeControl(ideControl)
   const companion = new IdeCompanionServer({
     control: ideControl,
     dataDir,
@@ -331,6 +330,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     pendingApprovals: () => [...approvals.listPending(), ...externalApprovals.listPending()],
   })
   await companion.start()
+  server.setIdeControl(ideControl)
   const stopMaintenance = sessions.startMaintenance()
 
   // The daemon's presence in the world beyond the LAN: one E2E room per paired device,

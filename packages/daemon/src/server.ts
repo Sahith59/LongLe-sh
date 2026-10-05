@@ -92,7 +92,10 @@ export class LongLeashServer {
   private ideControl: IdeControlHub | null = null
   private readonly ideReturns = new Map<string, { sessionId: string; recipients: Set<Connection>; resolve: (value: unknown) => void; timer: NodeJS.Timeout }>()
 
-  setIdeControl(control: IdeControlHub): void { this.ideControl = control }
+  setIdeControl(control: IdeControlHub): void {
+    this.ideControl = control
+    for (const connection of this.connections) this.sendHello(connection)
+  }
 
   returnIdeToPhone(sessionId: string): Promise<unknown> {
     if (this.ideReturns.size >= 64) return Promise.resolve({ outcome: 'unconfirmed', message: 'Too many pending phone requests.' })
@@ -811,6 +814,7 @@ export class LongLeashServer {
         }))
         .sort((left, right) => left.startedAt - right.startedAt || left.sessionId.localeCompare(right.sessionId)),
       capabilities: {
+        ideHandoff: this.ideControl !== null,
         startSession: this.sessions !== null,
         stopSession: this.sessions !== null,
         parallelWorkspaces: 'git-worktree',
