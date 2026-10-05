@@ -1,6 +1,6 @@
 # Laptop and phone walkthrough — verified pairing
 
-Updated 2026-10-05. This guide targets the **published** `@longleash/cli@0.1.0-rc.13` and the matching LongLeash VS Code companion `0.0.2`. The public app serves build `37de078`; check `https://app.longleash.dev/build.json` and `longleash doctor` before testing. The VSIX is an owner preview, not a Marketplace listing. On the owner's laptop both are already installed; reload the VS Code window to activate the companion.
+Updated 2026-10-05. This guide targets the **released** `@longleash/cli@0.1.0-rc.14` and the matching LongLeash VS Code extension `0.0.3`. The public app serves build `614d44d`; check `https://app.longleash.dev/build.json` and `longleash doctor` before testing. The VSIX is an installable prerelease extension, not a verified Marketplace listing. On the owner's laptop both are already installed; reload the VS Code window to activate the companion.
 
 ## 1. Before installation
 
@@ -14,15 +14,17 @@ Updated 2026-10-05. This guide targets the **published** `@longleash/cli@0.1.0-r
 
 For a new laptop, after confirming the live app build:
 
+The `rc` npm tag now resolves to rc.14 with provenance. The owner laptop already has that exact release installed; start with the version/doctor checks rather than reinstalling.
+
 ```sh
 node --version
 npm --version
-npm exec --yes --registry=https://registry.npmjs.org/ --package=@longleash/cli@0.1.0-rc.13 -- longleash setup
+npm exec --yes --registry=https://registry.npmjs.org/ --package=@longleash/cli@0.1.0-rc.14 -- longleash setup
 ```
 
 Choose your allowed project folder, **hosted** connectivity, and the per-user background service. Review the settings before answering yes. Use the scoped `@longleash/cli` package; the unscoped npm name belongs to someone else.
 
-For an existing managed installation, use `longleash update 0.1.0-rc.13` instead. It reuses configuration. Follow the installer's PATH instructions and open a fresh terminal if necessary.
+For an existing managed installation, use `longleash update 0.1.0-rc.14` instead. It reuses configuration. Follow the installer's PATH instructions and open a fresh terminal if necessary.
 
 ```sh
 longleash --version
@@ -72,11 +74,11 @@ Send a unique harmless prompt, such as `Reply exactly TERMINAL CLAUDE CHECK`, us
 
 Test vendor chat panels separately. Their hook support differs; Codex's durable VS Code transcript can provide read-only observation even without a lifecycle/PID hook. **Read-only observation does not grant approval, Stop or takeover authority.** Existing sessions may require a new tool event or restart.
 
-### Install the control extension (candidate 0.0.3)
+### Install the control extension (0.0.3)
 
-The following new editor test targets CLI **rc.14** and VSIX **0.0.3**. Wait for the coordinated release checkpoint before running it against production; the header above records the previous live baseline until that checkpoint is updated.
+The editor test targets CLI **rc.14**, VSIX **0.0.3**, and live build **614d44d**. The matching [GitHub release](https://github.com/Sahith59/LongLe-sh/releases/tag/cli-v0.1.0-rc.14) contains the exact CI-tested VSIX and CLI tarball.
 
-1. Download `longleash-vscode-0.0.3.vsix` from the matching GitHub release. A Marketplace listing is not yet verified.
+1. Download `longleash-vscode-0.0.3.vsix` from the [matching GitHub release](https://github.com/Sahith59/LongLe-sh/releases/tag/cli-v0.1.0-rc.14). A Marketplace listing is not yet verified.
 2. In desktop VS Code choose **Extensions → … → Install from VSIX…**, select that file, then **Developer: Reload Window**. Alternatively run `code --install-extension /path/to/longleash-vscode-0.0.3.vsix --force`.
 3. Open the allowlisted disposable project as a local folder and grant workspace trust only if you trust that project. Remote/SSH/container/browser workspaces are not supported in this release.
 4. Open the LongLeash Activity Bar icon. Confirm the Sessions tree is connected and shows the expected provider conversations. Click a conversation to open its LongLeash editor. Startup registration also runs when the sidebar is hidden.
@@ -127,7 +129,7 @@ Run the complete [acceptance checklist](ACCEPTANCE.md) for release sign-off, inc
 
 Before restarting to diagnose a failure, capture `longleash doctor --json`, the exact time, agent, origin and redacted screenshot. `longleash service logs` shows persistent service diagnostics. Never include QR URLs, hook endpoint secrets, tokens or private source/transcripts in a report.
 
-**macOS orphan recovery, only if the update left the service unreachable:** find `longleashd.mjs` with `ps -Ao pid,ppid,command | rg longleashd.mjs`. If a process path points to the *previous* release and its parent is `1`, verify that PID and stop only that process (`kill -TERM PID`; use `kill -KILL PID` only if it remains stuck). Then run `longleash service start` and `longleash doctor`. This occurred during the rc.12 → rc.13 owner upgrade; the startup issue is tracked separately. Do not kill an active native Claude or Codex process by a matching title.
+**Managed macOS recovery:** rc.14 directly supervises the daemon and verifies a legacy orphan by lock, user, parent PID and managed runtime path before stopping it. During the owner's rc.13 → rc.14 upgrade the first setup did not become healthy; a subsequent `longleash service start` safely retired the old daemon and restored matching authenticated health without manual process signals. If setup reports this failure, run `longleash service start`, then `longleash doctor`. If it still fails, preserve the diagnostics and investigate the exact process; never kill Claude/Codex by title. The asynchronous bootout race has been reproduced; the rc.15 correction is under verification.
 
 ## 7. Completion evidence
 

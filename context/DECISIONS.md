@@ -416,3 +416,12 @@ Fixed a concrete Codex VS Code watcher gap (new files after startup waited for a
 Release preflight found the owner's real rc.11 daemon bound to `10.66.62.167` while the hook discovery file still named `192.168.1.71`. This stale endpoint explains hooks and CLI doctor failing after network movement. Candidate atomically republishes the local endpoint after rebind and serializes attempts; a real-daemon test pins it. The fix must be installed on the laptop, not merely deployed to the phone app.
 
 Production dependency audits identified new advisories, so patched locked dependencies and regenerated/audited the independent npm shrinkwrap before release. Remote Cloudflare migration listing now succeeds with no pending migrations; retain earlier 7403 evidence as historical. Current public readiness checks prove the old deployed build only. See `docs/D3-RELEASE-READINESS.md` and `docs/PHONE-LAPTOP-WALKTHROUGH.md` for exact evidence and remaining gates.
+
+
+## Universal session identity and IDE control — 2026-10-05
+
+- The owner clarified the duplicate-session failure is universal across repositories. Identity is `(provider, durable native conversation ID)`, never a project name, title, transient hook turn or process ID. Preserve raw histories while reconciling the visible inventory.
+- Exact phone ↔ VS Code continuation uses LongLeash's own installed editor, backed by the existing daemon writer. Navigation succeeds only after the requested destination renders that exact session. This avoids unsupported vendor-private panel APIs creating a different conversation.
+- A discovered transcript does not prove permission to control its process. Observed-only native panels remain read-only; verified terminal takeover is explicit and ends the old writer before resuming. Claude and Codex are the currently validated providers, not a claim of support for every IDE/agent.
+- Installable extension and its automated verification precede the owner's next physical phone test. Marketplace publication still requires verified publisher access; a GitHub VSIX is a real installable extension but not a Marketplace listing. D remains open until the recorded acceptance gates pass.
+- Release rc.14 / extension 0.0.3 uses commit `614d44d`; documentation-only follow-ups may be ahead of the immutable deployed build. See `docs/IDE-CONTROL-IMPLEMENTATION-2026-10.md`.
