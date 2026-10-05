@@ -416,8 +416,8 @@ export function createStore(options: StoreOptions = {}) {
   }
 
   /** The daemon could not honour our cursor: drop what we have and replay from the start. */
-  function applyGap(sessionId: string): void {
-    cursors[sessionId] = 0
+  function applyGap(sessionId: string, baseCursor = 0): void {
+    cursors[sessionId] = baseCursor
     const session = sessions[sessionId]
     if (session) {
       session.output = ''

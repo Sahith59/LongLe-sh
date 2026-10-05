@@ -2,6 +2,10 @@
 
 Update this file at the end of any session that changes project state. Newest entries first in the log.
 
+## Active field fix — missing phone transcript, 2026-10-05
+
+Native Codex Test-A card appeared but phone said “Nothing yet.” The actual transcript and daemon events contain the conversation; this is a phone replay-order failure, not an observed-only limitation. Real20-event replay gives8blocks in order,0when latest status advances the cursor before history. Fix in progress on `fix/phone-history-replay-order`: ordered bounded client replay, slow/reconnect/gap handling, and clear stale server subscriptions on authoritative hello. CLIrc.16 assigned; rc.15/ed7d72d remains live until new release verified. See [evidence](../docs/PHONE-TRANSCRIPT-REPLAY-2026-10.md). No user storage cleared or native provider process stopped.
+
 ## Guided owner acceptance — 2026-10-05
 
 Owner clarified the extension's primary purpose: native VS Code agent chats must appear once on the phone and stay current. Provided [step-by-step field test](../docs/OWNER-FIELD-TEST.md), testing native Claude/Codex panels first, then terminal/integrated-terminal origins across two repositories, then LongLeash editor handoff and recovery. A passing own-editor test does not substitute for native panel discovery. Read-only observation is recorded separately from control. Rechecked installed rc.15/extension0.0.3 and matching daemon/production ed7d72d; corrected stale acceptance text that called extension sync pending. No physical phone pass is claimed; owner will report results.
