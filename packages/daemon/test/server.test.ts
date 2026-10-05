@@ -16,6 +16,7 @@ import { DelegationManager } from '../src/delegation-manager.js'
 import { DelegationStore } from '../src/delegations.js'
 import { ReturnBuilder } from '../src/return-builder.js'
 import { WorkspaceLeaseManager } from '../src/workspace-leases.js'
+import { IdeControlHub } from '../src/ide-control.js'
 
 /** Minimal controllable agent so server tests stay deterministic. */
 class DemoAgent {
@@ -204,6 +205,23 @@ describe('auth on connect', () => {
     const ws = connect(h.port, h.token)
     await opened(ws)
     expect(await helloOf(ws)).toMatchObject({ type: 'hello', deviceId: h.deviceId })
+    ws.close()
+  })
+
+  it('requires fresh replay subscriptions after an authoritative hello refresh', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'old-alias', fromCursor: 0, syncId: 'initial' }))
+    await nextMatching(ws, (message) => message.type === 'sync.complete')
+    h.server.setIdeControl(new IdeControlHub({
+      read: () => ({ events: [] }), command: async () => ({}), approvals: () => [],
+      returnToPhone: async () => ({ outcome: 'unconfirmed' }),
+    }))
+    h.server.broadcastEvent(h.log.append('old-alias', { type: 'session.status', payload: { status: 'running', live: true } }))
+    // A marker establishes that all earlier server frames reached the real socket.
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'marker', fromCursor: 0, syncId: 'marker' }))
+    await nextMatching(ws, (message) => message.type === 'sync.complete' && message.syncId === 'marker')
+    expect(inbox.get(ws)?.some((message) => message.sessionId === 'old-alias' && message.type === 'session.status')).toBe(false)
     ws.close()
   })
 

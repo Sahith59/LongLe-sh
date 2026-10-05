@@ -483,9 +483,18 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
   const subscribed = new Set<string>()
   const pendingDelegationStarts = new Set<string>()
   const pendingSync = new Map<string, string>()
+  // A live broadcast can overtake the replay requested by hello. Applying its higher cursor
+  // immediately would cause the store to discard the earlier transcript as duplicates.
+  const hydrationEvents = new Map<string, SessionEvent[]>()
+  const hydrationBytes = new Map<string, number>()
+  const syncTargets = new Map<string, number>()
+  const ideTargets = new Map<string, number>()
+  const listedSessions = new Set<string>()
+  let awaitingHello = true
   const ideReturnSync = new Map<string, { sessionId: string; requestId: string; timer: ReturnType<typeof setTimeout> }>()
   let syncGeneration = 0
   let hydrationTimer: ReturnType<typeof setTimeout> | null = null
+  let syncTimeout: ReturnType<typeof setTimeout> | null = null
   let identity: RelayIdentity | null = null
   let homeProbe: ReturnType<typeof setInterval> | null = null
 
@@ -525,10 +534,33 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
 
   const send = (message: unknown): boolean => wire?.send(JSON.stringify(message)) ?? false
 
-  const finishHydration = (generation: number): void => {
+  const drainHydrationEvents = (sessionId: string): void => {
+    const events = hydrationEvents.get(sessionId)
+    if (!events) return
+    events.sort((a, b) => a.seq - b.seq)
+    let cursor = store.cursors()[sessionId] ?? 0
+    while (events.length > 0 && events[0]!.seq <= cursor + 1) {
+      const event = events.shift()!
+      if (event.seq > cursor) {
+        store.apply(event)
+        cursor = event.seq
+      }
+    }
+    hydrationBytes.set(sessionId, events.reduce((size, event) => size + JSON.stringify(event).length, 0))
+    if (events.length === 0) hydrationEvents.delete(sessionId)
+  }
+
+  const finishHydration = (generation: number, discardEvents = false): void => {
     if (generation !== syncGeneration) return
     if (hydrationTimer !== null) clearTimeout(hydrationTimer)
     hydrationTimer = null
+    if (syncTimeout !== null) clearTimeout(syncTimeout)
+    syncTimeout = null
+    if (discardEvents) {
+      hydrationEvents.clear()
+      hydrationBytes.clear()
+    }
+    syncTargets.clear()
     pendingSync.clear()
     store.endHydration()
     // Keep layout motion disabled for the coherent paint that endHydration just requested.
@@ -555,13 +587,38 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     subscribe(sessionId, syncId)
   }
 
+  const completeIdeReturn = (syncId: string): void => {
+    const pending = ideReturnSync.get(syncId)
+    if (!pending) return
+    const target = ideTargets.get(syncId)
+    if (target === undefined || (store.cursors()[pending.sessionId] ?? 0) < target) return
+    if ((hydrationEvents.get(pending.sessionId)?.length ?? 0) > 0) {
+      ideTargets.delete(syncId)
+      subscribe(pending.sessionId, syncId)
+      return
+    }
+    ideTargets.delete(syncId)
+    clearTimeout(pending.timer)
+    ideReturnSync.delete(syncId)
+    if (callbacks.onIdeReturn) void callbacks.onIdeReturn(pending.sessionId).then(() => {
+      if (!closed) send({ v: PROTOCOL_VERSION, type: 'ideReturnAck', sessionId: pending.sessionId, requestId: pending.requestId })
+    }).catch(() => { /* A hidden phone must not claim it opened the session. */ })
+  }
+
   const handleText = (raw: string): void => {
     const message = JSON.parse(raw) as Record<string, unknown>
     if (message.type === 'ideReturn' && typeof message.sessionId === 'string' && typeof message.requestId === 'string') {
       if (!callbacks.onIdeReturn || ideReturnSync.size >= 64) return
       const syncId = `ide-${message.requestId}`
       if (ideReturnSync.has(syncId)) return
-      const timer = setTimeout(() => ideReturnSync.delete(syncId), 20_000)
+      const timer = setTimeout(() => {
+        ideReturnSync.delete(syncId)
+        ideTargets.delete(syncId)
+        if (!pendingSync.has(message.sessionId as string)) {
+          hydrationEvents.delete(message.sessionId as string)
+          hydrationBytes.delete(message.sessionId as string)
+        }
+      }, 20_000)
       ideReturnSync.set(syncId, { sessionId: message.sessionId, requestId: message.requestId, timer })
       subscribe(message.sessionId, syncId)
       return
@@ -569,11 +626,10 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     if (message.type === 'sync.complete' && typeof message.syncId === 'string') {
       const pending = ideReturnSync.get(message.syncId)
       if (pending && pending.sessionId === message.sessionId) {
-        clearTimeout(pending.timer)
-        ideReturnSync.delete(message.syncId)
-        if (callbacks.onIdeReturn) void callbacks.onIdeReturn(pending.sessionId).then(() => {
-          if (!closed) send({ v: PROTOCOL_VERSION, type: 'ideReturnAck', sessionId: pending.sessionId, requestId: pending.requestId })
-        }).catch(() => { /* A hidden phone must not claim it opened the session. */ })
+        if (!Number.isSafeInteger(message.cursor) || (message.cursor as number) < 0) return
+        ideTargets.set(message.syncId, message.cursor as number)
+        drainHydrationEvents(pending.sessionId)
+        completeIdeReturn(message.syncId)
         return
       }
     }
@@ -585,7 +641,17 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       return
     }
     if (message.type === 'gap') {
-      store.applyGap(String(message.sessionId))
+      const baseCursor = message.reason === 'pruned' &&
+        typeof message.earliestSeq === 'number' &&
+        Number.isSafeInteger(message.earliestSeq) && message.earliestSeq > 0
+        ? message.earliestSeq - 1 : 0
+      store.applyGap(String(message.sessionId), baseCursor)
+      hydrationEvents.delete(String(message.sessionId))
+      hydrationBytes.delete(String(message.sessionId))
+      syncTargets.delete(String(message.sessionId))
+      for (const [syncId, pending] of ideReturnSync) {
+        if (pending.sessionId === message.sessionId) ideTargets.delete(syncId)
+      }
       const ideSync = [...ideReturnSync].find(([, pending]) => pending.sessionId === message.sessionId)
       if (ideSync) subscribe(String(message.sessionId), ideSync[0])
       else if (pendingSync.has(String(message.sessionId))) subscribeForHydration(String(message.sessionId))
@@ -598,8 +664,18 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       typeof message.syncId === 'string' &&
       pendingSync.get(message.sessionId) === message.syncId
     ) {
-      pendingSync.delete(message.sessionId)
-      if (pendingSync.size === 0) finishHydration(syncGeneration)
+      if (!Number.isSafeInteger(message.cursor) || (message.cursor as number) < 0) return
+      syncTargets.set(message.sessionId, message.cursor as number)
+      drainHydrationEvents(message.sessionId)
+      if ((store.cursors()[message.sessionId] ?? 0) >= (message.cursor as number)) {
+        if ((hydrationEvents.get(message.sessionId)?.length ?? 0) > 0) {
+          subscribeForHydration(message.sessionId)
+          return
+        }
+        pendingSync.delete(message.sessionId)
+        syncTargets.delete(message.sessionId)
+        if (pendingSync.size === 0) finishHydration(syncGeneration)
+      }
       return
     }
     if (message.type === 'ack' && message.of === 'startSession' && typeof message.sessionId === 'string') {
@@ -661,17 +737,45 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       syncGeneration += 1
       const generation = syncGeneration
       pendingSync.clear()
+      hydrationEvents.clear()
+      hydrationBytes.clear()
+      syncTargets.clear()
+      listedSessions.clear()
+      for (const session of hello.sessions ?? []) listedSessions.add(session.sessionId)
+      awaitingHello = false
       subscribed.clear()
       store.beginHydration()
       callbacks.onHydration?.(true)
       store.seedSessions(hello.sessions ?? [])
+      // Repair a card left empty by an older client's out-of-order cursor advance.
+      // An advanced cursor with no transcript needs one full replay.
+      for (const session of hello.sessions ?? []) {
+        const current = store.getState().sessions[session.sessionId]
+        if ((store.cursors()[session.sessionId] ?? 0) > 0 && current?.blocks.length === 0) {
+          store.applyGap(session.sessionId)
+        }
+      }
       for (const session of hello.sessions ?? []) subscribeForHydration(session.sessionId)
       if ((hello.sessions ?? []).length === 0) finishHydration(generation)
       else {
-        // Compatibility with an older daemon that does not emit sync.complete. Correctness still
-        // comes from cursor de-duplication; only the calm single-paint optimization times out.
+        // End the single-paint wait after 1.5s, but keep ordering events until sync.complete.
+        // A slow replay can exceed this timer; applying a newer live cursor here would lose it.
         if (hydrationTimer !== null) clearTimeout(hydrationTimer)
-        hydrationTimer = setTimeout(() => finishHydration(generation), 1_500)
+        hydrationTimer = setTimeout(() => {
+          hydrationTimer = null
+          if (generation !== syncGeneration) return
+          store.endHydration()
+          callbacks.onHydration?.(false)
+        }, 1_500)
+        if (syncTimeout !== null) clearTimeout(syncTimeout)
+        syncTimeout = setTimeout(() => {
+          if (generation !== syncGeneration || pendingSync.size === 0) return
+          callbacks.onError('The laptop did not finish syncing this conversation. Reconnecting to retry.')
+          const old = wire
+          wire = null
+          old?.close()
+          events.onDown('net')
+        }, 20_000)
       }
       callbacks.onHello(hello)
       return
@@ -730,11 +834,49 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       callbacks.onError('That approval is no longer waiting — it may have expired.')
       return
     }
-    if (typeof message.seq === 'number') store.apply(message as unknown as SessionEvent)
+    if (typeof message.seq === 'number') {
+      const event = message as unknown as SessionEvent
+      if (awaitingHello) return
+      if (!listedSessions.has(event.sessionId)) {
+        if (event.type !== 'session.started') return
+        listedSessions.add(event.sessionId)
+      }
+      if (pendingSync.has(event.sessionId) || [...ideReturnSync.values()].some((pending) => pending.sessionId === event.sessionId)) {
+        const bufferedEvents = hydrationEvents.get(event.sessionId) ?? []
+        const bytes = (hydrationBytes.get(event.sessionId) ?? 0) + raw.length
+        const totalBytes = [...hydrationBytes.values()].reduce((sum, size) => sum + size, 0) + raw.length
+        const totalEvents = [...hydrationEvents.values()].reduce((sum, queued) => sum + queued.length, 0) + 1
+        // A stalled peer must not keep an unlimited out-of-order gap in phone memory.
+        if (totalEvents > 10_000 || totalBytes > 8_000_000) {
+          callbacks.onError('The laptop sent too much out-of-order history. Reconnecting to retry.')
+          const old = wire
+          wire = null
+          old?.close()
+          events.onDown('net')
+          return
+        }
+        bufferedEvents.push(event)
+        hydrationEvents.set(event.sessionId, bufferedEvents)
+        hydrationBytes.set(event.sessionId, bytes)
+        drainHydrationEvents(event.sessionId)
+        const target = syncTargets.get(event.sessionId)
+        if (target !== undefined && (store.cursors()[event.sessionId] ?? 0) >= target) {
+          if ((hydrationEvents.get(event.sessionId)?.length ?? 0) === 0) {
+            pendingSync.delete(event.sessionId)
+            syncTargets.delete(event.sessionId)
+            if (pendingSync.size === 0) finishHydration(syncGeneration)
+          }
+        }
+        for (const [syncId, pending] of ideReturnSync) {
+          if (pending.sessionId === event.sessionId) completeIdeReturn(syncId)
+        }
+      } else store.apply(event)
+    }
   }
 
   const events: WireEvents = {
     onReady: () => {
+      awaitingHello = true
       attempt = 0
       callbacks.onState('connected')
       callbacks.onPath?.(path)
@@ -747,7 +889,11 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
     onText: handleText,
     onDown: (reason) => {
       if (closed) return
-      finishHydration(syncGeneration)
+      awaitingHello = true
+      finishHydration(syncGeneration, true)
+      for (const pending of ideReturnSync.values()) clearTimeout(pending.timer)
+      ideReturnSync.clear()
+      ideTargets.clear()
       stopHomeProbe()
       wire = null
       if (reason === 'auth') {
@@ -983,10 +1129,17 @@ export function connect(token: string, store: Store, callbacks: ClientCallbacks)
       }),
     close: () => {
       closed = true
+      if (syncTimeout !== null) clearTimeout(syncTimeout)
+      syncTimeout = null
+      pendingSync.clear()
+      syncTargets.clear()
+      hydrationEvents.clear()
+      hydrationBytes.clear()
       for (const pending of idePending.values()) pending.reject(new Error('The laptop connection was closed.'))
       idePending.clear()
       for (const pending of ideReturnSync.values()) clearTimeout(pending.timer)
       ideReturnSync.clear()
+      ideTargets.clear()
       stopHomeProbe()
       if (retryTimer !== null) clearTimeout(retryTimer)
       if (hydrationTimer !== null) clearTimeout(hydrationTimer)

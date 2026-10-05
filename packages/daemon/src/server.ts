@@ -793,6 +793,11 @@ export class LongLeashServer {
 
   /** Tell the client what it may do, so it never has to guess a project path. */
   private sendHello(connection: Connection): void {
+    // Relay connections outlive a guest browser. A fresh hello starts a new replay
+    // boundary: stale subscriptions must not broadcast newer status ahead of history
+    // or reintroduce aliases omitted by the authoritative inventory.
+    connection.sessions.clear()
+
     // A phone-started conversation keeps one stable card when its native resume id moves to
     // Terminal/VS Code. The external live owner overrides the dormant managed row in-place.
     const bySession = new Map(
