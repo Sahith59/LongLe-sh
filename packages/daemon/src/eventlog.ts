@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { parseEvent, PROTOCOL_VERSION, type SessionEvent } from '@longleash/protocol'
+import { AskedQuestion, parseEvent, PROTOCOL_VERSION, type SessionEvent, type AskedQuestion as AskedQuestionValue } from '@longleash/protocol'
 
 export type AppendInput = {
   [K in SessionEvent['type']]: {
@@ -122,6 +122,30 @@ export class EventLog {
 
   latestSeq(sessionId: string): number {
     return (this.maxSeqStmt.get(sessionId) as { seq: number }).seq
+  }
+
+  /** Bounded IDE replay: pagination never loads an entire historical conversation. */
+  readPage(sessionId: string, fromCursor: number): { events: SessionEvent[]; latestCursor: number; hasMore: boolean } {
+    const rows = this.rawDb.prepare('SELECT * FROM events WHERE session_id = ? AND seq > ? ORDER BY seq ASC LIMIT 250')
+      .all(sessionId, fromCursor) as EventRow[]
+    const events = rows.map((row) => parseEvent({ v: row.v, seq: row.seq, sessionId: row.session_id,
+      ts: row.ts, type: row.type, payload: JSON.parse(row.payload) }))
+    const latestCursor = events.at(-1)?.seq ?? Math.min(fromCursor, this.latestSeq(sessionId))
+    return { events, latestCursor, hasMore: latestCursor < this.latestSeq(sessionId) }
+  }
+
+  /** Recover question choices for a still-pending approval outside the current replay page. */
+  pendingQuestions(sessionId: string, approvalId: string): AskedQuestionValue[] | undefined {
+    const row = this.rawDb.prepare(
+      `SELECT payload FROM events WHERE session_id = ? AND type = 'approval.requested'
+       AND json_extract(payload, '$.approvalId') = ? ORDER BY seq DESC LIMIT 1`,
+    ).get(sessionId, approvalId) as { payload: string } | undefined
+    if (!row) return undefined
+    try {
+      const payload = JSON.parse(row.payload) as { questions?: unknown }
+      const result = AskedQuestion.array().safeParse(payload.questions)
+      return result.success ? result.data : undefined
+    } catch { return undefined }
   }
 
   latestTimestamp(sessionId: string): number {

@@ -32,6 +32,10 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeN
     this.changed.fire()
   }
 
+  sessions(): IdeSessionSummary[] {
+    return this.sections.flatMap((section) => section.sessions)
+  }
+
   getTreeItem(node: SessionTreeNode): vscode.TreeItem {
     if (node.kind === 'section') {
       const item = new vscode.TreeItem(
@@ -52,6 +56,11 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeN
     const provider = session.provider === 'claude' ? 'Claude' : 'Codex'
     const item = new vscode.TreeItem(session.title, vscode.TreeItemCollapsibleState.None)
     item.id = `longleash.session.${createHash('sha256').update(session.sessionId).digest('hex')}`
+    item.command = {
+      command: 'longleash.sessions.open',
+      title: 'Open LongLeash conversation',
+      arguments: [session.sessionId, session.title],
+    }
     item.description = `${provider} · ${state}`
     item.contextValue = `longleash.session.${session.provider}.${session.live ? 'live' : 'dormant'}`
     item.iconPath = iconFor(session)

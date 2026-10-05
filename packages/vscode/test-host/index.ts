@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import Mocha from 'mocha'
 import * as vscode from 'vscode'
+import { CompanionClient } from '../src/companion-client.js'
 import {
   MIN_TESTED_CLAUDE_EXTENSION_VERSION,
   planClaudeOpen,
@@ -23,6 +25,8 @@ interface HostCase {
   expectedProvider: 'installed' | 'missing'
   coordinationDir?: string
   liveInventory?: boolean
+  editorFlow?: boolean
+  editorStateUrl?: string
 }
 
 const capabilities: IdeCapability[] = [
@@ -37,6 +41,55 @@ export async function run(): Promise<void> {
   const encoded = process.env.LONGLEASH_V0_HOST_CASE
   assert.ok(encoded, 'LONGLEASH_V0_HOST_CASE is required')
   const fixture = JSON.parse(encoded) as HostCase
+
+  if (fixture.editorFlow) {
+    assert.ok(fixture.editorStateUrl)
+    const mocha = new Mocha({ color: true, timeout: 30_000 })
+    mocha.suite.addTest(new Mocha.Test('opens exact webview and routes safe IDE actions', async () => {
+      const extension = vscode.extensions.getExtension('longleash.longleash')
+      assert.ok(extension)
+      await extension.activate()
+      const state = async () => await (await fetch(fixture.editorStateUrl!)).json() as {
+        opened: boolean; commands: { type: string; text?: string; verdict?: string }[]; returns: number
+      }
+      const waitFor = async (predicate: (value: Awaited<ReturnType<typeof state>>) => boolean) => {
+        const deadline = Date.now() + 15_000
+        while (Date.now() < deadline) {
+          const value = await state()
+          if (predicate(value)) return value
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+        throw new Error('Timed out waiting for editor protocol state.')
+      }
+      await waitFor((value) => value.opened)
+      await vscode.commands.executeCommand('longleash.phase2a.editorActionForTest', 'managed-session', { type: 'send', text: 'Continue exact conversation' })
+      await waitFor((value) => value.commands.some((command) => command.type === 'sendMessage' && command.text === 'Continue exact conversation'))
+      await vscode.commands.executeCommand('longleash.phase2a.editorActionForTest', 'managed-session', { type: 'decide', approvalId: 'approval-1', verdict: 'allow' })
+      await waitFor((value) => value.commands.some((command) => command.type === 'decision' && command.verdict === 'allow'))
+      await vscode.commands.executeCommand('longleash.phase2a.editorActionForTest', 'managed-session', { type: 'stop' })
+      await waitFor((value) => value.commands.some((command) => command.type === 'stopSession'))
+      await vscode.commands.executeCommand('longleash.phase2a.editorActionForTest', 'managed-session', { type: 'return' })
+      await waitFor((value) => value.returns === 1)
+      await vscode.commands.executeCommand('longleash.sessions.open', 'external-session', 'Observed Codex')
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      const before = (await state()).commands.length
+      await vscode.commands.executeCommand('longleash.phase2a.editorActionForTest', 'external-session', { type: 'send', text: 'Must stay read only' })
+      assert.equal((await state()).commands.length, before, 'observed external Codex cannot send')
+      const directClient = new CompanionClient({
+        extension,
+        secrets: { get: async () => undefined, store: async () => {} },
+      } as unknown as vscode.ExtensionContext, 'editor-negative-ack-test')
+      await assert.rejects(
+        directClient.command('managed-session', randomUUID(), {
+          v: 1, type: 'sendMessage', sessionId: 'managed-session', text: 'Rejected prompt',
+        }),
+        /not-running/,
+        'negative daemon acknowledgements must not clear a draft or claim delivery',
+      )
+    }))
+    await new Promise<void>((resolve, reject) => mocha.run((failures) => failures ? reject(new Error(`${failures} editor host assertion(s) failed`)) : resolve()))
+    return
+  }
 
   const mocha = new Mocha({ color: true, timeout: 30_000 })
   mocha.suite.addTest(

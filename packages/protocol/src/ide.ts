@@ -7,7 +7,7 @@ import { z } from 'zod'
  */
 export const IDE_PROTOCOL_VERSION = 1
 /** Exact companion build reviewed with the daemon's read-only inventory transport. */
-export const IDE_COMPANION_BUILD = '0.0.2'
+export const IDE_COMPANION_BUILD = '0.0.3'
 export const IDE_OPERATION_MAX_TTL_MS = 60_000
 
 export const IdeCapability = z.enum([

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { compareBuilds, inspectHooks, readBuild } from '../src/diagnostics.js'
+import { compareBuilds, daemonIsReady, inspectHooks, readBuild } from '../src/diagnostics.js'
 
 describe('release diagnostics', () => {
   it('never treats absent build evidence as a match', () => {
@@ -10,6 +10,9 @@ describe('release diagnostics', () => {
     expect(compareBuilds('new', 'old')).toBe('mismatch')
     expect(compareBuilds('new', 'new')).toBe('match')
     expect(readBuild('/nonexistent/longleash-build.json')).toBeNull()
+    expect(daemonIsReady('new', { name: 'longleash', build: 'old' })).toBe(false)
+    expect(daemonIsReady(null, { name: 'longleash', build: null })).toBe(false)
+    expect(daemonIsReady('new', { name: 'longleash', build: 'new' })).toBe(true)
   })
 
   it('requires every lifecycle event and rejects disabled, stale and comment-only hooks', () => {

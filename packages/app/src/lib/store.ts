@@ -402,26 +402,15 @@ export function createStore(options: StoreOptions = {}) {
       }
     }
 
-    /**
-     * Hello is the TRUTH about what is live, not merely an addition to it.
-     *
-     * This used to only upsert, so anything the daemon had forgotten — a session from a
-     * previous run, one whose process died while the daemon was down — stayed on screen as
-     * "working" forever. Pressing Stop on one was refused, because the daemon had no such
-     * session to stop, and the app had no way to ever learn that.
-     *
-     * A session the daemon does not list cannot be acted on, so calling it live is a lie.
-     * It is marked ended rather than deleted: the conversation is still worth reading.
-     */
-    const live = new Set(seeds.map((seed) => seed.sessionId))
-    for (const session of Object.values(sessions)) {
-      if (live.has(session.sessionId)) continue
-      session.live = false
-      if (session.status === 'running' || session.status === 'waiting') {
-        session.status = 'ended'
-      }
-      // Its questions died with it; nothing can answer them now.
-      clearSessionApprovals(session.sessionId)
+    // Hello is the authoritative inventory, including history. Keeping a session omitted
+    // by the daemon as an "ended" local card left suppressed aliases and old hook ghosts in
+    // Earlier until the browser cache was cleared. Its raw events remain on the laptop.
+    const listed = new Set(seeds.map((seed) => seed.sessionId))
+    for (const sessionId of Object.keys(sessions)) {
+      if (listed.has(sessionId)) continue
+      clearSessionApprovals(sessionId)
+      delete sessions[sessionId]
+      delete cursors[sessionId]
     }
     notify()
   }

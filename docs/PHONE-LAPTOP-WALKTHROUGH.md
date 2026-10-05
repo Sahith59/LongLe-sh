@@ -72,9 +72,29 @@ Send a unique harmless prompt, such as `Reply exactly TERMINAL CLAUDE CHECK`, us
 
 Test vendor chat panels separately. Their hook support differs; Codex's durable VS Code transcript can provide read-only observation even without a lifecycle/PID hook. **Read-only observation does not grant approval, Stop or takeover authority.** Existing sessions may require a new tool event or restart.
 
-For the owner preview, download `longleash-vscode-0.0.2.vsix` from the rc.13 GitHub release and install it in VS Code using **Extensions → … → Install from VSIX…**. Reload the window, open the allowlisted test project, and select the LongLeash Activity Bar icon. Its **Sessions** tree should show one live card per native conversation after a real prompt and should update within a few seconds. A transient Claude lifecycle ID with no matching transcript should not appear. Refresh or reload the phone once after updating the daemon to clear historical empty cards.
+### Install the control extension (candidate 0.0.3)
 
-The companion tree is read-only. It does not send messages, approve, Stop, or perform exact phone ↔ IDE handoff yet. For this preview, test the existing explicit terminal/VS Code integrated-terminal transfer controls separately. Do not treat a vendor chat panel as handed off until a later exact-open acknowledgement exists.
+The following new editor test targets CLI **rc.14** and VSIX **0.0.3**. Wait for the coordinated release checkpoint before running it against production; the header above records the previous live baseline until that checkpoint is updated.
+
+1. Download `longleash-vscode-0.0.3.vsix` from the matching GitHub release. A Marketplace listing is not yet verified.
+2. In desktop VS Code choose **Extensions → … → Install from VSIX…**, select that file, then **Developer: Reload Window**. Alternatively run `code --install-extension /path/to/longleash-vscode-0.0.3.vsix --force`.
+3. Open the allowlisted disposable project as a local folder and grant workspace trust only if you trust that project. Remote/SSH/container/browser workspaces are not supported in this release.
+4. Open the LongLeash Activity Bar icon. Confirm the Sessions tree is connected and shows the expected provider conversations. Click a conversation to open its LongLeash editor. Startup registration also runs when the sidebar is hidden.
+5. Send five messages in the same native conversation. Check both phone and extension: the conversation stays on one card. Repeat in a second repository and with two different folders sharing the same basename; independent conversations must remain separate.
+6. Reload the phone and VS Code. Old suppressed cards must not reappear; no browser-storage reset should be required.
+
+### Prove exact phone ↔ LongLeash editor handoff
+
+1. Start a disposable conversation from the phone. Ask the provider to remember a unique marker, then wait for its reply.
+2. On that session's phone screen choose **Open in VS Code**. Choose the target project window. The success message must wait until the LongLeash editor has rendered that exact conversation; merely launching a folder is not success.
+3. Read the marker in the editor's existing history. Ask for it again from the editor, then check that the reply appears in the same phone conversation.
+4. Keep the phone app visible. In the editor choose **Continue on phone**. The phone must open that same session. The editor reports success only after the visible phone confirms it rendered the session.
+5. Repeat in the opposite direction: open the conversation from the Sessions tree first, then continue on the phone and return to the editor. The provider conversation ID and single card stay stable throughout.
+6. Trigger a harmless approval and a provider question. Test Allow, Deny and question choices. An unanswered request must survive scrolling through a long history, reload and reconnect. Do not use production files for approval tests.
+7. Stop and reopen a disposable session from the editor. A new message should retain earlier context. If a send fails, its draft must remain available.
+8. Open a verified external terminal session in the editor. Reading does not transfer ownership. Use **Take control**, read the confirmation, and verify the old writer exits before the first LongLeash message. A transcript-only observed session remains read-only until the provider supplies verified control evidence.
+9. Close the chosen VS Code window while the phone is opening it. Expect an unavailable/unconfirmed result, never a false success or another provider process. Disconnect the laptop, reconnect, and repeat once; an uncertain mutation must not be blindly sent again.
+10. Repeat for Claude and Codex. This targets the **LongLeash conversation editor inside VS Code**, not the private Claude or Codex vendor chat panel. The existing exact Terminal resume command remains available separately.
 
 ## 5. Exercise normal work from the phone
 

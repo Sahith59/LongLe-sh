@@ -2,6 +2,10 @@
 
 Update this file at the end of any session that changes project state. Newest entries first in the log.
 
+## Active work — 2026-10-05 (universal identity and exact IDE control)
+
+The owner clarified that duplicate sessions affect every repository and asked for the complete installable VS Code extension before another phone test. Work is active on `fix/workstream-d-ide-control`: canonical native identity and provider scoping, service lifecycle correction, authenticated IDE control, and exact-session LongLeash editors for Claude/Codex with bidirectional phone navigation. GPT-6 Sol agents performed official API research, identity repair, and independent control review. No candidate release is claimed yet. Follow [implementation and gates](../docs/IDE-CONTROL-IMPLEMENTATION-2026-10.md), [research](../docs/VSCODE-INTEGRATION-RESEARCH-2026-10.md), and [identity evidence](../docs/SESSION-IDENTITY-AUDIT-2026-10.md). The owner is being asked about Marketplace publisher ownership; tokens must never be pasted in chat. Physical acceptance remains pending after extension completion. Earlier “test phone before building extension” ordering is superseded by the owner's latest direction. Local candidate verification: 1,103 workspace tests, all typechecks, 11 real-provider contracts, actual VS Code editor/V0 host checks, VSIX verification and isolated macOS service lifecycle passed. CLI rc.14 / extension 0.0.3 are the assigned candidate versions. See the implementation record for exact gate boundaries.
+
 ## Release checkpoint — 2026-10-05 (rc.13 live; physical IDE acceptance open)
 
 - Release commit/tag `37de078` / `cli-v0.1.0-rc.13` is on GitHub. Trusted npm publishing succeeded with provenance; `@longleash/cli@0.1.0-rc.13` became visible under the `rc` tag. The matching `longleash-vscode-0.0.2.vsix` is attached to the GitHub prerelease and installed in the owner's VS Code. It is an owner preview, not a Marketplace listing; the VS Code window still needs reload to activate it.

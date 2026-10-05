@@ -61,10 +61,15 @@ async function runCase({ caseId, target, expectedRoots, coordinationDir, liveInv
     companion = createServer(async (request, response) => {
       let body = ''
       for await (const chunk of request) body += String(chunk)
-      const hello = JSON.parse(body)
+      const parsed = JSON.parse(body)
+      const hello = request.url === '/control' ? parsed.hello : parsed
       const authorized = request.headers['x-longleash-ide'] === secret &&
         hello.vscode.workspaceFolders.some((folder) => folder.canonicalPath === expectedRoots[0])
       response.writeHead(authorized ? 200 : 401, { 'content-type': 'application/json' })
+      if (request.url === '/control') {
+        response.end(JSON.stringify(authorized ? { windowId: 'v0-fixture', requests: [] } : { reason: 'unauthorized' }))
+        return
+      }
       response.end(JSON.stringify(authorized ? {
         v: 1, type: 'ide.sessionInventory', streamId: 'host-live-stream', cursor: 1,
         generatedAt: Date.now(), sessions: [{

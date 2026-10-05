@@ -2,7 +2,7 @@
   "name": "longleash",
   "displayName": "LongLeash",
   "description": "A secure VS Code companion for LongLeash sessions and handoffs.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "publisher": "longleash",
   "license": "MIT",
@@ -36,7 +36,9 @@
   "activationEvents": [
     "onCommand:longleash.phase2a.showDiagnostics",
     "onCommand:longleash.phase2a.copyDiagnostics",
-    "onView:longleash.sessions"
+    "onCommand:longleash.sessions.open",
+    "onView:longleash.sessions",
+    "onStartupFinished"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -48,12 +50,12 @@
     "commands": [
       {
         "command": "longleash.phase2a.showDiagnostics",
-        "title": "LongLeash: Show Phase 2A Diagnostics",
+        "title": "LongLeash: Show Connection Diagnostics",
         "category": "LongLeash"
       },
       {
         "command": "longleash.phase2a.copyDiagnostics",
-        "title": "LongLeash: Copy Safe Diagnostics",
+        "title": "LongLeash: Copy Connection Diagnostics",
         "category": "LongLeash"
       },
       {
@@ -61,6 +63,11 @@
         "title": "Refresh Sessions",
         "category": "LongLeash",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "longleash.sessions.open",
+        "title": "Open Conversation",
+        "category": "LongLeash"
       }
     ],
     "viewsContainers": {
@@ -109,6 +116,7 @@
     "package:verify": "node scripts/verify-vsix.mjs",
     "install:local": "node scripts/install-local.mjs",
     "test:host:v0": "pnpm build && pnpm build:test-host && node scripts/run-v0-host-matrix.mjs",
+    "test:host:editor": "pnpm build && pnpm build:test-host && node scripts/run-v2-editor-host.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "vscode:prepublish": "pnpm build"

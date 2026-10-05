@@ -1,0 +1,55 @@
+name: Publish VS Code extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact reviewed extension version in main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: longleash-vscode-marketplace
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: vscode-marketplace
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Verify immutable version selection
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: node -e 'const p=require("./packages/vscode/package.json"); if(p.version!==process.env.EXPECTED_VERSION) throw Error("Requested version does not match main")'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @longleash/protocol build
+      - run: pnpm --dir packages/vscode typecheck
+      - run: pnpm --dir packages/vscode test
+      - run: pnpm vscode:package
+      - run: pnpm vscode:verify-package
+      - name: Publish the verified package
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        shell: bash
+        run: |
+          test -n "$VSCE_PAT" || { echo 'Configure VSCE_PAT for the verified Marketplace publisher in vscode-marketplace.'; exit 1; }
+          VSIX_VERSION=$(node -p 'require("./packages/vscode/package.json").version')
+          pnpm --dir packages/vscode exec vsce publish --packagePath "dist-vsix/longleash-vscode-${VSIX_VERSION}.vsix"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: longleash-vscode-marketplace-${{ github.sha }}
+          path: packages/vscode/dist-vsix/*.vsix
+          if-no-files-found: error

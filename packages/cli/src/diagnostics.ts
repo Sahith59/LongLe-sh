@@ -12,6 +12,10 @@ export function compareBuilds(expected: string | null, actual: string | null): '
   return !expected || !actual ? 'unknown' : expected === actual ? 'match' : 'mismatch'
 }
 
+export function daemonIsReady(expectedBuild: string | null, health: { name?: unknown; build?: unknown }): boolean {
+  return health.name === 'longleash' && expectedBuild !== null && health.build === expectedBuild
+}
+
 /** Configuration evidence only: provider trust and already-running processes need a live check. */
 export function inspectHooks(home: string, codexHome: string, hooks: string) {
   const quote = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`

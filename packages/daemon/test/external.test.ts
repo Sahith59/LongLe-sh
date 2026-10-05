@@ -75,6 +75,18 @@ const until = async (check: () => boolean, ms = 2500): Promise<void> => {
 const line = (value: unknown) => JSON.stringify(value) + '\n'
 
 describe('terminal sessions, adopted through hooks', () => {
+  it('keeps Claude and Codex conversations separate when native ids collide', () => {
+    const external = manager()
+    external.sessionStart('same-native-id', dir, join(dir, 'claude.jsonl'), 111, 'claude')
+    external.sessionStart('same-native-id', dir, join(dir, 'codex.jsonl'), 222, 'codex')
+    const listed = external.listSessions()
+    expect(listed).toHaveLength(2)
+    expect(new Set(listed.map((session) => session.sessionId)).size).toBe(2)
+    expect(new Set(listed.map((session) => session.agent))).toEqual(new Set(['claude', 'codex']))
+    external.sessionEnd('same-native-id', 'claude')
+    expect(external.listSessions()).toMatchObject([{ agent: 'codex' }])
+    external.shutdown()
+  })
   it('a new session announces itself with origin terminal', () => {
     const external = manager()
     external.sessionStart('abc-123', '/Users/x/proj', join(dir, 'none.jsonl'))

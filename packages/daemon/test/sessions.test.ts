@@ -199,6 +199,47 @@ it('keeps old lifecycle-only VS Code ghosts out of phone inventory without delet
   }
 })
 
+it('resolves a managed resume id within its provider', () => {
+  const h = makeHarness()
+  try {
+    for (const agent of ['claude', 'codex'] as const) {
+      h.manager.adoptEndedSession({ sessionId: `ses_${agent}`, agent, cwd: h.root,
+        title: agent, origin: 'terminal', startedAt: 100, agentSessionId: 'same-native-id' })
+    }
+    expect(h.manager.sessionIdForAgentSession('same-native-id', 'claude')).toBe('ses_claude')
+    expect(h.manager.sessionIdForAgentSession('same-native-id', 'codex')).toBe('ses_codex')
+  } finally {
+    rmSync(h.dir, { recursive: true, force: true })
+    h.log.close()
+    h.approvals.close()
+  }
+})
+
+it('hydrates one canonical card for a verified provider resume id while retaining alias history', () => {
+  const h = makeHarness()
+  try {
+    h.manager.adoptEndedSession({ sessionId: 'ses_phone', agent: 'claude', cwd: h.root,
+      title: 'Phone work', origin: 'phone', startedAt: 100, agentSessionId: 'native-shared' })
+    h.manager.adoptEndedSession({ sessionId: 'ext_native-shared', agent: 'claude', cwd: h.root,
+      title: 'Terminal work', origin: 'terminal', startedAt: 200, agentSessionId: 'native-shared' })
+    h.log.append('ses_phone', { type: 'stream.delta', payload: { kind: 'user', text: 'phone' } })
+    h.log.append('ext_native-shared', { type: 'stream.delta', payload: { kind: 'user', text: 'terminal' } })
+    expect(h.manager.sessionIdForAgentSession('native-shared', 'claude')).toBe('ses_phone')
+    expect(h.manager.listSessions().map((session) => session.sessionId)).toEqual(['ses_phone'])
+    expect(h.log.hasConversationActivity('ext_native-shared')).toBe(true)
+
+    h.manager.adoptEndedSession({ sessionId: 'ext_empty-waiting', agent: 'codex', cwd: h.root,
+      title: 'Same label', origin: 'vscode', startedAt: 300, agentSessionId: 'empty-waiting' })
+    h.approvals.rawDb.prepare("UPDATE sessions SET status = 'waiting' WHERE session_id = ?")
+      .run('ext_empty-waiting')
+    expect(h.manager.listSessions().map((session) => session.sessionId)).toEqual(['ses_phone'])
+  } finally {
+    rmSync(h.dir, { recursive: true, force: true })
+    h.log.close()
+    h.approvals.close()
+  }
+})
+
 describe('startSession: allowlisted roots (security boundary)', () => {
   let h: Harness
   beforeEach(() => {

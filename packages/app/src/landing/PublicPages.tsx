@@ -880,9 +880,9 @@ function Portability() {
     >
       <h2>Why the one-writer rule exists</h2>
       <p>
-        Two interfaces writing the same live provider conversation can reorder messages, duplicate
-        tools, or corrupt ownership. LongLeash therefore treats Terminal, VS Code, and phone control
-        as mutually exclusive writers to one conversation.
+        Two provider processes writing the same live conversation can reorder messages, duplicate
+        tools, or corrupt ownership. LongLeash transfers external sessions through a verified release.
+        Its phone and VS Code editor then share one daemon-owned provider conversation.
       </p>
       <div className="portable-flow">
         <span>Terminal or VS Code</span><ArrowRight aria-hidden="true" /><span>verified release</span>
@@ -897,9 +897,11 @@ function Portability() {
 
       <h2>Phone to VS Code</h2>
       <p>
-        The workspace handoff opens the correct folder. Claude can resume through its CLI/IDE
-        connection. Codex resumes in the VS Code terminal today. LongLeash does not claim it can
-        inject an existing thread into another vendor extension’s private chat panel.
+        Install the matching LongLeash extension from the GitHub release and open the project in
+        a trusted local VS Code window. On the phone, choose <b>Open in VS Code</b> and select that
+        window. LongLeash waits for its conversation editor to confirm the exact session. Claude
+        and Codex use the same daemon conversation; another vendor extension’s private chat panel
+        is not the destination. Choose <b>Continue on phone</b> in the editor to return.
       </p>
 
       <h2>Terminal or VS Code to phone</h2>
@@ -960,9 +962,10 @@ function Faq() {
         future team or premium services may develop separate pricing; nothing on this page promises an unshipped tier.
       </Question>
       <Question q="Is the VS Code companion available?">
-        An installable owner preview is available from the matching GitHub release. It shows a live,
-        workspace-scoped session tree when the laptop daemon is running. Sending messages and exact
-        phone-to-IDE handoff are still being built; this is not yet a Marketplace release.
+        The installable extension is distributed with the matching GitHub release. It provides a
+        workspace session tree and a LongLeash conversation editor with messages, approvals,
+        stop/reopen, and confirmed phone handoff. External control requires verified ownership;
+        observed-only vendor panels remain read-only. Marketplace publication is still pending.
       </Question>
     </DocsLayout>
   )

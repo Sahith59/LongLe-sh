@@ -32,6 +32,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - name: Verify the real VS Code conversation editor
+        run: xvfb-run -a pnpm --dir packages/vscode test:host:editor
       - run: pnpm --filter @longleash/cli shrinkwrap:check
       - run: pnpm --filter @longleash/cli pack:verify
       - name: Install and exercise the CLI tarball

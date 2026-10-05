@@ -29,6 +29,17 @@ describe('EventLog: append + replay', () => {
     expect([a.seq, b.seq, c.seq]).toEqual([1, 2, 3])
   })
 
+  it('recovers question choices only for the exact session and approval', () => {
+    const questions = [{ question: 'Which route?', header: 'Route', options: [{ label: 'A', description: 'first' }], multiSelect: false }]
+    log.append('ses_a', { type: 'approval.requested', payload: {
+      approvalId: 'approval-a', toolName: 'AskUserQuestion', inputSummary: 'Choose', expiresAt: 100,
+      outsideRoot: false, questions,
+    } })
+    expect(log.pendingQuestions('ses_a', 'approval-a')).toEqual(questions)
+    expect(log.pendingQuestions('ses_b', 'approval-a')).toBeUndefined()
+    expect(log.pendingQuestions('ses_a', 'approval-b')).toBeUndefined()
+  })
+
   it('stamps events with the injected clock', () => {
     const clocked = new EventLog(':memory:', { now: () => 1753900000000 })
     const ev = clocked.append('ses_a', started)
@@ -227,4 +238,21 @@ describe('coalesceTextDeltas', () => {
     expect(out).toHaveLength(2)
     expect(out[0]?.type).toBe('session.started')
   })
+})
+
+it('pages IDE replay without skipping or repeating events in a long conversation', () => {
+  const log = new EventLog(':memory:')
+  try {
+    for (let index = 0; index < 601; index++) log.append('paged', { type: 'stream.delta', payload: { kind: 'text', text: String(index) } })
+    const first = log.readPage('paged', 0)
+    expect(first.events).toHaveLength(250)
+    expect(first.latestCursor).toBe(250)
+    expect(first.hasMore).toBe(true)
+    const second = log.readPage('paged', first.latestCursor)
+    const last = log.readPage('paged', second.latestCursor)
+    expect(last.events).toHaveLength(101)
+    expect(last.hasMore).toBe(false)
+    expect([...first.events, ...second.events, ...last.events].map((event) => event.seq)).toEqual(Array.from({ length: 601 }, (_, index) => index + 1))
+    expect(log.readPage('paged', 9999).latestCursor).toBe(601)
+  } finally { log.close() }
 })

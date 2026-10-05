@@ -1680,3 +1680,42 @@ describe('Stop must reach whoever owns the session, not whoever its id looks lik
     h.log.close()
   })
 })
+
+describe('IDE to phone confirmation', () => {
+  let h: Harness
+  beforeEach(async () => { h = await startHarness() })
+  afterEach(async () => { await h.server.close(); h.log.close(); h.registry.close() })
+
+  it('requires the connected phone to acknowledge the exact conversation', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    await helloOf(ws)
+    let settled = false
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'conversation-a', fromCursor: 0, syncId: 'ide-return' }))
+    await nextMatching(ws, (message) => message.type === 'sync.complete')
+    const result = h.server.returnIdeToPhone('conversation-a').then((value) => { settled = true; return value })
+    const instruction = await nextMatching(ws, (message) => message.type === 'ideReturn')
+    ws.send(JSON.stringify({ v: 1, type: 'ideReturnAck', sessionId: 'conversation-b', requestId: instruction.requestId }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(settled).toBe(false)
+    ws.send(JSON.stringify({ v: 1, type: 'ideReturnAck', sessionId: 'conversation-a', requestId: instruction.requestId }))
+    expect(await result).toEqual({ outcome: 'opened', sessionId: 'conversation-a' })
+    ws.close()
+  })
+
+  it('does not claim handoff when no phone is connected', async () => {
+    expect(await h.server.returnIdeToPhone('conversation-a')).toMatchObject({ outcome: 'unconfirmed' })
+  })
+
+  it('settles pending handoffs without success when the daemon closes', async () => {
+    const ws = connect(h.port, h.token)
+    await opened(ws)
+    await helloOf(ws)
+    ws.send(JSON.stringify({ v: 1, type: 'subscribe', sessionId: 'conversation-a', fromCursor: 0, syncId: 'ide-return' }))
+    await nextMatching(ws, (message) => message.type === 'sync.complete')
+    const result = h.server.returnIdeToPhone('conversation-a')
+    await nextMatching(ws, (message) => message.type === 'ideReturn')
+    await h.server.close()
+    expect(await result).toMatchObject({ outcome: 'unconfirmed' })
+  })
+})

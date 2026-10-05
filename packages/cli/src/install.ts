@@ -331,7 +331,8 @@ function normalizeExecutableMode(mode: number): number {
 }
 
 function wrapper(cli: string, node: string): string {
-  return `#!/bin/sh\n${WRAPPER_MARKER}\nexec ${shellQuote(node)} ${shellQuote(cli)} "$@"\n`
+  const daemon = join(dirname(cli), '..', 'runtime', 'daemon', 'bin', 'longleashd.mjs')
+  return `#!/bin/sh\n${WRAPPER_MARKER}\nif [ "${'$'}1" = "__service-run" ]; then\n  shift\n  exec ${shellQuote(node)} ${shellQuote(daemon)} "${'$'}@"\nfi\nexec ${shellQuote(node)} ${shellQuote(cli)} "${'$'}@"\n`
 }
 
 function shellQuote(value: string): string {

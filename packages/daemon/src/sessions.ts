@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { realpathSync } from 'node:fs'
-import { basename, resolve, sep } from 'node:path'
+import { resolve, sep } from 'node:path'
 import type { AgentFactory, AgentRunHandle, PermissionDecision } from './agent.js'
 import type { ApprovalStore } from './approvals.js'
 import type { EventLog, AppendInput } from './eventlog.js'
@@ -712,18 +712,28 @@ export class SessionManager {
       workspace_branch: string | null
       settings_json: string | null
     }[]
+    const preferred = new Map<string, (typeof rows)[number]>()
+    for (const row of rows) {
+      if (row.agent_session_id === null) continue
+      const key = `${row.agent}:${row.agent_session_id}`
+      const current = preferred.get(key)
+      if (current === undefined || (current.origin !== 'phone' && row.origin === 'phone')) {
+        preferred.set(key, row)
+      }
+    }
     return rows.filter((row) => {
-      // Older Claude VS Code builds reported transient native IDs through SessionStart.
-      // The daemon previously adopted them as finished conversations even though no
-      // transcript/tool/approval ever arrived. Preserve their DB history for audit,
-      // but keep these empty generic cards out of a freshly hydrated phone list.
-      if (
-        row.session_id.startsWith('ext_') && row.agent === 'claude' &&
-        row.origin === 'vscode' && row.status === 'ended' &&
-        row.agent_session_id !== null &&
-        row.title === `${basename(row.cwd)} — VS Code` &&
-        !this.eventLog.hasConversationActivity(row.session_id)
-      ) return false
+      // A provider resume id identifies one conversation. Keep older alias rows in SQLite
+      // for audit, but hydrate only its preferred card; never group by title or directory.
+      if (row.agent_session_id !== null &&
+        preferred.get(`${row.agent}:${row.agent_session_id}`)?.session_id !== row.session_id &&
+        !this.sessions.has(row.session_id)) return false
+      // Provisional external cards with no conversation activity were lifecycle noise.
+      // Ended or parked rows have no live managed owner; a live native owner is separately
+      // supplied by ExternalSessions and retains its card.
+      if (row.session_id.startsWith('ext_') &&
+        (row.status === 'ended' || row.status === 'waiting') &&
+        !this.sessions.has(row.session_id) &&
+        !this.eventLog.hasConversationActivity(row.session_id)) return false
       return true
     }).map((row) => {
       const live = this.sessions.get(row.session_id)
@@ -748,10 +758,10 @@ export class SessionManager {
   }
 
   /** Find the stable LongLeash card that already owns this provider conversation id. */
-  sessionIdForAgentSession(agentSessionId: string): string | undefined {
+  sessionIdForAgentSession(agentSessionId: string, agent: AgentKind): string | undefined {
     const row = this.approvals.rawDb
-      .prepare('SELECT session_id FROM sessions WHERE agent_session_id = ? ORDER BY started_at DESC LIMIT 1')
-      .get(agentSessionId) as { session_id: string } | undefined
+      .prepare("SELECT session_id FROM sessions WHERE agent_session_id = ? AND agent = ? ORDER BY CASE WHEN origin = 'phone' THEN 0 ELSE 1 END, started_at ASC LIMIT 1")
+      .get(agentSessionId, agent) as { session_id: string } | undefined
     return row?.session_id
   }
 

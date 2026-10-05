@@ -10,10 +10,11 @@ import {
   type DelegationSummary,
   type SessionEvent,
 } from '@longleash/protocol'
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { EventLog, AppendInput } from './eventlog.js'
 import type { PushNotifier } from './push.js'
 import { surfaceOf, terminalAgentOf, type ExternalSessions } from './external.js'
+import { transcriptSessionId } from './session-identity.js'
 import type { DeviceRegistry } from './auth.js'
 import { PairingError, type PairingChallenge } from './auth.js'
 import { createPairingSession } from './pairing-session.js'
@@ -23,6 +24,7 @@ import type { FolderIndex } from './folders.js'
 import { RelayLink } from './relay-link.js'
 import { BriefingBuilder, BriefingError } from './briefing.js'
 import { DelegationManagerError, type DelegationManager } from './delegation-manager.js'
+import type { IdeControlHub } from './ide-control.js'
 
 /** Application close codes (4000-4999 is the private range). */
 export const CLOSE_UNAUTHORIZED = 4401
@@ -87,6 +89,43 @@ interface Connection {
 }
 
 export class LongLeashServer {
+  private ideControl: IdeControlHub | null = null
+  private readonly ideReturns = new Map<string, { sessionId: string; recipients: Set<Connection>; resolve: (value: unknown) => void; timer: NodeJS.Timeout }>()
+
+  setIdeControl(control: IdeControlHub): void { this.ideControl = control }
+
+  returnIdeToPhone(sessionId: string): Promise<unknown> {
+    if (this.ideReturns.size >= 64) return Promise.resolve({ outcome: 'unconfirmed', message: 'Too many pending phone requests.' })
+    const recipients = new Set([...this.connections].filter((connection) => connection.transport.isOpen() && connection.sessions.has(sessionId)))
+    if (!recipients.size) return Promise.resolve({ outcome: 'unconfirmed', message: 'Open LongLeash on your paired phone first.' })
+    const requestId = randomUUID()
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.ideReturns.delete(requestId)
+        resolve({ outcome: 'unconfirmed', message: 'No phone confirmed opening. Open LongLeash on your phone and try again.' })
+      }, 20_000)
+      this.ideReturns.set(requestId, { sessionId, recipients, resolve, timer })
+      for (const connection of recipients) this.sendTo(connection, { v: PROTOCOL_VERSION, type: 'ideReturn', requestId, sessionId })
+    })
+  }
+
+  /** Invoked only after the separate IDE listener has authenticated and scoped a command. */
+  performIdeCommand(principal: string, message: unknown): Promise<unknown> {
+    return new Promise((resolve) => {
+      let open = true
+      const finish = (value: unknown) => { if (!open) return; open = false; clearTimeout(timer); resolve(value) }
+      const timer = setTimeout(() => finish({ v: PROTOCOL_VERSION, type: 'error', code: 'ide-timeout',
+        message: 'The command outcome is unknown. Refresh this conversation before issuing another command.' }), 25_000)
+      const connection: Connection = {
+        deviceId: principal, sessions: new Set(), desynced: false, missedHeartbeats: 0,
+        transport: { send: (text) => finish(JSON.parse(text)), bufferedAmount: () => 0,
+          close: () => finish({ type: 'error', message: 'IDE connection closed.' }), terminate: () => {},
+          ping: () => {}, isOpen: () => open, managedLiveness: true },
+      }
+      try { this.handleMessage(connection, JSON.stringify(message)) }
+      catch { finish({ v: PROTOCOL_VERSION, type: 'error', code: 'ide-command-failed', message: 'The IDE command failed.' }) }
+    })
+  }
   private readonly app: FastifyInstance
   private readonly eventLog: EventLog
   private readonly registry: DeviceRegistry
@@ -180,13 +219,19 @@ export class LongLeashServer {
         /** Terminal or editor, as detected by the hook from its own environment. */
         ll_surface?: string
       }
-      const { session_id: sessionId, cwd, transcript_path: transcript } = body
-      if (typeof sessionId !== 'string' || sessionId === '') {
+      const { session_id: hookSessionId, cwd, transcript_path: transcript } = body
+      if (typeof hookSessionId !== 'string' || hookSessionId === '') {
         return reply.code(400).send({ reason: 'missing session_id' })
       }
 
       const agent = terminalAgentOf(body.ll_agent)
       const surface = surfaceOf(body.ll_surface)
+      // Native hooks can report a fresh per-turn id while still pointing at the same
+      // provider transcript. The file owns conversation identity across hook invocations,
+      // the watcher, daemon restarts, and phone history.
+      const durableId = transcriptSessionId(agent, transcript ?? '')
+      const sessionId = durableId ?? hookSessionId
+      const transientHook = durableId !== null && durableId !== hookSessionId
 
       if (body.hook_event_name === 'SessionStart' || body.hook_event_name === 'SessionObserved') {
         // Claude's VS Code integration can fire lifecycle hooks for transient native IDs
@@ -271,7 +316,9 @@ export class LongLeashServer {
       }
       if (body.hook_event_name === 'SessionEnd') {
         this.clearPendingVscodeClaude(sessionId)
-        this.external.sessionEnd(sessionId)
+        // A transient per-turn hook ending does not mean the durable transcript ended.
+        // Only its own native id may close the live conversation.
+        if (!transientHook) this.external.sessionEnd(sessionId, agent)
         return {}
       }
       return {} // unknown events are tolerated: a newer Claude Code must not break the daemon
@@ -637,6 +684,11 @@ export class LongLeashServer {
   }
 
   async close(): Promise<void> {
+    for (const pending of this.ideReturns.values()) {
+      clearTimeout(pending.timer)
+      pending.resolve({ outcome: 'unconfirmed', message: 'The laptop service stopped.' })
+    }
+    this.ideReturns.clear()
     for (const sessionId of this.pendingVscodeClaude.keys()) this.clearPendingVscodeClaude(sessionId)
     for (const cleanup of this.pairingCleanups) cleanup()
     for (const socket of this.pairingSockets) socket.terminate()
@@ -827,6 +879,35 @@ export class LongLeashServer {
         code: 'bad-message',
         message: err instanceof Error ? err.message.slice(0, 300) : 'Invalid message',
       })
+      return
+    }
+
+    if (message.type === 'ideReturnAck') {
+      const pending = this.ideReturns.get(message.requestId)
+      if (pending?.sessionId === message.sessionId && pending.recipients.has(connection)) {
+        clearTimeout(pending.timer)
+        this.ideReturns.delete(message.requestId)
+        pending.resolve({ outcome: 'opened', sessionId: message.sessionId })
+      }
+      return
+    }
+    if (message.type === 'ideListWindows' || message.type === 'ideOpen') {
+      const known = [...(this.sessions?.listSessions() ?? []), ...(this.external?.listSessions() ?? [])]
+        .some((session) => session.sessionId === message.sessionId)
+      if (!known || !this.ideControl) {
+        this.sendTo(connection, { v: PROTOCOL_VERSION, type: 'ideResult', requestId: message.requestId,
+          outcome: 'unavailable', message: 'Update the laptop service and connect the LongLeash VS Code extension.' })
+      } else if (message.type === 'ideListWindows') {
+        this.sendTo(connection, { v: PROTOCOL_VERSION, type: 'ideWindows', requestId: message.requestId,
+          sessionId: message.sessionId, windows: this.ideControl.list(message.sessionId) })
+      } else {
+        void this.ideControl.open(message.windowId, message.sessionId, message.requestId).then((result) => {
+          this.sendTo(connection, { v: PROTOCOL_VERSION, type: 'ideResult', requestId: message.requestId, ...result as object })
+        }).catch((error: unknown) => {
+          this.sendTo(connection, { v: PROTOCOL_VERSION, type: 'ideResult', requestId: message.requestId,
+            outcome: 'unavailable', message: error instanceof Error ? error.message : 'Could not open VS Code.' })
+        })
+      }
       return
     }
 
